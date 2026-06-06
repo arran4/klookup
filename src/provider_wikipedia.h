@@ -1,0 +1,28 @@
+#ifndef PROVIDER_WIKIPEDIA_H
+#define PROVIDER_WIKIPEDIA_H
+
+#include "searchprovider.h"
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+
+class ProviderWikipedia : public SearchProvider
+{
+    Q_OBJECT
+public:
+    explicit ProviderWikipedia(QObject *parent = nullptr);
+    virtual ~ProviderWikipedia();
+
+    QString name() const override;
+    QString id() const override;
+    void search(const QString &query) override;
+    SearchProvider* clone(QObject *parent = nullptr) const override;
+
+private slots:
+    void onReplyFinished();
+
+private:
+    QNetworkAccessManager *m_nam;
+    QNetworkReply *m_reply;
+};
+
+#endif // PROVIDER_WIKIPEDIA_H

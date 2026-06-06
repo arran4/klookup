@@ -121,6 +121,7 @@ void MainWindow::saveSettings()
         settings.setValue("query", query);
     }
     settings.endArray();
+    settings.remove(QStringLiteral("OpenTabs"));
 
     settings.beginGroup("History");
     settings.setValue("SearchHistory", m_dashboard->saveHistory());

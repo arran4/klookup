@@ -45,7 +45,16 @@ void SearchDashboard::onSearchTriggered()
 {
     QString query = m_searchBar->text().trimmed();
     if (!query.isEmpty()) {
+        for (int i = 0; i < m_historyList->count(); ++i) {
+            if (m_historyList->item(i)->text() == query) {
+                delete m_historyList->takeItem(i);
+                break;
+            }
+        }
         m_historyList->insertItem(0, query);
+        while (m_historyList->count() > 50) {
+            delete m_historyList->takeItem(m_historyList->count() - 1);
+        }
         emit searchRequested(query);
     }
 }

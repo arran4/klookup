@@ -8,7 +8,7 @@
 
 ProviderMangaUpdates::ProviderMangaUpdates(QObject *parent)
     : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new QNetworkAccessManager())
     , m_reply(nullptr)
 {
 }
@@ -88,7 +88,7 @@ void ProviderMangaUpdates::onReplyFinished()
         if (res.description.length() > 200) {
             res.description = res.description.left(200) + QStringLiteral("...");
         }
-        res.url = record.value(QStringLiteral("url")).toString();
+        res.url = QStringLiteral("https://www.mangaupdates.com/series.html?id=") + res.id;
         res.type = QStringLiteral("manga");
 
         QVariantMap additional;

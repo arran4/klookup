@@ -1,8 +1,8 @@
 #include <QApplication>
 #include <QCommandLineParser>
-// #include <KAboutData>
-// #include <KLocalizedString>
-// #include <KDBusService>
+#include <KAboutData>
+#include <KLocalizedString>
+#include <KDBusService>
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])

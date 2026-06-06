@@ -8,7 +8,7 @@
 
 ProviderGithub::ProviderGithub(QObject *parent)
     : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager(this))
+    , m_nam(new QNetworkAccessManager())
     , m_reply(nullptr)
 {
 }

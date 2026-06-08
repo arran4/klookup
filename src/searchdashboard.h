@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include <QLineEdit>
-#include <QListWidget>
+#include <QCompleter>
 
 class SearchDashboard : public QWidget
 {
@@ -21,11 +21,11 @@ signals:
 
 private slots:
     void onSearchTriggered();
-    void onHistoryItemClicked(QListWidgetItem *item);
 
 private:
     QLineEdit *m_searchBar;
-    QListWidget *m_historyList;
+    QCompleter *m_completer;
+    QStringList m_history;
 };
 
 #endif // SEARCHDASHBOARD_H

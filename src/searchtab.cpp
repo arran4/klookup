@@ -8,7 +8,7 @@
 SearchTab::SearchTab(const QString &query, QWidget *parent)
     : QWidget(parent)
     , m_query(query)
-    , m_resultsList(new QListWidget(this))
+    , m_resultsTree(new QTreeWidget(this))
     , m_detailsView(new QTextBrowser(this))
 {
     QHBoxLayout *mainLayout = new QHBoxLayout(this);
@@ -16,12 +16,14 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     QVBoxLayout *leftLayout = new QVBoxLayout();
     QLabel *queryLabel = new QLabel(QStringLiteral("Results for: ") + query, this);
     leftLayout->addWidget(queryLabel);
-    leftLayout->addWidget(m_resultsList);
+
+    m_resultsTree->setHeaderHidden(true);
+    leftLayout->addWidget(m_resultsTree);
 
     mainLayout->addLayout(leftLayout, 1);
     mainLayout->addWidget(m_detailsView, 2);
 
-    connect(m_resultsList, &QListWidget::itemClicked, this, &SearchTab::onResultClicked);
+    connect(m_resultsTree, &QTreeWidget::itemClicked, this, &SearchTab::onResultClicked);
 
     m_detailsView->setOpenExternalLinks(true);
 }
@@ -32,36 +34,61 @@ SearchTab::~SearchTab()
 
 void SearchTab::addResults(const QString &providerName, const QList<SearchResult> &results)
 {
+    QList<QTreeWidgetItem*> items = m_resultsTree->findItems(providerName, Qt::MatchExactly, 0);
+    QTreeWidgetItem *providerItem;
+    if (items.isEmpty()) {
+        providerItem = new QTreeWidgetItem(m_resultsTree);
+        providerItem->setText(0, providerName);
+        providerItem->setFlags(providerItem->flags() & ~Qt::ItemIsSelectable);
+        m_resultsTree->addTopLevelItem(providerItem);
+    } else {
+        providerItem = items.first();
+    }
+
     if (results.isEmpty()) {
-        QListWidgetItem *item = new QListWidgetItem(QStringLiteral("No results from ") + providerName);
+        QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
+        item->setText(0, QStringLiteral("No results"));
         item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-        m_resultsList->addItem(item);
         return;
     }
 
     for (const SearchResult &res : results) {
-        QListWidgetItem *item = new QListWidgetItem(QStringLiteral("[") + providerName + QStringLiteral("] ") + res.title);
-        m_resultsList->addItem(item);
-        m_itemDataMap.insert(item, res);
+        QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
+        item->setText(0, res.title);
+        item->setData(0, Qt::UserRole, QVariant::fromValue(res));
     }
+
+    providerItem->setExpanded(true);
 }
 
 void SearchTab::setError(const QString &providerName, const QString &errorMsg)
 {
-    QListWidgetItem *item = new QListWidgetItem(QStringLiteral("Error from ") + providerName + QStringLiteral(": ") + errorMsg);
+    QList<QTreeWidgetItem*> items = m_resultsTree->findItems(providerName, Qt::MatchExactly, 0);
+    QTreeWidgetItem *providerItem;
+    if (items.isEmpty()) {
+        providerItem = new QTreeWidgetItem(m_resultsTree);
+        providerItem->setText(0, providerName);
+        providerItem->setFlags(providerItem->flags() & ~Qt::ItemIsSelectable);
+        m_resultsTree->addTopLevelItem(providerItem);
+    } else {
+        providerItem = items.first();
+    }
+
+    QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
+    item->setText(0, QStringLiteral("Error: ") + errorMsg);
+    item->setForeground(0, Qt::red);
     item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-    item->setForeground(Qt::red);
-    m_resultsList->addItem(item);
 }
 
-void SearchTab::onResultClicked(QListWidgetItem *item)
+void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
 {
-    if (!m_itemDataMap.contains(item)) {
+    QVariant data = item->data(0, Qt::UserRole);
+    if (!data.isValid()) {
         m_detailsView->clear();
         return;
     }
 
-    SearchResult res = m_itemDataMap.value(item);
+    SearchResult res = data.value<SearchResult>();
 
     QString html = QStringLiteral("<h2>%1</h2>").arg(res.title);
     html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type);

@@ -1,19 +1,55 @@
 #include <QApplication>
 #include <QCommandLineParser>
-#include <KAboutData>
-#include <KLocalizedString>
-#include <KDBusService>
+// #include <KAboutData>
+// #include <KLocalizedString>
+// #include <KDBusService>
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
+    // KLocalizedString::setApplicationDomain("klookup");
+
+    /*
+    KAboutData aboutData(
+        QStringLiteral("klookup"),
+        i18n("KLookup"),
+        QStringLiteral("0.1"),
+        i18n("Dictionary style multi-provider search tool"),
+        KAboutLicense::GPL,
+        i18n("(c) 2024")
+    );
+    KAboutData::setApplicationData(aboutData);
+    */
 
     QCommandLineParser parser;
-    parser.addPositionalArgument(QStringLiteral("query"), QStringLiteral("Search query"));
+    // aboutData.setupCommandLine(&parser);
+    parser.addPositionalArgument(QStringLiteral("query"), QStringLiteral("Search query to execute"));
+
     parser.process(app);
+    // aboutData.processCommandLine(&parser);
+
+    // KDBusService service(KDBusService::Unique);
 
     MainWindow mw;
+
+    /*
+    QObject::connect(&service, &KDBusService::activateRequested, [&mw](const QStringList &arguments, const QString &workingDirectory) {
+        mw.show();
+        mw.raise();
+        mw.activateWindow();
+
+        QCommandLineParser parser;
+        parser.addPositionalArgument(QStringLiteral("query"), QStringLiteral("Search query"));
+        parser.process(arguments);
+
+        const QStringList args = parser.positionalArguments();
+        if (!args.isEmpty()) {
+            mw.performSearch(args.first());
+        }
+    });
+    */
+
     mw.show();
 
     const QStringList args = parser.positionalArguments();

@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 
 struct SearchResult {
     QString id;
@@ -13,6 +14,7 @@ struct SearchResult {
     QString type;
     QVariantMap additionalData;
 };
+Q_DECLARE_METATYPE(SearchResult)
 
 class SearchProvider : public QObject
 {
@@ -24,14 +26,11 @@ public:
     virtual QString name() const = 0;
     virtual QString id() const = 0;
 
-    // Instead of emitting signals, return a job or emit with a query context so the receiver can filter it,
-    // or instantiate a fresh provider for each tab. Instantiating a fresh provider is cleaner.
     virtual void search(const QString &query) = 0;
 
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
-    // Virtual clone function to allow creating discrete instances per tab
     virtual SearchProvider* clone(QObject *parent = nullptr) const = 0;
 
 signals:

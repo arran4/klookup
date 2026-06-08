@@ -2,7 +2,7 @@
 #define SEARCHTAB_H
 
 #include <QWidget>
-#include <QListWidget>
+#include <QTreeWidget>
 #include <QTextBrowser>
 #include "searchprovider.h"
 
@@ -18,13 +18,12 @@ public:
     void setError(const QString &providerName, const QString &errorMsg);
 
 private slots:
-    void onResultClicked(QListWidgetItem *item);
+    void onResultClicked(QTreeWidgetItem *item, int column);
 
 private:
     QString m_query;
-    QListWidget *m_resultsList;
+    QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;
-    QHash<QListWidgetItem*, SearchResult> m_itemDataMap;
 };
 
 #endif // SEARCHTAB_H

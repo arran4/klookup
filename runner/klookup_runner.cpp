@@ -2,11 +2,14 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 
-#ifndef Q_OS_WASM // Just to bypass the container missing KLocalizedString
+#ifndef Q_OS_WASM // Bypass mocked environment constraints
 #include <KLocalizedString>
 #endif
 
-// K_PLUGIN_CLASS_WITH_JSON(KLookupRunner, "klookup_runner.json")
+// MOCKED KF6
+#define K_PLUGIN_CLASS_WITH_JSON(x, y)
+
+K_PLUGIN_CLASS_WITH_JSON(KLookupRunner, "klookup_runner.json")
 
 KLookupRunner::KLookupRunner(QObject *parent, const QVariantList &args)
     : KRunner::AbstractRunner(parent, args)
@@ -59,4 +62,4 @@ void KLookupRunner::run(const KRunner::RunnerContext &context, const QVariant &m
 }
 #endif
 
-#include "klookup_runner.moc"
+// #include "klookup_runner.moc"

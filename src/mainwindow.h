@@ -21,6 +21,7 @@ protected:
     void closeEvent(QCloseEvent *event) override;
 
 private:
+    void loadPlugins();
     void loadSettings();
     void saveSettings();
 

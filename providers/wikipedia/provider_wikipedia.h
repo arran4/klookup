@@ -1,16 +1,18 @@
-#ifndef PROVIDER_MANGAUPDATES_H
-#define PROVIDER_MANGAUPDATES_H
+#ifndef PROVIDER_WIKIPEDIA_H
+#define PROVIDER_WIKIPEDIA_H
 
 #include "searchprovider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 
-class ProviderMangaUpdates : public SearchProvider
+class ProviderWikipedia : public SearchProvider
 {
     Q_OBJECT
+    Q_PLUGIN_METADATA(IID SearchProvider_iid)
+    Q_INTERFACES(SearchProvider)
 public:
-    explicit ProviderMangaUpdates(QObject *parent = nullptr);
-    virtual ~ProviderMangaUpdates();
+    explicit ProviderWikipedia(QObject *parent = nullptr);
+    virtual ~ProviderWikipedia();
 
     QString name() const override;
     QString id() const override;
@@ -25,4 +27,4 @@ private:
     QNetworkReply *m_reply;
 };
 
-#endif // PROVIDER_MANGAUPDATES_H
+#endif // PROVIDER_WIKIPEDIA_H

@@ -23,4 +23,7 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
 )
 
 add_subdirectory(src)
+add_subdirectory(providers/wikipedia)
+add_subdirectory(providers/github)
+add_subdirectory(providers/mangaupdates)
 add_subdirectory(runner)

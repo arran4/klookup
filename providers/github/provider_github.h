@@ -8,6 +8,8 @@
 class ProviderGithub : public SearchProvider
 {
     Q_OBJECT
+    Q_PLUGIN_METADATA(IID SearchProvider_iid)
+    Q_INTERFACES(SearchProvider)
 public:
     explicit ProviderGithub(QObject *parent = nullptr);
     virtual ~ProviderGithub();

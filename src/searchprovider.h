@@ -41,4 +41,7 @@ private:
     bool m_enabled = true;
 };
 
+#define SearchProvider_iid "org.kde.klookup.SearchProvider"
+Q_DECLARE_INTERFACE(SearchProvider, SearchProvider_iid)
+
 #endif // SEARCHPROVIDER_H

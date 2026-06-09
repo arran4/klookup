@@ -1,8 +1,5 @@
 #include "mainwindow.h"
 #include "searchtab.h"
-#include "provider_wikipedia.h"
-#include "provider_github.h"
-#include "provider_mangaupdates.h"
 #include "dbusadaptor.h"
 #include "settingsdialog.h"
 #include <QVBoxLayout>
@@ -10,7 +7,10 @@
 #include <QDBusConnection>
 #include <QMenuBar>
 #include <QAction>
-// Mock persistence for now
+#include <QPluginLoader>
+#include <QDir>
+#include <QCoreApplication>
+// Mock persistence
 #include <QSettings>
 
 MainWindow::MainWindow(QWidget *parent)
@@ -34,9 +34,7 @@ MainWindow::MainWindow(QWidget *parent)
     setWindowTitle(QStringLiteral("KLookup"));
     resize(800, 600);
 
-    m_providers.append(new ProviderWikipedia(this));
-    m_providers.append(new ProviderGithub(this));
-    m_providers.append(new ProviderMangaUpdates(this));
+    loadPlugins();
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
 
@@ -58,6 +56,49 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
+    qDeleteAll(m_providers);
+}
+
+void MainWindow::loadPlugins()
+{
+    QDir pluginsDir(QCoreApplication::applicationDirPath());
+#if defined(Q_OS_WIN)
+    if (pluginsDir.dirName().toLower() == "debug" || pluginsDir.dirName().toLower() == "release")
+        pluginsDir.cdUp();
+#elif defined(Q_OS_MAC)
+    if (pluginsDir.dirName() == "MacOS") {
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+    }
+#endif
+
+    // In our mock build environment, the plugins are nested differently due to subdirectories
+    pluginsDir.cd("providers");
+
+    const QStringList pluginPaths = {
+        pluginsDir.absolutePath(),
+        QCoreApplication::applicationDirPath() + "/providers/wikipedia",
+        QCoreApplication::applicationDirPath() + "/providers/github",
+        QCoreApplication::applicationDirPath() + "/providers/mangaupdates",
+    };
+
+    for (const QString &path : pluginPaths) {
+        QDir dir(path);
+        const auto entryList = dir.entryList(QDir::Files);
+        for (const QString &fileName : entryList) {
+            QPluginLoader loader(dir.absoluteFilePath(fileName));
+            QObject *plugin = loader.instance();
+            if (plugin) {
+                SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
+                if (provider) {
+                    m_providers.append(provider);
+                } else {
+                    plugin->deleteLater();
+                }
+            }
+        }
+    }
 }
 
 void MainWindow::performSearch(const QString &query)
@@ -113,6 +154,8 @@ void MainWindow::saveSettings()
 {
     QSettings settings("KDE", "klookup");
 
+    settings.remove(QStringLiteral("OpenTabs"));
+
     settings.beginWriteArray("OpenTabs");
     int writeIndex = 0;
     for (int i = 1; i < m_tabWidget->count(); ++i) {
@@ -121,7 +164,6 @@ void MainWindow::saveSettings()
         settings.setValue("query", query);
     }
     settings.endArray();
-    settings.remove(QStringLiteral("OpenTabs"));
 
     settings.beginGroup("History");
     settings.setValue("SearchHistory", m_dashboard->saveHistory());

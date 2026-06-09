@@ -4,9 +4,6 @@ add_executable(klookup
     searchdashboard.cpp
     searchtab.cpp
     searchprovider.cpp
-    provider_wikipedia.cpp
-    provider_github.cpp
-    provider_mangaupdates.cpp
     dbusadaptor.cpp
     settingsdialog.cpp
 )

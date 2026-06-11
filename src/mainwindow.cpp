@@ -81,6 +81,9 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/wikipedia",
         QCoreApplication::applicationDirPath() + "/providers/github",
         QCoreApplication::applicationDirPath() + "/providers/mangaupdates",
+        QCoreApplication::applicationDirPath() + "/providers/anilist",
+        QCoreApplication::applicationDirPath() + "/providers/tvmaze",
+        QCoreApplication::applicationDirPath() + "/providers/lyrics_ovh",
     };
 
     for (const QString &path : pluginPaths) {

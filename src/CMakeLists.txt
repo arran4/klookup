@@ -20,6 +20,7 @@ target_link_libraries(klookup
     # KF6::I18n
     # KF6::DBusAddons
     # KF6::WidgetsAddons
+    # KF6::Wallet
 )
 
 # install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

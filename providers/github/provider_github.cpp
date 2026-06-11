@@ -15,6 +15,7 @@ ProviderGithub::ProviderGithub(QObject *parent)
 
 ProviderGithub::~ProviderGithub()
 {
+    m_nam->deleteLater();
 }
 
 QString ProviderGithub::name() const
@@ -25,6 +26,12 @@ QString ProviderGithub::name() const
 QString ProviderGithub::id() const
 {
     return QStringLiteral("github");
+}
+
+void ProviderGithub::setCredentials(const QString &username, const QString &password)
+{
+    // For GitHub API, we use Personal Access Tokens as password
+    m_authToken = password;
 }
 
 void ProviderGithub::search(const QString &query)
@@ -43,6 +50,10 @@ void ProviderGithub::search(const QString &query)
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup-App"));
     request.setRawHeader("Accept", "application/vnd.github.v3+json");
+
+    if (!m_authToken.isEmpty()) {
+        request.setRawHeader("Authorization", ("token " + m_authToken).toUtf8());
+    }
 
     m_reply = m_nam->get(request);
 
@@ -96,5 +107,7 @@ void ProviderGithub::onReplyFinished()
 
 SearchProvider* ProviderGithub::clone(QObject *parent) const
 {
-    return new ProviderGithub(parent);
+    ProviderGithub *cloned = new ProviderGithub(parent);
+    cloned->m_authToken = m_authToken;
+    return cloned;
 }

@@ -10,6 +10,10 @@
 #include <QPluginLoader>
 #include <QDir>
 #include <QCoreApplication>
+// Mock KWallet
+#ifndef Q_OS_WASM
+// #include <KWallet>
+#endif
 // Mock persistence
 #include <QSettings>
 
@@ -97,6 +101,20 @@ void MainWindow::loadPlugins()
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
                 if (provider) {
+                    // Load wallet credentials if supported
+                    if (provider->supportsAuthentication()) {
+                        /*
+                        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+                        if (wallet && wallet->hasFolder(KWallet::Wallet::PasswordFolder())) {
+                            wallet->setFolder(KWallet::Wallet::PasswordFolder());
+                            QString token;
+                            if (wallet->readPassword(QStringLiteral("KLookup_") + provider->id(), token) == 0) {
+                                provider->setCredentials(QString(), token);
+                            }
+                            delete wallet;
+                        }
+                        */
+                    }
                     m_providers.append(provider);
                 } else {
                     plugin->deleteLater();

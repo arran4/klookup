@@ -5,6 +5,7 @@
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
+#include <QJsonObject>
 
 struct SearchResult {
     QString id;
@@ -31,7 +32,12 @@ public:
     bool isEnabled() const;
     void setEnabled(bool enabled);
 
+    // Virtual clone function to allow creating discrete instances per tab
     virtual SearchProvider* clone(QObject *parent = nullptr) const = 0;
+
+    // Authentication support
+    virtual bool supportsAuthentication() const { return false; }
+    virtual void setCredentials(const QString &username, const QString &password) {}
 
 signals:
     void searchCompleted(const QString &providerId, const QList<SearchResult> &results);

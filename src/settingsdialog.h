@@ -16,6 +16,7 @@ public:
 
 private slots:
     void saveSettings();
+    void showLoginDialog();
 
 private:
     QList<SearchProvider*> m_providers;

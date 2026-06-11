@@ -19,12 +19,16 @@ public:
     void search(const QString &query) override;
     SearchProvider* clone(QObject *parent = nullptr) const override;
 
+    bool supportsAuthentication() const override { return true; }
+    void setCredentials(const QString &username, const QString &password) override;
+
 private slots:
     void onReplyFinished();
 
 private:
     QNetworkAccessManager *m_nam;
     QNetworkReply *m_reply;
+    QString m_authToken;
 };
 
 #endif // PROVIDER_GITHUB_H

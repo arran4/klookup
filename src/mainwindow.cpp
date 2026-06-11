@@ -90,6 +90,8 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/lyrics_ovh",
         QCoreApplication::applicationDirPath() + "/providers/duckduckgo",
         QCoreApplication::applicationDirPath() + "/providers/openlibrary",
+        QCoreApplication::applicationDirPath() + "/providers/themoviedb",
+        QCoreApplication::applicationDirPath() + "/providers/omdb",
     };
 
     for (const QString &path : pluginPaths) {

@@ -84,6 +84,8 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/anilist",
         QCoreApplication::applicationDirPath() + "/providers/tvmaze",
         QCoreApplication::applicationDirPath() + "/providers/lyrics_ovh",
+        QCoreApplication::applicationDirPath() + "/providers/duckduckgo",
+        QCoreApplication::applicationDirPath() + "/providers/openlibrary",
     };
 
     for (const QString &path : pluginPaths) {

@@ -11,3 +11,4 @@ Address PR feedback
 - Add additional open API providers: AniList (Anime), TVMaze (TV Shows), LyricsOVH (Song Lyrics), DuckDuckGo (General), OpenLibrary (Books).
 - Add support for KWallet secure credential storage and authentication logic to SettingsDialog.
 - Add additional auth providers: OMDb and TMDb.
+- Add alternative manga/anime providers: MyAnimeList (Jikan) and MangaBaka (MangaDex).

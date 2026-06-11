@@ -92,6 +92,8 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/openlibrary",
         QCoreApplication::applicationDirPath() + "/providers/themoviedb",
         QCoreApplication::applicationDirPath() + "/providers/omdb",
+        QCoreApplication::applicationDirPath() + "/providers/myanimelist",
+        QCoreApplication::applicationDirPath() + "/providers/mangabaka",
     };
 
     for (const QString &path : pluginPaths) {

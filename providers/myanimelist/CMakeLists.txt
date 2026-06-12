@@ -11,3 +11,4 @@ target_link_libraries(provider_myanimelist
 target_include_directories(provider_myanimelist PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_myanimelist DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
+add_dependencies(plugins provider_myanimelist)

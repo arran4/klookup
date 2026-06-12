@@ -11,3 +11,4 @@ target_link_libraries(provider_duckduckgo
 target_include_directories(provider_duckduckgo PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_duckduckgo DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
+add_dependencies(plugins provider_duckduckgo)

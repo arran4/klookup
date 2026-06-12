@@ -11,3 +11,4 @@ target_link_libraries(provider_tvmaze
 target_include_directories(provider_tvmaze PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_tvmaze DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
+add_dependencies(plugins provider_tvmaze)

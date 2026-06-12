@@ -22,6 +22,8 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     DBus
 )
 
+add_custom_target(plugins ALL)
+
 add_subdirectory(src)
 add_subdirectory(providers/wikipedia)
 add_subdirectory(providers/github)

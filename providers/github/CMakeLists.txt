@@ -11,3 +11,4 @@ target_link_libraries(provider_github
 target_include_directories(provider_github PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_github DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
+add_dependencies(plugins provider_github)

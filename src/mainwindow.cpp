@@ -76,6 +76,7 @@ void MainWindow::loadPlugins()
         pluginsDir.cdUp();
     }
 #endif
+    QString devPluginsPath = pluginsDir.absolutePath() + "/providers";
 
     // In our mock build environment, the plugins are nested differently due to subdirectories
     pluginsDir.cd("providers");
@@ -94,6 +95,18 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/omdb",
         QCoreApplication::applicationDirPath() + "/providers/myanimelist",
         QCoreApplication::applicationDirPath() + "/providers/mangabaka",
+        devPluginsPath + "/wikipedia",
+        devPluginsPath + "/github",
+        devPluginsPath + "/mangaupdates",
+        devPluginsPath + "/anilist",
+        devPluginsPath + "/tvmaze",
+        devPluginsPath + "/lyrics_ovh",
+        devPluginsPath + "/duckduckgo",
+        devPluginsPath + "/openlibrary",
+        devPluginsPath + "/themoviedb",
+        devPluginsPath + "/omdb",
+        devPluginsPath + "/myanimelist",
+        devPluginsPath + "/mangabaka",
     };
 
     for (const QString &path : pluginPaths) {

@@ -12,3 +12,4 @@ Address PR feedback
 - Add support for KWallet secure credential storage and authentication logic to SettingsDialog.
 - Add additional auth providers: OMDb and TMDb.
 - Add alternative manga/anime providers: MyAnimeList (Jikan) and MangaBaka (MangaDex).
+- Fallback conditionally to NDEBUG macro locally to inject plugins in debug scenarios.

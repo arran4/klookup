@@ -76,7 +76,6 @@ void MainWindow::loadPlugins()
         pluginsDir.cdUp();
     }
 #endif
-    QString devPluginsPath = pluginsDir.absolutePath() + "/providers";
 
     // In our mock build environment, the plugins are nested differently due to subdirectories
     pluginsDir.cd("providers");
@@ -95,18 +94,21 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/omdb",
         QCoreApplication::applicationDirPath() + "/providers/myanimelist",
         QCoreApplication::applicationDirPath() + "/providers/mangabaka",
-        devPluginsPath + "/wikipedia",
-        devPluginsPath + "/github",
-        devPluginsPath + "/mangaupdates",
-        devPluginsPath + "/anilist",
-        devPluginsPath + "/tvmaze",
-        devPluginsPath + "/lyrics_ovh",
-        devPluginsPath + "/duckduckgo",
-        devPluginsPath + "/openlibrary",
-        devPluginsPath + "/themoviedb",
-        devPluginsPath + "/omdb",
-        devPluginsPath + "/myanimelist",
-        devPluginsPath + "/mangabaka",
+#ifndef NDEBUG
+        pluginsDir.absolutePath(),
+        QDir::currentPath() + "/providers/wikipedia",
+        QDir::currentPath() + "/providers/github",
+        QDir::currentPath() + "/providers/mangaupdates",
+        QDir::currentPath() + "/providers/anilist",
+        QDir::currentPath() + "/providers/tvmaze",
+        QDir::currentPath() + "/providers/lyrics_ovh",
+        QDir::currentPath() + "/providers/duckduckgo",
+        QDir::currentPath() + "/providers/openlibrary",
+        QDir::currentPath() + "/providers/themoviedb",
+        QDir::currentPath() + "/providers/omdb",
+        QDir::currentPath() + "/providers/myanimelist",
+        QDir::currentPath() + "/providers/mangabaka",
+#endif
     };
 
     for (const QString &path : pluginPaths) {

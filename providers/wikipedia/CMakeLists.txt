@@ -11,4 +11,3 @@ target_link_libraries(provider_wikipedia
 target_include_directories(provider_wikipedia PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_wikipedia DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
-add_dependencies(plugins provider_wikipedia)

@@ -11,4 +11,3 @@ target_link_libraries(provider_anilist
 target_include_directories(provider_anilist PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_anilist DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
-add_dependencies(plugins provider_anilist)

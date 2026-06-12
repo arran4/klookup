@@ -11,4 +11,3 @@ target_link_libraries(provider_mangaupdates
 target_include_directories(provider_mangaupdates PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_mangaupdates DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
-add_dependencies(plugins provider_mangaupdates)

@@ -11,4 +11,3 @@ target_link_libraries(provider_openlibrary
 target_include_directories(provider_openlibrary PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_openlibrary DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
-add_dependencies(plugins provider_openlibrary)

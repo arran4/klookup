@@ -22,7 +22,7 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     DBus
 )
 
-add_custom_target(plugins ALL)
+
 
 add_subdirectory(src)
 add_subdirectory(providers/wikipedia)
@@ -38,3 +38,19 @@ add_subdirectory(providers/omdb)
 add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(runner)
+
+add_custom_target(klookup_with_plugins ALL
+    DEPENDS klookup
+        provider_wikipedia
+        provider_github
+        provider_mangaupdates
+        provider_anilist
+        provider_tvmaze
+        provider_lyrics_ovh
+        provider_duckduckgo
+        provider_openlibrary
+        provider_themoviedb
+        provider_omdb
+        provider_myanimelist
+        provider_mangabaka
+)

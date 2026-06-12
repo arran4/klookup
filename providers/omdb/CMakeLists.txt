@@ -11,4 +11,3 @@ target_link_libraries(provider_omdb
 target_include_directories(provider_omdb PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 install(TARGETS provider_omdb DESTINATION ${KDE_INSTALL_PLUGINDIR}/klookup/providers)
-add_dependencies(plugins provider_omdb)

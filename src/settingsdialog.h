@@ -5,6 +5,7 @@
 #include <QListWidget>
 
 class SearchProvider;
+class QCheckBox;
 
 class SettingsDialog : public QDialog
 {
@@ -21,6 +22,11 @@ private slots:
 private:
     QList<SearchProvider*> m_providers;
     QListWidget *m_listWidget;
+
+    QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_monitorClipboardCheck;
+    QCheckBox *m_autoSearchClipboardCheck;
+    QCheckBox *m_onlyFocusedClipboardCheck;
 };
 
 #endif // SETTINGSDIALOG_H

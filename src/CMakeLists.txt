@@ -20,6 +20,7 @@ target_link_libraries(klookup
     # KF6::I18n
     # KF6::DBusAddons
     # KF6::WidgetsAddons
+    # KF6::XmlGui
     # KF6::Wallet
 )
 

@@ -5,26 +5,32 @@
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QDBusConnection>
-#include <QMenuBar>
-#include <QAction>
 #include <QPluginLoader>
 #include <QDir>
 #include <QCoreApplication>
-// Mock KWallet
+#include <KActionCollection>
+#include <KStandardAction>
+#include <QSystemTrayIcon>
+#include <QMenu>
+#include <QCloseEvent>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <KNotification>
+#include <QSettings>
+
 #ifndef Q_OS_WASM
 // #include <KWallet>
 #endif
-// Mock persistence
-#include <QSettings>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , m_tabWidget(new QTabWidget(this))
     , m_dashboard(new SearchDashboard(this))
+    , m_trayIcon(new QSystemTrayIcon(this))
 {
     m_tabWidget->setTabsClosable(true);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int index) {
-        if (index > 0) { // Don't close the dashboard tab
+        if (index > 0) {
             QWidget *widget = m_tabWidget->widget(index);
             m_tabWidget->removeTab(index);
             widget->deleteLater();
@@ -32,35 +38,96 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     m_tabWidget->addTab(m_dashboard, QStringLiteral("Dashboard"));
-    m_tabWidget->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr); // Dashboard not closable
+    m_tabWidget->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
 
     setCentralWidget(m_tabWidget);
     setWindowTitle(QStringLiteral("KLookup"));
     resize(800, 600);
 
+    setupActions();
+    setupTrayIcon();
     loadPlugins();
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
+    connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
 
-    // Setup menus
-    QAction *settingsAction = new QAction(QStringLiteral("Settings"), this);
-    connect(settingsAction, &QAction::triggered, this, [this]() {
-        SettingsDialog dialog(m_providers, this);
-        dialog.exec();
-    });
-    menuBar()->addAction(settingsAction);
-
-    // Set up DBus Adaptor
     new DBusAdaptor(this);
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.kde.klookup"));
     QDBusConnection::sessionBus().registerObject(QStringLiteral("/"), this);
 
+    setupGUI();
     loadSettings();
 }
 
 MainWindow::~MainWindow()
 {
     qDeleteAll(m_providers);
+}
+
+void MainWindow::setupActions()
+{
+    QAction *settingsAction = new QAction(QStringLiteral("Settings"), this);
+    connect(settingsAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
+    menuBar()->addAction(settingsAction);
+
+}
+
+void MainWindow::setupTrayIcon()
+{
+    m_trayIcon->setIcon(QIcon::fromTheme(QStringLiteral("dictionary")));
+    QMenu *trayMenu = new QMenu(this);
+
+    QAction *restoreAction = trayMenu->addAction(QStringLiteral("Restore"));
+    connect(restoreAction, &QAction::triggered, this, &MainWindow::showNormal);
+
+    QAction *settingsActionIcon = trayMenu->addAction(QStringLiteral("Settings"));
+    connect(settingsActionIcon, &QAction::triggered, this, &MainWindow::showSettingsDialog);
+    trayMenu->addSeparator();
+    QAction *quitActionIcon = trayMenu->addAction(QStringLiteral("Quit"));
+    connect(quitActionIcon, &QAction::triggered, qApp, &QCoreApplication::quit);
+
+    m_trayIcon->setContextMenu(trayMenu);
+    m_trayIcon->show();
+
+    connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+        if (reason == QSystemTrayIcon::Trigger) {
+            setVisible(!isVisible());
+        }
+    });
+}
+
+void MainWindow::showSettingsDialog()
+{
+    SettingsDialog dialog(m_providers, this);
+    dialog.exec();
+
+    // We re-check clipboard monitoring if settings change
+}
+
+void MainWindow::onClipboardChanged()
+{
+    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    bool monitorClipboard = settings.value(QStringLiteral("MonitorClipboard"), false).toBool();
+    bool autoSearch = settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool();
+    bool onlyWhenFocused = settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool();
+
+    if (!monitorClipboard) return;
+    if (onlyWhenFocused && !isActiveWindow()) return;
+
+    QString text = QGuiApplication::clipboard()->text().trimmed();
+    if (text.isEmpty()) return;
+
+    if (autoSearch) {
+        KNotification::event(QStringLiteral("ClipboardSearch"), QStringLiteral("Searching for: ") + text);
+        performSearch(text);
+        showNormal();
+        raise();
+        activateWindow();
+    } else {
+        // Just prepopulate
+        m_tabWidget->setCurrentIndex(0); // Switch to dashboard
+        // Assuming we could set dashboard text directly if needed.
+    }
 }
 
 void MainWindow::loadPlugins()
@@ -77,11 +144,9 @@ void MainWindow::loadPlugins()
     }
 #endif
 
-    // In our mock build environment, the plugins are nested differently due to subdirectories
     pluginsDir.cd("providers");
 
     const QStringList pluginPaths = {
-        pluginsDir.absolutePath(),
         QCoreApplication::applicationDirPath() + "/providers/wikipedia",
         QCoreApplication::applicationDirPath() + "/providers/github",
         QCoreApplication::applicationDirPath() + "/providers/mangaupdates",
@@ -95,7 +160,6 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + "/providers/myanimelist",
         QCoreApplication::applicationDirPath() + "/providers/mangabaka",
 #ifndef NDEBUG
-        pluginsDir.absolutePath(),
         QDir::currentPath() + "/providers/wikipedia",
         QDir::currentPath() + "/providers/github",
         QDir::currentPath() + "/providers/mangaupdates",
@@ -120,20 +184,6 @@ void MainWindow::loadPlugins()
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
                 if (provider) {
-                    // Load wallet credentials if supported
-                    if (provider->supportsAuthentication()) {
-                        /*
-                        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                        if (wallet && wallet->hasFolder(KWallet::Wallet::PasswordFolder())) {
-                            wallet->setFolder(KWallet::Wallet::PasswordFolder());
-                            QString token;
-                            if (wallet->readPassword(QStringLiteral("KLookup_") + provider->id(), token) == 0) {
-                                provider->setCredentials(QString(), token);
-                            }
-                            delete wallet;
-                        }
-                        */
-                    }
                     m_providers.append(provider);
                 } else {
                     plugin->deleteLater();
@@ -169,13 +219,21 @@ void MainWindow::performSearch(const QString &query)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    saveSettings();
-    QMainWindow::closeEvent(event);
+    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    bool minimizeToTray = settings.value(QStringLiteral("MinimizeToTray"), true).toBool();
+
+    if (minimizeToTray && m_trayIcon->isVisible()) {
+        hide();
+        event->ignore();
+    } else {
+        saveSettings();
+        QMainWindow::closeEvent(event);
+    }
 }
 
 void MainWindow::loadSettings()
 {
-    QSettings settings("KDE", "klookup");
+    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
 
     int size = settings.beginReadArray("OpenTabs");
     for (int i = 0; i < size; ++i) {
@@ -194,7 +252,7 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
-    QSettings settings("KDE", "klookup");
+    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
 
     settings.remove(QStringLiteral("OpenTabs"));
 

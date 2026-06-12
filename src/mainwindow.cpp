@@ -23,7 +23,7 @@
 #endif
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
+    : KXmlGuiWindow(parent)
     , m_tabWidget(new QTabWidget(this))
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
@@ -66,10 +66,8 @@ MainWindow::~MainWindow()
 
 void MainWindow::setupActions()
 {
-    QAction *settingsAction = new QAction(QStringLiteral("Settings"), this);
-    connect(settingsAction, &QAction::triggered, this, &MainWindow::showSettingsDialog);
-    menuBar()->addAction(settingsAction);
-
+    KStandardAction::preferences(this, &MainWindow::showSettingsDialog, actionCollection());
+    KStandardAction::quit(qApp, &QCoreApplication::quit, actionCollection());
 }
 
 void MainWindow::setupTrayIcon()
@@ -80,11 +78,11 @@ void MainWindow::setupTrayIcon()
     QAction *restoreAction = trayMenu->addAction(QStringLiteral("Restore"));
     connect(restoreAction, &QAction::triggered, this, &MainWindow::showNormal);
 
-    QAction *settingsActionIcon = trayMenu->addAction(QStringLiteral("Settings"));
-    connect(settingsActionIcon, &QAction::triggered, this, &MainWindow::showSettingsDialog);
+    trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Preferences)));
+    // Removed locally to use KF6
     trayMenu->addSeparator();
-    QAction *quitActionIcon = trayMenu->addAction(QStringLiteral("Quit"));
-    connect(quitActionIcon, &QAction::triggered, qApp, &QCoreApplication::quit);
+    trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Quit)));
+    // Removed locally to use KF6
 
     m_trayIcon->setContextMenu(trayMenu);
     m_trayIcon->show();
@@ -144,6 +142,7 @@ void MainWindow::loadPlugins()
     }
 #endif
 
+    // In our mock build environment, the plugins are nested differently due to subdirectories
     pluginsDir.cd("providers");
 
     const QStringList pluginPaths = {
@@ -184,6 +183,20 @@ void MainWindow::loadPlugins()
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
                 if (provider) {
+                    // Load wallet credentials if supported
+                    if (provider->supportsAuthentication()) {
+                        /*
+                        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+                        if (wallet && wallet->hasFolder(KWallet::Wallet::PasswordFolder())) {
+                            wallet->setFolder(KWallet::Wallet::PasswordFolder());
+                            QString token;
+                            if (wallet->readPassword(QStringLiteral("KLookup_") + provider->id(), token) == 0) {
+                                provider->setCredentials(QString(), token);
+                            }
+                            delete wallet;
+                        }
+                        */
+                    }
                     m_providers.append(provider);
                 } else {
                     plugin->deleteLater();
@@ -227,7 +240,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
         event->ignore();
     } else {
         saveSettings();
-        QMainWindow::closeEvent(event);
+        KXmlGuiWindow::closeEvent(event);
     }
 }
 

@@ -1,14 +1,14 @@
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow> // Using QMainWindow to bypass KF6 absence locally, actual KF6 targets KXmlGuiWindow
+#include <KXmlGuiWindow>
 #include <QTabWidget>
 #include "searchprovider.h"
 #include "searchdashboard.h"
 
 class QSystemTrayIcon;
 
-class MainWindow : public QMainWindow
+class MainWindow : public KXmlGuiWindow
 {
     Q_OBJECT
 

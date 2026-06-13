@@ -230,17 +230,17 @@ void MainWindow::performSearch(const QString &query)
     }
 }
 
-void MainWindow::closeEvent(QCloseEvent *event)
+bool MainWindow::queryClose()
 {
     QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
     bool minimizeToTray = settings.value(QStringLiteral("MinimizeToTray"), true).toBool();
 
-    if (minimizeToTray && m_trayIcon->isVisible()) {
+    if (minimizeToTray && m_trayIcon->isVisible() && !qApp->isSavingSession()) {
         hide();
-        event->ignore();
-    } else {
-        saveSettings();
-        KXmlGuiWindow::closeEvent(event);
+        return false;
+    }
+    saveSettings();
+    return true;
     }
 }
 

@@ -20,7 +20,7 @@ public slots:
     void performSearch(const QString &query);
 
 protected:
-    void closeEvent(QCloseEvent *event) override;
+    bool queryClose() override;
 
 private slots:
     void onClipboardChanged();

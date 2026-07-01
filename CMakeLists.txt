@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-set(QT_MAJOR_VERSION 6)
+# No need to set QT_MAJOR_VERSION here
 
 set(QT_MIN_VERSION "6.0.0")
 
@@ -35,6 +35,7 @@ find_package(KF6 REQUIRED COMPONENTS
     WidgetsAddons
     XmlGui
     Wallet
+    Notifications
 )
 
 add_subdirectory(src)

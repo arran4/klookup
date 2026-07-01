@@ -22,6 +22,7 @@ target_link_libraries(klookup
     KF6::WidgetsAddons
     KF6::XmlGui
     KF6::Wallet
+    KF6::Notifications
 )
 
 install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

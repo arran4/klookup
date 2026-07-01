@@ -18,8 +18,8 @@ It allows you to look up queries across various information providers globally, 
 
 - CMake 3.16+
 - C++17 Compiler
-- Qt 6 (Core, Gui, Widgets, Network, DBus)
-- KDE Frameworks 6 (CoreAddons, Config, I18n, Runner, DBusAddons, WidgetsAddons, XmlGui, Wallet)
+- Qt 6 (Core, Gui, Widgets, Network, DBus, Qml)
+- KDE Frameworks 6 (CoreAddons, Config, I18n, Runner, DBusAddons, WidgetsAddons, XmlGui, Wallet, Notifications)
 
 ## Building
 

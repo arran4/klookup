@@ -37,7 +37,7 @@ public:
 
     // Authentication support
     virtual bool supportsAuthentication() const { return false; }
-    virtual void setCredentials(const QString &username, const QString &password) {}
+    virtual void setCredentials(const QString &/*username*/, const QString &/*password*/) {}
 
 signals:
     void searchCompleted(const QString &providerId, const QList<SearchResult> &results);

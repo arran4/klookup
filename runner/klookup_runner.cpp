@@ -3,21 +3,19 @@
 #include <QDBusMessage>
 
 #ifndef Q_OS_WASM // Bypass mocked environment constraints
-// #include <KLocalizedString>
+#include <KLocalizedString>
 #endif
 
-// MOCKED KF6
-#define K_PLUGIN_CLASS_WITH_JSON(x, y)
 
 K_PLUGIN_CLASS_WITH_JSON(KLookupRunner, "klookup_runner.json")
 
 KLookupRunner::KLookupRunner(QObject *parent, const QVariantList &args)
     : KRunner::AbstractRunner(parent, args)
 {
-/* #ifndef Q_OS_WASM
+#ifndef Q_OS_WASM
     setObjectName(QStringLiteral("KLookup"));
     setSyntaxes({KRunner::RunnerSyntax(QStringLiteral(":q:"), i18n("Search KLookup"))});
-#endif */
+#endif
 }
 
 KLookupRunner::~KLookupRunner()
@@ -31,17 +29,16 @@ void KLookupRunner::match(KRunner::RunnerContext &context)
         return;
     }
 
-/* #ifndef Q_OS_WASM
+#ifndef Q_OS_WASM
     KRunner::QueryMatch match(this);
     match.setText(i18n("Lookup in KLookup: %1", query));
     match.setIconName(QStringLiteral("dictionary"));
     match.setData(query);
     match.setRelevance(0.8);
     context.addMatch(match);
-#endif */
+#endif
 }
 
-/* #ifndef Q_OS_WASM
 void KLookupRunner::run(const KRunner::RunnerContext &context, const KRunner::QueryMatch &match)
 {
     Q_UNUSED(context);
@@ -56,21 +53,5 @@ void KLookupRunner::run(const KRunner::RunnerContext &context, const KRunner::Qu
     msg << query;
     QDBusConnection::sessionBus().send(msg);
 }
-#else */
-void KLookupRunner::run(const KRunner::RunnerContext &context, const QVariant &match)
-{
-    Q_UNUSED(context);
-    QString query = match.toString();
 
-    QDBusMessage msg = QDBusMessage::createMethodCall(
-        QStringLiteral("org.kde.klookup"),
-        QStringLiteral("/"),
-        QStringLiteral("org.kde.klookup"),
-        QStringLiteral("performSearch")
-    );
-    msg << query;
-    QDBusConnection::sessionBus().send(msg);
-}
-// #endif
-
-// #include "klookup_runner.moc"
+#include "klookup_runner.moc"

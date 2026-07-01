@@ -14,14 +14,14 @@ target_link_libraries(klookup
     Qt6::Widgets
     Qt6::Network
     Qt6::DBus
-    # KF5::CoreAddons
-    # KF5::ConfigCore
-    # KF5::ConfigGui
-    # KF5::I18n
-    # KF5::DBusAddons
-    # KF5::WidgetsAddons
-    # KF5::XmlGui
-    # KF5::Wallet
+    KF6::CoreAddons
+    KF6::ConfigCore
+    KF6::ConfigGui
+    KF6::I18n
+    KF6::DBusAddons
+    KF6::WidgetsAddons
+    KF6::XmlGui
+    KF6::Wallet
 )
 
-# install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

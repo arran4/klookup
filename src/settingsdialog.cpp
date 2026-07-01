@@ -12,7 +12,7 @@
 #include <QLabel>
 
 #ifndef Q_OS_WASM
-// #include <KWallet>
+#include <KWallet>
 #endif
 
 SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent)

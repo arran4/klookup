@@ -19,7 +19,7 @@
 #include <QSettings>
 
 #ifndef Q_OS_WASM
-// #include <KWallet>
+#include <KWallet>
 #endif
 
 MainWindow::MainWindow(QWidget *parent)

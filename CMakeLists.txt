@@ -7,12 +7,31 @@ set(CMAKE_AUTOMOC ON)
 
 set(QT_MIN_VERSION "6.0.0")
 
+find_package(ECM REQUIRED NO_MODULE)
+set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_MODULE_PATH})
+
+include(KDEInstallDirs)
+include(KDECMakeSettings)
+include(KDECompilerSettings NO_POLICY_SCOPE)
+include(FeatureSummary)
+
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     Core
     Gui
     Widgets
     Network
     DBus
+)
+
+find_package(KF6 REQUIRED COMPONENTS
+    CoreAddons
+    Config
+    I18n
+    Runner
+    DBusAddons
+    WidgetsAddons
+    XmlGui
+    Wallet
 )
 
 add_subdirectory(src)
@@ -45,3 +64,5 @@ add_custom_target(klookup_with_plugins ALL
         provider_myanimelist
         provider_mangabaka
 )
+
+feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

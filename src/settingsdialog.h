@@ -1,0 +1,32 @@
+#ifndef SETTINGSDIALOG_H
+#define SETTINGSDIALOG_H
+
+#include <QDialog>
+#include <QListWidget>
+
+class SearchProvider;
+class QCheckBox;
+
+class SettingsDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr);
+    ~SettingsDialog();
+
+private slots:
+    void saveSettings();
+    void showLoginDialog();
+
+private:
+    QList<SearchProvider*> m_providers;
+    QListWidget *m_listWidget;
+
+    QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_monitorClipboardCheck;
+    QCheckBox *m_autoSearchClipboardCheck;
+    QCheckBox *m_onlyFocusedClipboardCheck;
+};
+
+#endif // SETTINGSDIALOG_H

@@ -1,0 +1,6 @@
+build/
+*~
+*.swp
+*.o
+*.moc
+CMakeLists.txt.user

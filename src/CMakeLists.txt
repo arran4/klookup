@@ -36,3 +36,5 @@ target_link_libraries(klookup
 )
 
 install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+install(PROGRAMS org.kde.klookup.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+

@@ -28,7 +28,7 @@ QString ProviderOMDb::id() const
     return QStringLiteral("omdb");
 }
 
-void ProviderOMDb::setCredentials(const QString &username, const QString &password)
+void ProviderOMDb::setCredentials(const QString &/*username*/, const QString &password)
 {
     m_apiKey = password;
 }

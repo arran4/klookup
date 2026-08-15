@@ -114,6 +114,18 @@ void SettingsDialog::showLoginDialog()
                                           &ok);
     if (ok) {
         provider->setCredentials(QString(), token);
+#ifndef Q_OS_WASM
+        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+        if (wallet) {
+            if (!wallet->hasFolder(QStringLiteral("KLookup"))) {
+                wallet->createFolder(QStringLiteral("KLookup"));
+            }
+            wallet->setFolder(QStringLiteral("KLookup"));
+            wallet->writePassword(provider->id(), token);
+            delete wallet;
+        }
+#endif
+        QMessageBox::information(this, QStringLiteral("Saved"), QStringLiteral("Credentials saved for %1.").arg(provider->name()));
     }
 }
 

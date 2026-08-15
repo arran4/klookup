@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=KLookup
+GenericName=Multi-Provider Search Tool
+Comment=Dictionary-style multi-provider search tool for KDE
+Exec=klookup %u
+Icon=dictionary
+Type=Application
+Categories=Qt;KDE;Utility;Dictionary;
+Terminal=false
+StartupNotify=true
+DBusActivatable=true
+X-DBus-ServiceName=org.kde.klookup

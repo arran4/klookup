@@ -130,75 +130,81 @@ void MainWindow::onClipboardChanged()
 
 void MainWindow::loadPlugins()
 {
-    QDir pluginsDir(QCoreApplication::applicationDirPath());
-#if defined(Q_OS_WIN)
-    if (pluginsDir.dirName().toLower() == "debug" || pluginsDir.dirName().toLower() == "release")
-        pluginsDir.cdUp();
-#elif defined(Q_OS_MAC)
-    if (pluginsDir.dirName() == "MacOS") {
-        pluginsDir.cdUp();
-        pluginsDir.cdUp();
-        pluginsDir.cdUp();
-    }
-#endif
+    QSet<QString> loadedProviderIds;
 
-    // In our mock build environment, the plugins are nested differently due to subdirectories
-    pluginsDir.cd("providers");
-
-    const QStringList pluginPaths = {
-        QCoreApplication::applicationDirPath() + "/providers/wikipedia",
-        QCoreApplication::applicationDirPath() + "/providers/github",
-        QCoreApplication::applicationDirPath() + "/providers/mangaupdates",
-        QCoreApplication::applicationDirPath() + "/providers/anilist",
-        QCoreApplication::applicationDirPath() + "/providers/tvmaze",
-        QCoreApplication::applicationDirPath() + "/providers/lyrics_ovh",
-        QCoreApplication::applicationDirPath() + "/providers/duckduckgo",
-        QCoreApplication::applicationDirPath() + "/providers/openlibrary",
-        QCoreApplication::applicationDirPath() + "/providers/themoviedb",
-        QCoreApplication::applicationDirPath() + "/providers/omdb",
-        QCoreApplication::applicationDirPath() + "/providers/myanimelist",
-        QCoreApplication::applicationDirPath() + "/providers/mangabaka",
-#ifndef NDEBUG
-        QDir::currentPath() + "/providers/wikipedia",
-        QDir::currentPath() + "/providers/github",
-        QDir::currentPath() + "/providers/mangaupdates",
-        QDir::currentPath() + "/providers/anilist",
-        QDir::currentPath() + "/providers/tvmaze",
-        QDir::currentPath() + "/providers/lyrics_ovh",
-        QDir::currentPath() + "/providers/duckduckgo",
-        QDir::currentPath() + "/providers/openlibrary",
-        QDir::currentPath() + "/providers/themoviedb",
-        QDir::currentPath() + "/providers/omdb",
-        QDir::currentPath() + "/providers/myanimelist",
-        QDir::currentPath() + "/providers/mangabaka",
-#endif
+    QStringList pluginPaths = {
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../lib64/plugins/klookup"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plugins/klookup"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/plugins/klookup"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/wikipedia"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/github"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/mangaupdates"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/anilist"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/tvmaze"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/lyrics_ovh"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/duckduckgo"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/openlibrary"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/themoviedb"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/omdb"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/myanimelist"),
+        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/mangabaka"),
+        QDir::currentPath() + QStringLiteral("/providers/wikipedia"),
+        QDir::currentPath() + QStringLiteral("/providers/github"),
+        QDir::currentPath() + QStringLiteral("/providers/mangaupdates"),
+        QDir::currentPath() + QStringLiteral("/providers/anilist"),
+        QDir::currentPath() + QStringLiteral("/providers/tvmaze"),
+        QDir::currentPath() + QStringLiteral("/providers/lyrics_ovh"),
+        QDir::currentPath() + QStringLiteral("/providers/duckduckgo"),
+        QDir::currentPath() + QStringLiteral("/providers/openlibrary"),
+        QDir::currentPath() + QStringLiteral("/providers/themoviedb"),
+        QDir::currentPath() + QStringLiteral("/providers/omdb"),
+        QDir::currentPath() + QStringLiteral("/providers/myanimelist"),
+        QDir::currentPath() + QStringLiteral("/providers/mangabaka"),
     };
+
+    for (const QString &libPath : QCoreApplication::libraryPaths()) {
+        pluginPaths.append(libPath + QStringLiteral("/klookup/providers"));
+        pluginPaths.append(libPath + QStringLiteral("/klookup"));
+    }
 
     for (const QString &path : pluginPaths) {
         QDir dir(path);
+        if (!dir.exists()) {
+            continue;
+        }
+
         const auto entryList = dir.entryList(QDir::Files);
         for (const QString &fileName : entryList) {
+            if (!fileName.endsWith(QStringLiteral(".so")) && !fileName.endsWith(QStringLiteral(".dll")) && !fileName.endsWith(QStringLiteral(".dylib"))) {
+                continue;
+            }
+
             QPluginLoader loader(dir.absoluteFilePath(fileName));
             QObject *plugin = loader.instance();
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
-                if (provider) {
+                if (provider && !loadedProviderIds.contains(provider->id())) {
+                    loadedProviderIds.insert(provider->id());
+
                     // Load wallet credentials if supported
                     if (provider->supportsAuthentication()) {
-                        /*
+#ifndef Q_OS_WASM
                         KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                        if (wallet && wallet->hasFolder(KWallet::Wallet::PasswordFolder())) {
-                            wallet->setFolder(KWallet::Wallet::PasswordFolder());
-                            QString token;
-                            if (wallet->readPassword(QStringLiteral("KLookup_") + provider->id(), token) == 0) {
-                                provider->setCredentials(QString(), token);
+                        if (wallet) {
+                            if (wallet->hasFolder(QStringLiteral("KLookup"))) {
+                                wallet->setFolder(QStringLiteral("KLookup"));
+                                QString token;
+                                if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
+                                    provider->setCredentials(QString(), token);
+                                }
                             }
                             delete wallet;
                         }
-                        */
+#endif
                     }
                     m_providers.append(provider);
-                } else {
+                } else if (!provider) {
                     plugin->deleteLater();
                 }
             }
@@ -241,7 +247,7 @@ bool MainWindow::queryClose()
     }
     saveSettings();
     return true;
-    }
+}
 
 void MainWindow::loadSettings()
 {

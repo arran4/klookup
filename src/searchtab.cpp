@@ -82,6 +82,7 @@ void SearchTab::setError(const QString &providerName, const QString &errorMsg)
 
 void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
 {
+    Q_UNUSED(column);
     QVariant data = item->data(0, Qt::UserRole);
     if (!data.isValid()) {
         m_detailsView->clear();
@@ -90,9 +91,13 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
 
     SearchResult res = data.value<SearchResult>();
 
-    QString html = QStringLiteral("<h2>%1</h2>").arg(res.title);
-    html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type);
-    html += QStringLiteral("<p>%1</p>").arg(res.description);
+    QString html = QStringLiteral("<h2>%1</h2>").arg(res.title.toHtmlEscaped());
+    if (!res.type.isEmpty()) {
+        html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
+    }
+    if (!res.description.isEmpty()) {
+        html += QStringLiteral("<p>%1</p>").arg(res.description);
+    }
 
     if (!res.url.isEmpty()) {
         html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(res.url);
@@ -101,10 +106,11 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
     if (!res.additionalData.isEmpty()) {
         html += QStringLiteral("<h3>Additional Info</h3><ul>");
         for (auto it = res.additionalData.cbegin(), end = res.additionalData.cend(); it != end; ++it) {
-            html += QStringLiteral("<li><b>%1:</b> %2</li>").arg(it.key(), it.value().toString());
+            html += QStringLiteral("<li><b>%1:</b> %2</li>").arg(it.key().toHtmlEscaped(), it.value().toString().toHtmlEscaped());
         }
         html += QStringLiteral("</ul>");
     }
 
     m_detailsView->setHtml(html);
 }
+

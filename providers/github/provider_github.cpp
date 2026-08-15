@@ -28,7 +28,7 @@ QString ProviderGithub::id() const
     return QStringLiteral("github");
 }
 
-void ProviderGithub::setCredentials(const QString &username, const QString &password)
+void ProviderGithub::setCredentials(const QString &/*username*/, const QString &password)
 {
     // For GitHub API, we use Personal Access Tokens as password
     m_authToken = password;

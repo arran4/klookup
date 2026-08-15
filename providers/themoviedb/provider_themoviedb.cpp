@@ -28,7 +28,7 @@ QString ProviderTheMovieDB::id() const
     return QStringLiteral("themoviedb");
 }
 
-void ProviderTheMovieDB::setCredentials(const QString &username, const QString &password)
+void ProviderTheMovieDB::setCredentials(const QString &/*username*/, const QString &password)
 {
     m_apiKey = password;
 }

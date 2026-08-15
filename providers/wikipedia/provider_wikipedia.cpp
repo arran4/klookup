@@ -8,13 +8,14 @@
 
 ProviderWikipedia::ProviderWikipedia(QObject *parent)
     : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager())
+    , m_nam(new QNetworkAccessManager(this))
     , m_reply(nullptr)
 {
 }
 
 ProviderWikipedia::~ProviderWikipedia()
 {
+    m_nam->deleteLater();
 }
 
 QString ProviderWikipedia::name() const

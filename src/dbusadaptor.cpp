@@ -9,5 +9,8 @@ DBusAdaptor::DBusAdaptor(MainWindow *parent)
 
 void DBusAdaptor::performSearch(const QString &query)
 {
+    m_mainWindow->show();
+    m_mainWindow->raise();
+    m_mainWindow->activateWindow();
     m_mainWindow->performSearch(query);
 }

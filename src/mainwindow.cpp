@@ -17,6 +17,7 @@
 #include <QGuiApplication>
 #include <KNotification>
 #include <QSettings>
+#include <QStyle>
 
 #ifndef Q_OS_WASM
 #include <KWallet>
@@ -31,6 +32,9 @@ MainWindow::MainWindow(QWidget *parent)
     QIcon icon = QIcon::fromTheme(QStringLiteral("dictionary"));
     if (icon.isNull()) {
         icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
+        if (icon.isNull()) {
+            icon = qApp->style()->standardIcon(QStyle::SP_ComputerIcon);
+        }
     }
     QApplication::setWindowIcon(icon);
     m_trayIcon->setIcon(icon);
@@ -61,7 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.kde.klookup"));
     QDBusConnection::sessionBus().registerObject(QStringLiteral("/"), this);
 
-    setXMLFile(QStringLiteral("klookupui.rc"));
+    setXMLFile(QStringLiteral(":/kxmlgui5/klookup/klookupui.rc"));
     setupGUI();
     loadSettings();
 }

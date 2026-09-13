@@ -4,6 +4,8 @@ add_library(klookup_core STATIC
 
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+qt_add_resources(klookup_core "klookup_resources" PREFIX "/kxmlgui5/klookup" FILES klookupui.rc)
+
 target_link_libraries(klookup_core
     Qt6::Core
 )

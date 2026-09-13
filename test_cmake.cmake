@@ -1,5 +1,0 @@
-cmake_minimum_required(VERSION 3.16)
-project(test_multi)
-add_executable(t1 main.cpp)
-add_library(t2 MODULE lib.cpp)
-set_target_properties(t2 PROPERTIES LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:t1>/providers")

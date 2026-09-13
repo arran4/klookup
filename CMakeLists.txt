@@ -52,20 +52,33 @@ add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(runner)
 
+set(KLOOKUP_PROVIDERS
+    provider_wikipedia
+    provider_github
+    provider_mangaupdates
+    provider_anilist
+    provider_tvmaze
+    provider_lyrics_ovh
+    provider_duckduckgo
+    provider_openlibrary
+    provider_themoviedb
+    provider_omdb
+    provider_myanimelist
+    provider_mangabaka
+)
+
+foreach(provider ${KLOOKUP_PROVIDERS})
+    set_target_properties(${provider} PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/providers"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/providers"
+    )
+endforeach()
+
+add_dependencies(klookup ${KLOOKUP_PROVIDERS})
+
 add_custom_target(klookup_with_plugins ALL
     DEPENDS klookup
-        provider_wikipedia
-        provider_github
-        provider_mangaupdates
-        provider_anilist
-        provider_tvmaze
-        provider_lyrics_ovh
-        provider_duckduckgo
-        provider_openlibrary
-        provider_themoviedb
-        provider_omdb
-        provider_myanimelist
-        provider_mangabaka
+        ${KLOOKUP_PROVIDERS}
 )
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

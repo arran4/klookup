@@ -17,6 +17,8 @@ add_executable(klookup
     settingsdialog.cpp
 )
 
+qt_add_resources(klookup "klookup_resources" PREFIX "/kxmlgui5/klookup" FILES klookupui.rc)
+
 target_link_libraries(klookup
     klookup_core
     Qt6::Core
@@ -37,4 +39,5 @@ target_link_libraries(klookup
 
 install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(PROGRAMS org.kde.klookup.desktop DESTINATION ${KDE_INSTALL_APPDIR})
+install(FILES klookupui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/klookup)
 

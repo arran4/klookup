@@ -5,8 +5,8 @@
 - All build and test commands that require KDE/Qt dependencies must run through `.jules/run.sh`.
 - The repository uses CMake to build. To build and test, you should run:
   ```bash
-  .jules/run.sh sudo apt-get update
-  .jules/run.sh sudo apt-get install -y libkf6runner-dev
+  .jules/run.sh apt-get update
+  .jules/run.sh apt-get install -y libkf6runner-dev
   .jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
   .jules/run.sh cmake --build build --parallel
   .jules/run.sh ctest --test-dir build --output-on-failure

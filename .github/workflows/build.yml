@@ -8,23 +8,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/arran4/kde-dev-rootfs:forky-latest
-      options: --user root
 
     steps:
     - uses: actions/checkout@v4
 
+    - name: Bootstrap environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zstd
+        ./.jules/bootstrap.sh
+
     - name: Install dependencies
       run: |
-        apt-get update
-        apt-get install -y libkf6runner-dev cmake ninja-build build-essential g++
+        ./.jules/run.sh apt-get update
+        ./.jules/run.sh apt-get install -y libkf6runner-dev cmake ninja-build build-essential g++
 
     - name: Configure CMake
-      run: cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+      run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
 
     - name: Build klookup_with_plugins
-      run: cmake --build build --target klookup_with_plugins --parallel
+      run: ./.jules/run.sh cmake --build build --target klookup_with_plugins --parallel
 
     - name: Run CTest
-      run: ctest --test-dir build --output-on-failure
+      run: ./.jules/run.sh ctest --test-dir build --output-on-failure

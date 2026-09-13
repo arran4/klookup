@@ -28,6 +28,7 @@ else
     sudo mount -t proc proc "${CACHE_DIR}/proc" && mount_proc=true
     sudo mount -t sysfs sys "${CACHE_DIR}/sys" && mount_sys=true
     sudo mount --rbind /dev "${CACHE_DIR}/dev" && mount_dev=true
+    sudo mount --make-rslave "${CACHE_DIR}/dev"
 
     if [ -f "${CACHE_DIR}/etc/resolv.conf" ]; then
         sudo mv "${CACHE_DIR}/etc/resolv.conf" "${CACHE_DIR}/etc/resolv.conf.bak"

@@ -65,7 +65,7 @@ MainWindow::MainWindow(QWidget *parent)
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.kde.klookup"));
     QDBusConnection::sessionBus().registerObject(QStringLiteral("/"), this);
 
-    setXMLFile(QStringLiteral(":/kxmlgui5/klookup/klookupui.rc"));
+    setXMLFile(QStringLiteral("klookupui.rc"));
     setupGUI();
     loadSettings();
 }

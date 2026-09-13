@@ -69,8 +69,8 @@ set(KLOOKUP_PROVIDERS
 
 foreach(provider ${KLOOKUP_PROVIDERS})
     set_target_properties(${provider} PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/providers"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/src/providers"
+        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:klookup>/providers"
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:klookup>/providers"
     )
 endforeach()
 

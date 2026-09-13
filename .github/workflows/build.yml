@@ -1,0 +1,30 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/arran4/kde-dev-rootfs:forky-latest
+      options: --user root
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y libkf6runner-dev cmake ninja-build build-essential g++
+
+    - name: Configure CMake
+      run: cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+
+    - name: Build klookup_with_plugins
+      run: cmake --build build --target klookup_with_plugins --parallel
+
+    - name: Run CTest
+      run: ctest --test-dir build --output-on-failure

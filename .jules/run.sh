@@ -16,7 +16,7 @@ else
         set +e
         rm -f run_inner.sh
         if [ "$mount_workspace" = true ]; then sudo umount "${CACHE_DIR}/workspace" 2>/dev/null; fi
-        if [ "$mount_dev" = true ]; then sudo umount "${CACHE_DIR}/dev" 2>/dev/null; fi
+        if [ "$mount_dev" = true ]; then sudo umount -R "${CACHE_DIR}/dev" 2>/dev/null; fi
         if [ "$mount_sys" = true ]; then sudo umount "${CACHE_DIR}/sys" 2>/dev/null; fi
         if [ "$mount_proc" = true ]; then sudo umount "${CACHE_DIR}/proc" 2>/dev/null; fi
         sudo rm -f "${CACHE_DIR}/etc/resolv.conf"
@@ -27,7 +27,7 @@ else
 
     sudo mount -t proc proc "${CACHE_DIR}/proc" && mount_proc=true
     sudo mount -t sysfs sys "${CACHE_DIR}/sys" && mount_sys=true
-    sudo mount -o bind /dev "${CACHE_DIR}/dev" && mount_dev=true
+    sudo mount --rbind /dev "${CACHE_DIR}/dev" && mount_dev=true
 
     if [ -f "${CACHE_DIR}/etc/resolv.conf" ]; then
         sudo mv "${CACHE_DIR}/etc/resolv.conf" "${CACHE_DIR}/etc/resolv.conf.bak"

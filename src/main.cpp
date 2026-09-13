@@ -7,6 +7,7 @@
 
 int main(int argc, char *argv[])
 {
+    QGuiApplication::setDesktopFileName(QStringLiteral("org.kde.klookup"));
     QApplication app(argc, argv);
     KLocalizedString::setApplicationDomain("klookup");
 

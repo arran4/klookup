@@ -28,6 +28,12 @@ MainWindow::MainWindow(QWidget *parent)
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
 {
+    QIcon icon = QIcon::fromTheme(QStringLiteral("dictionary"));
+    if (icon.isNull()) {
+        icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
+    }
+    QApplication::setWindowIcon(icon);
+    m_trayIcon->setIcon(icon);
     m_tabWidget->setTabsClosable(true);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int index) {
         if (index > 0) {
@@ -55,6 +61,7 @@ MainWindow::MainWindow(QWidget *parent)
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.kde.klookup"));
     QDBusConnection::sessionBus().registerObject(QStringLiteral("/"), this);
 
+    setXMLFile(QStringLiteral("klookupui.rc"));
     setupGUI();
     loadSettings();
 }
@@ -72,7 +79,6 @@ void MainWindow::setupActions()
 
 void MainWindow::setupTrayIcon()
 {
-    m_trayIcon->setIcon(QIcon::fromTheme(QStringLiteral("dictionary")));
     QMenu *trayMenu = new QMenu(this);
 
     QAction *restoreAction = trayMenu->addAction(QStringLiteral("Restore"));

@@ -15,6 +15,7 @@
 #include <QCloseEvent>
 #include <QClipboard>
 #include <QGuiApplication>
+#include <QApplication>
 #include <KNotification>
 #include <QSettings>
 #include <QStyle>
@@ -147,30 +148,6 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plugins/klookup"),
         QCoreApplication::applicationDirPath() + QStringLiteral("/plugins/klookup"),
         QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/wikipedia"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/github"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/mangaupdates"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/anilist"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/tvmaze"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/lyrics_ovh"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/duckduckgo"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/openlibrary"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/themoviedb"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/omdb"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/myanimelist"),
-        QCoreApplication::applicationDirPath() + QStringLiteral("/providers/mangabaka"),
-        QDir::currentPath() + QStringLiteral("/providers/wikipedia"),
-        QDir::currentPath() + QStringLiteral("/providers/github"),
-        QDir::currentPath() + QStringLiteral("/providers/mangaupdates"),
-        QDir::currentPath() + QStringLiteral("/providers/anilist"),
-        QDir::currentPath() + QStringLiteral("/providers/tvmaze"),
-        QDir::currentPath() + QStringLiteral("/providers/lyrics_ovh"),
-        QDir::currentPath() + QStringLiteral("/providers/duckduckgo"),
-        QDir::currentPath() + QStringLiteral("/providers/openlibrary"),
-        QDir::currentPath() + QStringLiteral("/providers/themoviedb"),
-        QDir::currentPath() + QStringLiteral("/providers/omdb"),
-        QDir::currentPath() + QStringLiteral("/providers/myanimelist"),
-        QDir::currentPath() + QStringLiteral("/providers/mangabaka"),
     };
 
     for (const QString &libPath : QCoreApplication::libraryPaths()) {

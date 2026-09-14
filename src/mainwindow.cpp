@@ -136,7 +136,7 @@ void MainWindow::onClipboardChanged()
     } else {
         // Just prepopulate
         m_tabWidget->setCurrentIndex(0); // Switch to dashboard
-        // Assuming we could set dashboard text directly if needed.
+        m_dashboard->prepareQuery(text);
     }
 }
 

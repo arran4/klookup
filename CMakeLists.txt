@@ -52,6 +52,11 @@ add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(runner)
 
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 set(KLOOKUP_PROVIDERS
     provider_wikipedia
     provider_github

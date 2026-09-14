@@ -1,17 +1,19 @@
 add_library(klookup_core STATIC
     searchprovider.cpp
+    searchdashboard.cpp
 )
 
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(klookup_core
     Qt6::Core
+    Qt6::Gui
+    Qt6::Widgets
 )
 
 add_executable(klookup
     main.cpp
     mainwindow.cpp
-    searchdashboard.cpp
     searchtab.cpp
     dbusadaptor.cpp
     settingsdialog.cpp

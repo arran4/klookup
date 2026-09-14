@@ -38,6 +38,13 @@ QStringList SearchDashboard::saveHistory() const
     return m_history;
 }
 
+void SearchDashboard::prepareQuery(const QString &query)
+{
+    m_searchBar->setText(query);
+    m_searchBar->selectAll();
+    m_searchBar->setFocus();
+}
+
 void SearchDashboard::onSearchTriggered()
 {
     QString query = m_searchBar->text().trimmed();

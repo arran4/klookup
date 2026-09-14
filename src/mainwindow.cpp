@@ -16,7 +16,6 @@
 #include <QClipboard>
 #include <QApplication>
 #include <QGuiApplication>
-#include <QApplication>
 #include <KNotification>
 #include <QSettings>
 #include <QStyle>

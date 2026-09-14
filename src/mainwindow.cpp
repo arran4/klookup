@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QCloseEvent>
 #include <QClipboard>
+#include <QApplication>
 #include <QGuiApplication>
 #include <QApplication>
 #include <KNotification>
@@ -34,7 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
     if (icon.isNull()) {
         icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
         if (icon.isNull()) {
-            icon = qApp->style()->standardIcon(QStyle::SP_ComputerIcon);
+            icon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
         }
     }
     QApplication::setWindowIcon(icon);

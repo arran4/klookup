@@ -1,0 +1,33 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Bootstrap environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y zstd
+        ./.jules/bootstrap.sh
+
+    - name: Install dependencies
+      run: |
+        ./.jules/run.sh apt-get update
+        ./.jules/run.sh apt-get install -y libkf6runner-dev cmake ninja-build build-essential g++
+
+    - name: Configure CMake
+      run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+
+    - name: Build klookup_with_plugins
+      run: ./.jules/run.sh cmake --build build --target klookup_with_plugins --parallel
+
+    - name: Run CTest
+      run: ./.jules/run.sh ctest --test-dir build --output-on-failure

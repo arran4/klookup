@@ -126,14 +126,29 @@ void MainWindow::onClipboardChanged()
     QString text = QGuiApplication::clipboard()->text().trimmed();
     if (text.isEmpty()) return;
 
+    processClipboardText(text, autoSearch);
+}
+
+void MainWindow::processClipboardText(const QString &text, bool autoSearch)
+{
     if (autoSearch) {
-        KNotification::event(QStringLiteral("ClipboardSearch"), QStringLiteral("Searching for: ") + text);
+        if (text == m_lastAutoSearchClipboardText) {
+            return;
+        }
+        m_lastAutoSearchClipboardText = text;
+
+        KNotification *notification = new KNotification(QStringLiteral("ClipboardSearch"), KNotification::CloseOnTimeout, this);
+        notification->setComponentName(QStringLiteral("org.kde.klookup"));
+        notification->setText(QStringLiteral("Searching for: ") + text);
+        notification->sendEvent();
+
         performSearch(text);
         showNormal();
         raise();
         activateWindow();
     } else {
         // Just prepopulate
+        m_lastAutoSearchClipboardText.clear();
         m_tabWidget->setCurrentIndex(0); // Switch to dashboard
         m_dashboard->prepareQuery(text);
     }
@@ -210,12 +225,16 @@ void MainWindow::performSearch(const QString &query)
 
         SearchProvider *provider = providerTemplate->clone(tab);
 
-        connect(provider, &SearchProvider::searchCompleted, tab, [tab, provider](const QString &providerId, const QList<SearchResult> &results) {
-            tab->addResults(providerId, results);
+        QString providerName = provider->name();
+
+        connect(provider, &SearchProvider::searchCompleted, tab, [tab, provider, providerName](const QString &providerId, const QList<SearchResult> &results) {
+            Q_UNUSED(providerId);
+            tab->addResults(providerName, results);
             provider->deleteLater();
         });
-        connect(provider, &SearchProvider::searchFailed, tab, [tab, provider](const QString &providerId, const QString &error) {
-            tab->setError(providerId, error);
+        connect(provider, &SearchProvider::searchFailed, tab, [tab, provider, providerName](const QString &providerId, const QString &error) {
+            Q_UNUSED(providerId);
+            tab->setError(providerName, error);
             provider->deleteLater();
         });
 

@@ -1,0 +1,127 @@
+#include <QTest>
+#include <QSignalSpy>
+#include <QClipboard>
+#include <QGuiApplication>
+#include <QTreeWidget>
+#include "../src/mainwindow.h"
+#include "../src/searchtab.h"
+
+class MockProvider : public SearchProvider
+{
+    Q_OBJECT
+public:
+    explicit MockProvider(QObject *parent = nullptr) : SearchProvider(parent) {}
+    QString name() const override { return QStringLiteral("Friendly Name"); }
+    QString id() const override { return QStringLiteral("ugly_id_123"); }
+    void search(const QString &query) override {
+        Q_UNUSED(query);
+        QList<SearchResult> results;
+        SearchResult res;
+        res.title = "Mock Result";
+        results.append(res);
+        emit searchCompleted(id(), results);
+    }
+    SearchProvider* clone(QObject *parent = nullptr) const override {
+        return new MockProvider(parent);
+    }
+};
+
+class ErrorMockProvider : public SearchProvider
+{
+    Q_OBJECT
+public:
+    explicit ErrorMockProvider(QObject *parent = nullptr) : SearchProvider(parent) {}
+    QString name() const override { return QStringLiteral("Error Friendly Name"); }
+    QString id() const override { return QStringLiteral("error_ugly_id_456"); }
+    void search(const QString &query) override {
+        Q_UNUSED(query);
+        emit searchFailed(id(), "Mock error message");
+    }
+    SearchProvider* clone(QObject *parent = nullptr) const override {
+        return new ErrorMockProvider(parent);
+    }
+};
+
+class MainWindowTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void initTestCase()
+    {
+    }
+
+    void testClipboardDeduplication()
+    {
+        MainWindow mainWindow;
+
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+        QCOMPARE(tabWidget->count(), 1);
+
+        mainWindow.processClipboardText("alpha", true);
+        QCOMPARE(tabWidget->count(), 2);
+
+        mainWindow.processClipboardText("alpha", true);
+        QCOMPARE(tabWidget->count(), 2); // consecutive auto-search is suppressed
+
+        mainWindow.processClipboardText("beta", true);
+        QCOMPARE(tabWidget->count(), 3);
+
+        mainWindow.processClipboardText("alpha", true);
+        QCOMPARE(tabWidget->count(), 4);
+
+        mainWindow.processClipboardText("alpha", false);
+        QCOMPARE(tabWidget->count(), 4); // Prepopulation does clear the chain
+
+        mainWindow.processClipboardText("alpha", true);
+        QCOMPARE(tabWidget->count(), 5); // Cleared state, so consecutive identical autoSearch works
+
+        mainWindow.processClipboardText("gamma", true);
+        QCOMPARE(tabWidget->count(), 6);
+    }
+
+    void testProviderDisplayNameInResults()
+    {
+        MainWindow mainWindow;
+
+        MockProvider *mock = new MockProvider(&mainWindow);
+        ErrorMockProvider *errMock = new ErrorMockProvider(&mainWindow);
+        mainWindow.m_providers.append(mock);
+        mainWindow.m_providers.append(errMock);
+
+        mainWindow.performSearch("test query");
+
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+
+        QWidget *currentWidget = tabWidget->currentWidget();
+        SearchTab *searchTab = qobject_cast<SearchTab*>(currentWidget);
+        QVERIFY(searchTab);
+
+        QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+        QVERIFY(treeWidget);
+
+        QCOMPARE(treeWidget->topLevelItemCount(), 2);
+
+        bool foundSuccess = false;
+        bool foundError = false;
+
+        for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *providerItem = treeWidget->topLevelItem(i);
+            if (providerItem->text(0) == QStringLiteral("Friendly Name")) {
+                foundSuccess = true;
+            } else if (providerItem->text(0) == QStringLiteral("Error Friendly Name")) {
+                foundError = true;
+                QVERIFY(providerItem->childCount() == 1);
+                QVERIFY(providerItem->child(0)->text(0).contains("Mock error message"));
+            }
+        }
+
+        QVERIFY(foundSuccess);
+        QVERIFY(foundError);
+    }
+};
+
+QTEST_MAIN(MainWindowTest)
+#include "test_mainwindow.moc"

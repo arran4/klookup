@@ -52,6 +52,11 @@ add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(runner)
 
+if(BUILD_TESTING)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 set(KLOOKUP_PROVIDERS
     provider_wikipedia
     provider_github
@@ -80,5 +85,9 @@ add_custom_target(klookup_with_plugins ALL
     DEPENDS klookup
         ${KLOOKUP_PROVIDERS}
 )
+
+if(BUILD_TESTING)
+    add_dependencies(klookup_with_plugins test_searchdashboard)
+endif()
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

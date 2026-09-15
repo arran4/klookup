@@ -56,10 +56,10 @@ private slots:
         QCOMPARE(tabWidget->count(), 4);
 
         mainWindow.processClipboardText("alpha", false);
-        QCOMPARE(tabWidget->count(), 4);
+        QCOMPARE(tabWidget->count(), 4); // Prepopulation does clear the chain
 
         mainWindow.processClipboardText("alpha", true);
-        QCOMPARE(tabWidget->count(), 5); // Prepopulate cleared state, so consecutive identical autoSearch works
+        QCOMPARE(tabWidget->count(), 5); // Cleared state, so consecutive identical autoSearch works
 
         mainWindow.processClipboardText("gamma", true);
         QCOMPARE(tabWidget->count(), 6);

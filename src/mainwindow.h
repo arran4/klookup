@@ -39,8 +39,6 @@ private:
     QList<SearchProvider*> m_providers;
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
-
-    friend class MainWindowTest;
 };
 
 #endif // MAINWINDOW_H

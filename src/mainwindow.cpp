@@ -148,6 +148,7 @@ void MainWindow::processClipboardText(const QString &text, bool autoSearch)
         activateWindow();
     } else {
         // Just prepopulate
+        m_lastAutoSearchClipboardText.clear();
         m_tabWidget->setCurrentIndex(0); // Switch to dashboard
         m_dashboard->prepareQuery(text);
     }

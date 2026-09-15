@@ -87,7 +87,7 @@ add_custom_target(klookup_with_plugins ALL
 )
 
 if(BUILD_TESTING)
-    add_dependencies(klookup_with_plugins test_searchdashboard)
+    add_dependencies(klookup_with_plugins test_searchdashboard test_mainwindow test_searchtab)
 endif()
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

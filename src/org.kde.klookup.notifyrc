@@ -1,0 +1,9 @@
+[Global]
+IconName=dictionary
+Comment=KLookup
+Name=KLookup
+
+[Event/ClipboardSearch]
+Name=Clipboard Search
+Comment=KLookup performed a search based on clipboard content
+Action=Popup

@@ -26,6 +26,22 @@ public:
     }
 };
 
+class ErrorMockProvider : public SearchProvider
+{
+    Q_OBJECT
+public:
+    explicit ErrorMockProvider(QObject *parent = nullptr) : SearchProvider(parent) {}
+    QString name() const override { return QStringLiteral("Error Friendly Name"); }
+    QString id() const override { return QStringLiteral("error_ugly_id_456"); }
+    void search(const QString &query) override {
+        Q_UNUSED(query);
+        emit searchFailed(id(), "Mock error message");
+    }
+    SearchProvider* clone(QObject *parent = nullptr) const override {
+        return new ErrorMockProvider(parent);
+    }
+};
+
 class MainWindowTest : public QObject
 {
     Q_OBJECT
@@ -70,7 +86,9 @@ private slots:
         MainWindow mainWindow;
 
         MockProvider *mock = new MockProvider(&mainWindow);
+        ErrorMockProvider *errMock = new ErrorMockProvider(&mainWindow);
         mainWindow.m_providers.append(mock);
+        mainWindow.m_providers.append(errMock);
 
         mainWindow.performSearch("test query");
 
@@ -84,9 +102,24 @@ private slots:
         QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
         QVERIFY(treeWidget);
 
-        QCOMPARE(treeWidget->topLevelItemCount(), 1);
-        QTreeWidgetItem *providerItem = treeWidget->topLevelItem(0);
-        QCOMPARE(providerItem->text(0), QStringLiteral("Friendly Name"));
+        QCOMPARE(treeWidget->topLevelItemCount(), 2);
+
+        bool foundSuccess = false;
+        bool foundError = false;
+
+        for (int i = 0; i < treeWidget->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *providerItem = treeWidget->topLevelItem(i);
+            if (providerItem->text(0) == QStringLiteral("Friendly Name")) {
+                foundSuccess = true;
+            } else if (providerItem->text(0) == QStringLiteral("Error Friendly Name")) {
+                foundError = true;
+                QVERIFY(providerItem->childCount() == 1);
+                QVERIFY(providerItem->child(0)->text(0).contains("Mock error message"));
+            }
+        }
+
+        QVERIFY(foundSuccess);
+        QVERIFY(foundError);
     }
 };
 

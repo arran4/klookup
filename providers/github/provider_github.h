@@ -4,6 +4,7 @@
 #include "searchprovider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QPointer>
 
 class ProviderGithub : public SearchProvider
 {
@@ -23,11 +24,11 @@ public:
     void setCredentials(const QString &username, const QString &password) override;
 
 private slots:
-    void onReplyFinished();
+    void onReplyFinished(QNetworkReply *reply);
 
-private:
+protected:
     QNetworkAccessManager *m_nam;
-    QNetworkReply *m_reply;
+    QPointer<QNetworkReply> m_reply;
     QString m_authToken;
 };
 

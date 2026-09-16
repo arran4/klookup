@@ -35,10 +35,13 @@ void ProviderTheMovieDB::setCredentials(const QString &/*username*/, const QStri
 void ProviderTheMovieDB::search(const QString &query)
 {
     if (m_reply) {
-        m_reply->disconnect(this);
-        m_reply->abort();
-        m_reply->deleteLater();
+        QPointer<QNetworkReply> oldReply = m_reply;
         m_reply = nullptr;
+        oldReply->disconnect(this);
+        if (oldReply->isRunning()) {
+            oldReply->abort();
+        }
+        oldReply->deleteLater();
     }
 
     if (m_apiKey.isEmpty()) {
@@ -57,30 +60,26 @@ void ProviderTheMovieDB::search(const QString &query)
 
     m_reply = m_nam->get(request);
 
-    connect(m_reply, &QNetworkReply::finished, this, &ProviderTheMovieDB::onReplyFinished);
+    connect(m_reply, &QNetworkReply::finished, this, [this, reply = QPointer<QNetworkReply>(m_reply)]() {
+        if (!reply || reply != m_reply) {
+            return;
+        }
+        this->onReplyFinished(reply);
+    });
 }
 
-void ProviderTheMovieDB::onReplyFinished()
+void ProviderTheMovieDB::onReplyFinished(QNetworkReply *reply)
 {
-    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
-    if (!reply) {
-        return;
-    }
-
     reply->deleteLater();
-
-    if (reply != m_reply) {
-        return; // Ignore responses from aborted/replaced requests
-    }
-
-    m_reply = nullptr;
 
     if (reply->error() != QNetworkReply::NoError) {
         emit searchFailed(id(), reply->errorString());
+        m_reply = nullptr;
         return;
     }
 
     QByteArray data = reply->readAll();
+    m_reply = nullptr;
 
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);

@@ -4,6 +4,7 @@
 #include "searchprovider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QPointer>
 
 class ProviderLyricsOvh : public SearchProvider
 {
@@ -20,11 +21,11 @@ public:
     SearchProvider* clone(QObject *parent = nullptr) const override;
 
 private slots:
-    void onReplyFinished();
+    void onReplyFinished(QNetworkReply *reply);
 
-private:
+protected:
     QNetworkAccessManager *m_nam;
-    QNetworkReply *m_reply;
+    QPointer<QNetworkReply> m_reply;
 };
 
 #endif // PROVIDER_LYRICS_OVH_H

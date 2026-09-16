@@ -8,7 +8,7 @@
 
 ProviderMangaUpdates::ProviderMangaUpdates(QObject *parent)
     : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager())
+    , m_nam(new QNetworkAccessManager(this))
     , m_reply(nullptr)
 {
 }
@@ -30,6 +30,7 @@ QString ProviderMangaUpdates::id() const
 void ProviderMangaUpdates::search(const QString &query)
 {
     if (m_reply) {
+        m_reply->disconnect(this);
         m_reply->abort();
         m_reply->deleteLater();
         m_reply = nullptr;
@@ -54,16 +55,25 @@ void ProviderMangaUpdates::search(const QString &query)
 
 void ProviderMangaUpdates::onReplyFinished()
 {
-    m_reply->deleteLater();
-
-    if (m_reply->error() != QNetworkReply::NoError) {
-        emit searchFailed(id(), m_reply->errorString());
-        m_reply = nullptr;
+    QNetworkReply *reply = qobject_cast<QNetworkReply*>(sender());
+    if (!reply) {
         return;
     }
 
-    QByteArray data = m_reply->readAll();
+    reply->deleteLater();
+
+    if (reply != m_reply) {
+        return; // Ignore responses from aborted/replaced requests
+    }
+
     m_reply = nullptr;
+
+    if (reply->error() != QNetworkReply::NoError) {
+        emit searchFailed(id(), reply->errorString());
+        return;
+    }
+
+    QByteArray data = reply->readAll();
 
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);

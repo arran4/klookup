@@ -5,7 +5,6 @@
 #include <QPointer>
 #include "../providers/duckduckgo/provider_duckduckgo.h"
 
-// Define a test-friendly QNetworkAccessManager that does not send real requests
 class DummyNetworkReply : public QNetworkReply {
     Q_OBJECT
 public:
@@ -57,7 +56,6 @@ protected:
 class TestableProviderDuckDuckGo : public ProviderDuckDuckGo {
 public:
     TestableProviderDuckDuckGo(QObject *parent = nullptr) : ProviderDuckDuckGo(parent) {
-        // Disconnect old m_nam
         QNetworkAccessManager* existing = findChild<QNetworkAccessManager*>();
         if (existing) {
             existing->setParent(nullptr);
@@ -81,7 +79,6 @@ private slots:
         QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
         QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
 
-        // 1. first request active
         provider.search("first");
 
         QCOMPARE(provider.mockNam->replies.count(), 1);
@@ -94,22 +91,28 @@ private slots:
         QCOMPARE(provider.mockNam->replies.count(), 2);
         DummyNetworkReply *secondReply = provider.mockNam->replies[1];
 
-        // Let the event loop run to process the first reply's deleteLater()
-        QTest::qWait(50);
+        // Emitting stale signal on the old reply explicitly BEFORE deleteLater takes effect (which drops the pointer).
+        // Since we explicitly want to test the stale delayed signal edge case.
+        if (firstReplyPtr) {
+            firstReplyPtr->finish();
+        }
 
-        // 3. superseded requests emit neither searchCompleted nor misleading searchFailed
+        // Prove that emitting the stale delayed completion doesn't disturb anything
         QCOMPARE(failSpy.count(), 0);
         QCOMPARE(completeSpy.count(), 0);
+        QCOMPARE(provider.activeReply(), secondReply);
+
+        // Let the event loop run to process the first reply's deleteLater()
+        // Use sendPostedEvents instead of qWait to be immediate without timers if possible,
+        // but QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete) ensures it gets deleted.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
         // Verify the first request was safely cleaned up and deleted
         QVERIFY(firstReplyPtr.isNull());
 
-        // 4. a stale/delayed completion after replacement (simulated by the fact it was destroyed without side effects)
-        // If it was delayed, we've already proved the new lambda capture + QPointer ignores it and doesn't crash.
-
         // 5. a genuine network error on the current reply
         secondReply->finishWithError(QNetworkReply::TimeoutError, "Timeout");
-        QTest::qWait(10);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
         // a genuine current-request failure still emits exactly one searchFailed
         QCOMPARE(failSpy.count(), 1);
@@ -118,6 +121,33 @@ private slots:
         // 6. the replacement request remains current (until finished)
         // Check it cleared the state after finishing
         QVERIFY(provider.activeReply() == nullptr);
+    }
+
+    void test_reentrancy_on_error() {
+        TestableProviderDuckDuckGo provider;
+
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        // Connect to searchFailed to immediately fire another search to test re-entrancy
+        connect(&provider, &SearchProvider::searchFailed, this, [&provider]() {
+            provider.search("replacement_from_error");
+        });
+
+        provider.search("first");
+        QCOMPARE(provider.mockNam->replies.count(), 1);
+        DummyNetworkReply *firstReply = provider.mockNam->replies[0];
+
+        // Finish with error -> emits searchFailed -> triggers re-entrant search("replacement_from_error")
+        firstReply->finishWithError(QNetworkReply::TimeoutError, "Timeout");
+
+        QCOMPARE(failSpy.count(), 1);
+        QCOMPARE(provider.mockNam->replies.count(), 2);
+
+        DummyNetworkReply *secondReply = provider.mockNam->replies[1];
+
+        // If m_reply was cleared AFTER the signal emission, the new reply would have been wiped out!
+        // So the active reply MUST be the second one.
+        QCOMPARE(provider.activeReply(), secondReply);
     }
 };
 

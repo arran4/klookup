@@ -64,14 +64,14 @@ void ProviderDuckDuckGo::onReplyFinished(QNetworkReply *reply)
 {
     reply->deleteLater();
 
+
+
     if (reply->error() != QNetworkReply::NoError) {
         emit searchFailed(id(), reply->errorString());
-        m_reply = nullptr;
         return;
     }
 
     QByteArray data = reply->readAll();
-    m_reply = nullptr;
 
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);

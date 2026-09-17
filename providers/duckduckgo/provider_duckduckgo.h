@@ -23,7 +23,9 @@ public:
 private slots:
     void onReplyFinished(QNetworkReply *reply);
 
-protected:
+    friend class TestableProviderDuckDuckGo;
+private:
+    friend class TestProviderNetwork;
     QNetworkAccessManager *m_nam;
     QPointer<QNetworkReply> m_reply;
 };

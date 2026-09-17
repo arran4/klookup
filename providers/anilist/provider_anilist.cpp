@@ -66,6 +66,10 @@ void ProviderAniList::search(const QString &query)
 
 void ProviderAniList::onReplyFinished(QNetworkReply *reply)
 {
+    if (m_reply == reply) {
+        m_reply = nullptr;
+    }
+
     reply->deleteLater();
 
 

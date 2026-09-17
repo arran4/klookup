@@ -63,6 +63,10 @@ void ProviderMangaUpdates::search(const QString &query)
 
 void ProviderMangaUpdates::onReplyFinished(QNetworkReply *reply)
 {
+    if (m_reply == reply) {
+        m_reply = nullptr;
+    }
+
     reply->deleteLater();
 
 

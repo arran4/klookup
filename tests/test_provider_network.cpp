@@ -130,6 +130,7 @@ private slots:
 
         // Connect to searchFailed to immediately fire another search to test re-entrancy
         connect(&provider, &SearchProvider::searchFailed, this, [&provider]() {
+            QCOMPARE(provider.activeReply(), nullptr);
             provider.search("replacement_from_error");
         });
 

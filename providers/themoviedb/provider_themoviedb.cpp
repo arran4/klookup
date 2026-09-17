@@ -70,6 +70,10 @@ void ProviderTheMovieDB::search(const QString &query)
 
 void ProviderTheMovieDB::onReplyFinished(QNetworkReply *reply)
 {
+    if (m_reply == reply) {
+        m_reply = nullptr;
+    }
+
     reply->deleteLater();
 
 

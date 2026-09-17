@@ -70,6 +70,10 @@ void ProviderGithub::search(const QString &query)
 
 void ProviderGithub::onReplyFinished(QNetworkReply *reply)
 {
+    if (m_reply == reply) {
+        m_reply = nullptr;
+    }
+
     reply->deleteLater();
 
 

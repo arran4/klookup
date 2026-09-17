@@ -61,6 +61,10 @@ void ProviderWikipedia::search(const QString &query)
 
 void ProviderWikipedia::onReplyFinished(QNetworkReply *reply)
 {
+    if (m_reply == reply) {
+        m_reply = nullptr;
+    }
+
     reply->deleteLater();
 
 

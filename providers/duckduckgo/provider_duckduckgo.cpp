@@ -8,14 +8,13 @@
 
 ProviderDuckDuckGo::ProviderDuckDuckGo(QObject *parent)
     : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager())
+    , m_nam(new QNetworkAccessManager(this))
     , m_reply(nullptr)
 {
 }
 
 ProviderDuckDuckGo::~ProviderDuckDuckGo()
 {
-    m_nam->deleteLater();
 }
 
 QString ProviderDuckDuckGo::name() const
@@ -31,9 +30,13 @@ QString ProviderDuckDuckGo::id() const
 void ProviderDuckDuckGo::search(const QString &query)
 {
     if (m_reply) {
-        m_reply->abort();
-        m_reply->deleteLater();
+        QPointer<QNetworkReply> oldReply = m_reply;
         m_reply = nullptr;
+        oldReply->disconnect(this);
+        if (oldReply->isRunning()) {
+            oldReply->abort();
+        }
+        oldReply->deleteLater();
     }
 
     QUrl url(QStringLiteral("https://api.duckduckgo.com/"));
@@ -49,21 +52,30 @@ void ProviderDuckDuckGo::search(const QString &query)
 
     m_reply = m_nam->get(request);
 
-    connect(m_reply, &QNetworkReply::finished, this, &ProviderDuckDuckGo::onReplyFinished);
+    connect(m_reply, &QNetworkReply::finished, this, [this, reply = QPointer<QNetworkReply>(m_reply)]() {
+        if (!reply || reply != m_reply) {
+            return;
+        }
+        this->onReplyFinished(reply);
+    });
 }
 
-void ProviderDuckDuckGo::onReplyFinished()
+void ProviderDuckDuckGo::onReplyFinished(QNetworkReply *reply)
 {
-    m_reply->deleteLater();
-
-    if (m_reply->error() != QNetworkReply::NoError) {
-        emit searchFailed(id(), m_reply->errorString());
+    if (m_reply == reply) {
         m_reply = nullptr;
+    }
+
+    reply->deleteLater();
+
+
+
+    if (reply->error() != QNetworkReply::NoError) {
+        emit searchFailed(id(), reply->errorString());
         return;
     }
 
-    QByteArray data = m_reply->readAll();
-    m_reply = nullptr;
+    QByteArray data = reply->readAll();
 
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);

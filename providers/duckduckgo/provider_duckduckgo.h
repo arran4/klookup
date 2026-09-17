@@ -4,6 +4,7 @@
 #include "searchprovider.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QPointer>
 
 class ProviderDuckDuckGo : public SearchProvider
 {
@@ -20,11 +21,13 @@ public:
     SearchProvider* clone(QObject *parent = nullptr) const override;
 
 private slots:
-    void onReplyFinished();
+    void onReplyFinished(QNetworkReply *reply);
 
+    friend class TestableProviderDuckDuckGo;
 private:
+    friend class TestProviderNetwork;
     QNetworkAccessManager *m_nam;
-    QNetworkReply *m_reply;
+    QPointer<QNetworkReply> m_reply;
 };
 
 #endif // PROVIDER_DUCKDUCKGO_H

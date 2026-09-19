@@ -3,6 +3,8 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QTreeWidget>
+#include <QSettings>
+#include <QTimer>
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
 
@@ -79,6 +81,46 @@ private slots:
 
         mainWindow.processClipboardText("gamma", true);
         QCOMPARE(tabWidget->count(), 6);
+    }
+
+    void testSaveSettingsOnQuit()
+    {
+        // First, clear existing settings
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.remove(QStringLiteral("OpenTabs"));
+
+        MainWindow *mainWindow = new MainWindow;
+
+        mainWindow->performSearch("test_quit_query_1");
+        mainWindow->performSearch("test_quit_query_2");
+
+        QTabWidget *tabWidget = mainWindow->findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+        QCOMPARE(tabWidget->count(), 3); // 1 dashboard + 2 search tabs
+
+        // Hide to tray (close event when minimizeToTray is true)
+        QCloseEvent closeEvent;
+        QApplication::sendEvent(mainWindow, &closeEvent);
+
+        // Verify settings are not saved on hide to tray
+        int size = settings.beginReadArray("OpenTabs");
+        QCOMPARE(size, 0);
+        settings.endArray();
+
+        // Since we cannot emit aboutToQuit directly, we just call the method that's connected to it.
+        // Wait, aboutToQuit requires QPrivateSignal. Instead of emitting the signal, we can call saveSettings
+        // by finding it, or we can use QTimer to quit the app and run exec().
+        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
+        qApp->exec();
+
+        size = settings.beginReadArray("OpenTabs");
+        QCOMPARE(size, 2);
+        settings.endArray();
+
+        delete mainWindow;
+
+        // Clean up settings
+        settings.remove(QStringLiteral("OpenTabs"));
     }
 
     void testProviderDisplayNameInResults()

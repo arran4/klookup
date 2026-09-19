@@ -221,11 +221,11 @@ void MainWindow::loadPlugins()
                         m_providers.append(provider);
                     } else {
                         qCDebug(KLOOKUP_PLUGINS) << "Skipped duplicate provider ID:" << provider->id() << "from file:" << fileName;
-                        plugin->deleteLater();
+                        loader.unload();
                     }
                 } else {
                     qCDebug(KLOOKUP_PLUGINS) << "Plugin loaded but casting to SearchProvider failed for file:" << fileName;
-                    plugin->deleteLater();
+                    loader.unload();
                 }
             } else {
                 qCDebug(KLOOKUP_PLUGINS) << "QPluginLoader load failed for file:" << fileName << "Error:" << loader.errorString();

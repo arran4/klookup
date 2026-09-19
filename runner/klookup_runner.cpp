@@ -1,6 +1,7 @@
 #include "klookup_runner.h"
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QDBusPendingCall>
 
 #ifndef Q_OS_WASM // Bypass mocked environment constraints
 #include <KLocalizedString>
@@ -51,7 +52,10 @@ void KLookupRunner::run(const KRunner::RunnerContext &context, const KRunner::Qu
         QStringLiteral("performSearch")
     );
     msg << query;
-    QDBusConnection::sessionBus().send(msg);
+
+    // Use asyncCall instead of send to ensure D-Bus autostarts the service if it's not running.
+    // 'send' might drop the message if the service is not currently active, but 'asyncCall' triggers auto-activation.
+    QDBusConnection::sessionBus().asyncCall(msg);
 }
 
 #include "klookup_runner.moc"

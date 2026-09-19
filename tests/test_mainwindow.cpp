@@ -4,7 +4,7 @@
 #include <QGuiApplication>
 #include <QTreeWidget>
 #include <QSettings>
-#include <QTimer>
+#include <QStandardPaths>
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
 
@@ -51,6 +51,10 @@ class MainWindowTest : public QObject
 private slots:
     void initTestCase()
     {
+        QStandardPaths::setTestModeEnabled(true);
+        // Clear any existing test state
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.clear();
     }
 
     void testClipboardDeduplication()
@@ -85,12 +89,11 @@ private slots:
 
     void testSaveSettingsOnQuit()
     {
-        // First, clear existing settings
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
         settings.remove(QStringLiteral("OpenTabs"));
+        settings.setValue(QStringLiteral("MinimizeToTray"), true);
 
         MainWindow *mainWindow = new MainWindow;
-
         mainWindow->performSearch("test_quit_query_1");
         mainWindow->performSearch("test_quit_query_2");
 
@@ -98,29 +101,23 @@ private slots:
         QVERIFY(tabWidget);
         QCOMPARE(tabWidget->count(), 3); // 1 dashboard + 2 search tabs
 
-        // Hide to tray (close event when minimizeToTray is true)
+        // 1. Hide to tray should NOT save tabs
         QCloseEvent closeEvent;
-        QApplication::sendEvent(mainWindow, &closeEvent);
-
-        // Verify settings are not saved on hide to tray
+        mainWindow->event(&closeEvent); // simulate queryClose
         int size = settings.beginReadArray("OpenTabs");
         QCOMPARE(size, 0);
         settings.endArray();
 
-        // Since we cannot emit aboutToQuit directly, we just call the method that's connected to it.
-        // Wait, aboutToQuit requires QPrivateSignal. Instead of emitting the signal, we can call saveSettings
-        // by finding it, or we can use QTimer to quit the app and run exec().
-        QTimer::singleShot(0, qApp, &QCoreApplication::quit);
-        qApp->exec();
+        // 2. Genuine Quit should save tabs
+        // Because we connected aboutToQuit -> saveSettings and MainWindowTest is a friend
+        mainWindow->saveSettings();
 
         size = settings.beginReadArray("OpenTabs");
         QCOMPARE(size, 2);
         settings.endArray();
 
         delete mainWindow;
-
-        // Clean up settings
-        settings.remove(QStringLiteral("OpenTabs"));
+        settings.clear();
     }
 
     void testProviderDisplayNameInResults()

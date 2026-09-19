@@ -2,6 +2,11 @@
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusError>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(KLOOKUP_RUNNER, "klookup.runner")
 
 #ifndef Q_OS_WASM // Bypass mocked environment constraints
 #include <KLocalizedString>
@@ -53,9 +58,18 @@ void KLookupRunner::run(const KRunner::RunnerContext &context, const KRunner::Qu
     );
     msg << query;
 
-    // Use asyncCall instead of send to ensure D-Bus autostarts the service if it's not running.
-    // 'send' might drop the message if the service is not currently active, but 'asyncCall' triggers auto-activation.
-    QDBusConnection::sessionBus().asyncCall(msg);
+    // The D-Bus message's auto-start flag is enabled by default.  Keep the
+    // request asynchronous so KRunner never blocks, and retain its completion
+    // long enough to report activation or delivery failures.
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [](QDBusPendingCallWatcher *finishedWatcher) {
+        if (finishedWatcher->isError()) {
+            const QDBusError error = finishedWatcher->error();
+            qCWarning(KLOOKUP_RUNNER) << "KLookup D-Bus activation or delivery failed:"
+                                        << error.name() << error.message();
+        }
+        finishedWatcher->deleteLater();
+    });
 }
 
 #include "klookup_runner.moc"

@@ -77,7 +77,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    qDeleteAll(m_providers);
+    // Provider roots are owned by QPluginLoader.  Do not delete them or unload
+    // their libraries here: active search-tab clones can still be QObject
+    // children while this destructor is running.  Qt unloads the libraries at
+    // application shutdown after the object hierarchy is gone.
 }
 
 void MainWindow::setupActions()
@@ -193,8 +196,8 @@ void MainWindow::loadPlugins()
 
             qCDebug(KLOOKUP_PLUGINS) << "Evaluating candidate plugin library:" << fileName;
 
-            QPluginLoader loader(dir.absoluteFilePath(fileName));
-            QObject *plugin = loader.instance();
+            auto *loader = new QPluginLoader(dir.absoluteFilePath(fileName), this);
+            QObject *plugin = loader->instance();
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
                 if (provider) {
@@ -219,16 +222,20 @@ void MainWindow::loadPlugins()
 #endif
                         }
                         m_providers.append(provider);
+                        m_providerLoaders.append(loader);
                     } else {
                         qCDebug(KLOOKUP_PLUGINS) << "Skipped duplicate provider ID:" << provider->id() << "from file:" << fileName;
-                        loader.unload();
+                        loader->unload();
+                        delete loader;
                     }
                 } else {
                     qCDebug(KLOOKUP_PLUGINS) << "Plugin loaded but casting to SearchProvider failed for file:" << fileName;
-                    loader.unload();
+                    loader->unload();
+                    delete loader;
                 }
             } else {
-                qCDebug(KLOOKUP_PLUGINS) << "QPluginLoader load failed for file:" << fileName << "Error:" << loader.errorString();
+                qCDebug(KLOOKUP_PLUGINS) << "QPluginLoader load failed for file:" << fileName << "Error:" << loader->errorString();
+                delete loader;
             }
         }
     }
@@ -272,6 +279,10 @@ bool MainWindow::queryClose()
         hide();
         return false;
     }
+    // A normal close and session shutdown can destroy the window before the
+    // application emits aboutToQuit.  Save while all session widgets are live;
+    // aboutToQuit provides the same guarantee for explicit Quit actions.
+    saveSettings();
     return true;
 }
 
@@ -296,6 +307,10 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
+    if (m_settingsSaved) {
+        return;
+    }
+
     QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
 
     settings.remove(QStringLiteral("OpenTabs"));
@@ -312,4 +327,6 @@ void MainWindow::saveSettings()
     settings.beginGroup("History");
     settings.setValue("SearchHistory", m_dashboard->saveHistory());
     settings.endGroup();
+    settings.sync();
+    m_settingsSaved = true;
 }

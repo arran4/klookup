@@ -7,6 +7,7 @@
 #include "searchdashboard.h"
 
 class QSystemTrayIcon;
+class QPluginLoader;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -36,9 +37,13 @@ private:
 
     QTabWidget *m_tabWidget;
     SearchDashboard *m_dashboard;
+    // Plugin root objects are owned by their QPluginLoader instances.  Keep each
+    // accepted loader alive for as long as its provider is used.
+    QList<QPluginLoader *> m_providerLoaders;
     QList<SearchProvider*> m_providers;
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
+    bool m_settingsSaved = false;
 
     friend class MainWindowTest;
 };

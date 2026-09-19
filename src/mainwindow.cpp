@@ -9,6 +9,9 @@
 #include <QDir>
 #include <QCoreApplication>
 #include <KActionCollection>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KStandardAction>
 #include <QSystemTrayIcon>
 #include <QMenu>
@@ -61,6 +64,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
 
     new DBusAdaptor(this);
     QDBusConnection::sessionBus().registerService(QStringLiteral("org.kde.klookup"));
@@ -73,7 +77,10 @@ MainWindow::MainWindow(QWidget *parent)
 
 MainWindow::~MainWindow()
 {
-    qDeleteAll(m_providers);
+    // Provider roots are owned by QPluginLoader.  Do not delete them or unload
+    // their libraries here: active search-tab clones can still be QObject
+    // children while this destructor is running.  Qt unloads the libraries at
+    // application shutdown after the object hierarchy is gone.
 }
 
 void MainWindow::setupActions()
@@ -165,6 +172,8 @@ void MainWindow::loadPlugins()
         QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
     };
 
+    qCDebug(KLOOKUP_PLUGINS) << "Starting provider plugin discovery.";
+
     for (const QString &libPath : QCoreApplication::libraryPaths()) {
         pluginPaths.append(libPath + QStringLiteral("/klookup/providers"));
         pluginPaths.append(libPath + QStringLiteral("/klookup"));
@@ -173,8 +182,11 @@ void MainWindow::loadPlugins()
     for (const QString &path : pluginPaths) {
         QDir dir(path);
         if (!dir.exists()) {
+            qCDebug(KLOOKUP_PLUGINS) << "Checked plugin directory (does not exist):" << path;
             continue;
         }
+
+        qCDebug(KLOOKUP_PLUGINS) << "Checked plugin directory (exists):" << path;
 
         const auto entryList = dir.entryList(QDir::Files);
         for (const QString &fileName : entryList) {
@@ -182,36 +194,52 @@ void MainWindow::loadPlugins()
                 continue;
             }
 
-            QPluginLoader loader(dir.absoluteFilePath(fileName));
-            QObject *plugin = loader.instance();
+            qCDebug(KLOOKUP_PLUGINS) << "Evaluating candidate plugin library:" << fileName;
+
+            auto *loader = new QPluginLoader(dir.absoluteFilePath(fileName), this);
+            QObject *plugin = loader->instance();
             if (plugin) {
                 SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
-                if (provider && !loadedProviderIds.contains(provider->id())) {
-                    loadedProviderIds.insert(provider->id());
+                if (provider) {
+                    if (!loadedProviderIds.contains(provider->id())) {
+                        loadedProviderIds.insert(provider->id());
+                        qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
 
-                    // Load wallet credentials if supported
-                    if (provider->supportsAuthentication()) {
+                        // Load wallet credentials if supported
+                        if (provider->supportsAuthentication()) {
 #ifndef Q_OS_WASM
-                        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                        if (wallet) {
-                            if (wallet->hasFolder(QStringLiteral("KLookup"))) {
-                                wallet->setFolder(QStringLiteral("KLookup"));
-                                QString token;
-                                if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
-                                    provider->setCredentials(QString(), token);
+                            KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+                            if (wallet) {
+                                if (wallet->hasFolder(QStringLiteral("KLookup"))) {
+                                    wallet->setFolder(QStringLiteral("KLookup"));
+                                    QString token;
+                                    if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
+                                        provider->setCredentials(QString(), token);
+                                    }
                                 }
+                                delete wallet;
                             }
-                            delete wallet;
-                        }
 #endif
+                        }
+                        m_providers.append(provider);
+                        m_providerLoaders.append(loader);
+                    } else {
+                        qCDebug(KLOOKUP_PLUGINS) << "Skipped duplicate provider ID:" << provider->id() << "from file:" << fileName;
+                        loader->unload();
+                        delete loader;
                     }
-                    m_providers.append(provider);
-                } else if (!provider) {
-                    plugin->deleteLater();
+                } else {
+                    qCDebug(KLOOKUP_PLUGINS) << "Plugin loaded but casting to SearchProvider failed for file:" << fileName;
+                    loader->unload();
+                    delete loader;
                 }
+            } else {
+                qCDebug(KLOOKUP_PLUGINS) << "QPluginLoader load failed for file:" << fileName << "Error:" << loader->errorString();
+                delete loader;
             }
         }
     }
+    qCDebug(KLOOKUP_PLUGINS) << "Plugin discovery finished. Total loaded providers:" << m_providers.size();
 }
 
 void MainWindow::performSearch(const QString &query)
@@ -251,6 +279,9 @@ bool MainWindow::queryClose()
         hide();
         return false;
     }
+    // A normal close and session shutdown can destroy the window before the
+    // application emits aboutToQuit.  Save while all session widgets are live;
+    // aboutToQuit provides the same guarantee for explicit Quit actions.
     saveSettings();
     return true;
 }
@@ -276,6 +307,10 @@ void MainWindow::loadSettings()
 
 void MainWindow::saveSettings()
 {
+    if (m_settingsSaved) {
+        return;
+    }
+
     QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
 
     settings.remove(QStringLiteral("OpenTabs"));
@@ -292,4 +327,6 @@ void MainWindow::saveSettings()
     settings.beginGroup("History");
     settings.setValue("SearchHistory", m_dashboard->saveHistory());
     settings.endGroup();
+    settings.sync();
+    m_settingsSaved = true;
 }

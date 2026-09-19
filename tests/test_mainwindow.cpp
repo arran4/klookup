@@ -3,6 +3,10 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QTreeWidget>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QLineEdit>
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
 
@@ -46,9 +50,18 @@ class MainWindowTest : public QObject
 {
     Q_OBJECT
 
+    QTemporaryDir m_settingsRoot;
+
 private slots:
     void initTestCase()
     {
+        QStandardPaths::setTestModeEnabled(true);
+        QVERIFY(m_settingsRoot.isValid());
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsRoot.path());
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        QVERIFY2(settings.fileName().startsWith(m_settingsRoot.path()), qPrintable(settings.fileName()));
+        settings.clear();
     }
 
     void testClipboardDeduplication()
@@ -79,6 +92,46 @@ private slots:
 
         mainWindow.processClipboardText("gamma", true);
         QCOMPARE(tabWidget->count(), 6);
+    }
+
+    void testSaveSettingsSerializesTabsAndHistory()
+    {
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.beginWriteArray(QStringLiteral("OpenTabs"));
+        settings.setArrayIndex(3);
+        settings.setValue(QStringLiteral("query"), QStringLiteral("stale"));
+        settings.endArray();
+
+        MainWindow *mainWindow = new MainWindow;
+        mainWindow->performSearch("test_quit_query_1");
+        mainWindow->performSearch("test_quit_query_2");
+
+        auto *dashboard = mainWindow->findChild<SearchDashboard *>();
+        auto *searchBar = dashboard ? dashboard->findChild<QLineEdit *>() : nullptr;
+        QVERIFY(searchBar);
+        searchBar->setText(QStringLiteral("history entry"));
+        QMetaObject::invokeMethod(searchBar, "returnPressed");
+
+        QTabWidget *tabWidget = mainWindow->findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+        QCOMPARE(tabWidget->count(), 4); // dashboard + two tabs + history search
+
+        mainWindow->saveSettings();
+
+        const int size = settings.beginReadArray("OpenTabs");
+        QCOMPARE(size, 3);
+        settings.setArrayIndex(0);
+        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_1"));
+        settings.setArrayIndex(2);
+        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("history entry"));
+        settings.endArray();
+
+        settings.beginGroup(QStringLiteral("History"));
+        QCOMPARE(settings.value(QStringLiteral("SearchHistory")).toStringList(), QStringList { QStringLiteral("history entry") });
+        settings.endGroup();
+
+        delete mainWindow;
+        settings.clear();
     }
 
     void testProviderDisplayNameInResults()

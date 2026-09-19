@@ -44,3 +44,18 @@ Alternatively, invoke a quick search directly from the command line:
 ```bash
 ./src/klookup "Linux kernel"
 ```
+
+## Verifying KRunner activation in an installed KDE session
+
+Install KLookup and its runner plugin, then start a fresh Plasma session. With no
+`klookup` process running, run `qdbus6 org.kde.klookup / org.kde.klookup.performSearch "cold start"`
+or select a KLookup result in KRunner. KLookup should start, raise its window and
+show the query. Repeat with KLookup running and confirm the same process receives
+the new tab. If activation fails, enable `QT_LOGGING_RULES="klookup.runner.warning=true"`
+for the runner host and inspect the reported D-Bus error. The installed service is
+`org.kde.klookup.service`, whose `Name`, object path, interface and method are
+`org.kde.klookup`, `/`, `org.kde.klookup`, and `performSearch` respectively.
+
+Provider discovery diagnostics are opt-in: start KLookup with
+`QT_LOGGING_RULES="klookup.plugins.debug=true"` to log search paths, candidates,
+successful loads and safe loader errors. These diagnostics do not log credentials.

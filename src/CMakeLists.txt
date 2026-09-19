@@ -50,8 +50,11 @@ target_link_libraries(klookup
     KF6::Notifications
 )
 
+configure_file(org.kde.klookup.service.in org.kde.klookup.service @ONLY)
+
 install(TARGETS klookup ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 install(PROGRAMS org.kde.klookup.desktop DESTINATION ${KDE_INSTALL_APPDIR})
 install(FILES klookupui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/klookup)
 install(FILES org.kde.klookup.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.klookup.service DESTINATION ${KDE_INSTALL_DBUSSERVICEDIR})
 

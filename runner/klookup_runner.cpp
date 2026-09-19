@@ -1,6 +1,12 @@
 #include "klookup_runner.h"
 #include <QDBusConnection>
 #include <QDBusMessage>
+#include <QDBusPendingCall>
+#include <QDBusPendingCallWatcher>
+#include <QDBusError>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(KLOOKUP_RUNNER, "klookup.runner")
 
 #ifndef Q_OS_WASM // Bypass mocked environment constraints
 #include <KLocalizedString>
@@ -51,7 +57,19 @@ void KLookupRunner::run(const KRunner::RunnerContext &context, const KRunner::Qu
         QStringLiteral("performSearch")
     );
     msg << query;
-    QDBusConnection::sessionBus().send(msg);
+
+    // The D-Bus message's auto-start flag is enabled by default.  Keep the
+    // request asynchronous so KRunner never blocks, and retain its completion
+    // long enough to report activation or delivery failures.
+    auto *watcher = new QDBusPendingCallWatcher(QDBusConnection::sessionBus().asyncCall(msg), this);
+    connect(watcher, &QDBusPendingCallWatcher::finished, this, [](QDBusPendingCallWatcher *finishedWatcher) {
+        if (finishedWatcher->isError()) {
+            const QDBusError error = finishedWatcher->error();
+            qCWarning(KLOOKUP_RUNNER) << "KLookup D-Bus activation or delivery failed:"
+                                        << error.name() << error.message();
+        }
+        finishedWatcher->deleteLater();
+    });
 }
 
 #include "klookup_runner.moc"

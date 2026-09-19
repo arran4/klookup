@@ -11,7 +11,7 @@
 #include <KActionCollection>
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins")
+Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KStandardAction>
 #include <QSystemTrayIcon>
 #include <QMenu>

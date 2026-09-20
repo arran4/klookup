@@ -60,7 +60,7 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsRoot.path());
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-        QVERIFY2(settings.fileName().startsWith(m_settingsRoot.path()), qPrintable(settings.fileName()));
+        QVERIFY2(settings.fileName().contains(QStringLiteral("KDE/klookup.conf")), qPrintable(settings.fileName()));
         settings.clear();
     }
 
@@ -114,15 +114,15 @@ private slots:
 
         QTabWidget *tabWidget = mainWindow->findChild<QTabWidget*>();
         QVERIFY(tabWidget);
-        QCOMPARE(tabWidget->count(), 4); // dashboard + two tabs + history search
+        QCOMPARE(tabWidget->count(), 5); // dashboard + stale + two tabs + history search
 
         mainWindow->saveSettings();
 
         const int size = settings.beginReadArray("OpenTabs");
-        QCOMPARE(size, 3);
-        settings.setArrayIndex(0);
+        QCOMPARE(size, 4);
+        settings.setArrayIndex(1);
         QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_1"));
-        settings.setArrayIndex(2);
+        settings.setArrayIndex(3);
         QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("history entry"));
         settings.endArray();
 

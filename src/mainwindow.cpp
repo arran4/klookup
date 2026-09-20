@@ -56,6 +56,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCentralWidget(m_tabWidget);
     setWindowTitle(QStringLiteral("KLookup"));
+    setAttribute(Qt::WA_DeleteOnClose, false);
     resize(800, 600);
 
     setupActions();

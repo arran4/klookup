@@ -55,12 +55,15 @@ class MainWindowTest : public QObject
 private slots:
     void initTestCase()
     {
-        QStandardPaths::setTestModeEnabled(true);
         QVERIFY(m_settingsRoot.isValid());
+        // A unique per-run root is required; Qt test mode may redirect to ~/.qttest/config.
+        qputenv("XDG_CONFIG_HOME", m_settingsRoot.path().toUtf8());
+        QStandardPaths::setTestModeEnabled(false);
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsRoot.path());
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-        QVERIFY2(settings.fileName().contains(QStringLiteral("KDE/klookup.conf")), qPrintable(settings.fileName()));
+        const QString isolatedPrefix = m_settingsRoot.path() + QLatin1Char('/');
+        QVERIFY2(settings.fileName().startsWith(isolatedPrefix), qPrintable(settings.fileName()));
         settings.clear();
     }
 
@@ -97,11 +100,7 @@ private slots:
     void testSaveSettingsSerializesTabsAndHistory()
     {
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-        settings.beginWriteArray(QStringLiteral("OpenTabs"));
-        settings.setArrayIndex(3);
-        settings.setValue(QStringLiteral("query"), QStringLiteral("stale"));
-        settings.endArray();
-
+        settings.clear();
         MainWindow *mainWindow = new MainWindow;
         mainWindow->performSearch("test_quit_query_1");
         mainWindow->performSearch("test_quit_query_2");
@@ -114,15 +113,24 @@ private slots:
 
         QTabWidget *tabWidget = mainWindow->findChild<QTabWidget*>();
         QVERIFY(tabWidget);
-        QCOMPARE(tabWidget->count(), 5); // dashboard + stale + two tabs + history search
+        QCOMPARE(tabWidget->count(), 4); // dashboard + two tabs + history search
+
+        // Add obsolete on-disk array entries after window restoration, not before.
+        settings.beginWriteArray(QStringLiteral("OpenTabs"));
+        settings.setArrayIndex(5);
+        settings.setValue(QStringLiteral("query"), QStringLiteral("stale"));
+        settings.endArray();
+        settings.sync();
 
         mainWindow->saveSettings();
 
         const int size = settings.beginReadArray("OpenTabs");
-        QCOMPARE(size, 4);
-        settings.setArrayIndex(1);
+        QCOMPARE(size, 3);
+        settings.setArrayIndex(0);
         QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_1"));
-        settings.setArrayIndex(3);
+        settings.setArrayIndex(1);
+        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_2"));
+        settings.setArrayIndex(2);
         QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("history entry"));
         settings.endArray();
 

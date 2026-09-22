@@ -9,8 +9,12 @@
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QLineEdit>
+#include <QPushButton>
+#include <QCheckBox>
+#include <QDialogButtonBox>
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
+#include "../src/settingsdialog.h"
 
 class MockProvider : public SearchProvider
 {
@@ -217,14 +221,50 @@ private slots:
         mainWindow.m_providers.append(mock);
         mainWindow.m_providers.append(errMock);
 
-        // Manually apply the production path logic for newly discovered providers.
-        // Because `loadPlugins` operates on `QPluginLoader`, we must manually invoke the enablement logic here to emulate.
-        // In production, `loadPlugins` applies this logic to discovered providers.
-        mock->setEnabled(provGroup.readEntry(mock->id() + "_Enabled", true));
-        errMock->setEnabled(provGroup.readEntry(errMock->id() + "_Enabled", true));
+        mainWindow.restoreProviderState(mock);
+        mainWindow.restoreProviderState(errMock);
 
         QCOMPARE(mock->isEnabled(), false);
         QCOMPARE(errMock->isEnabled(), true);
+    }
+
+    void testSettingsDialogLifecycle()
+    {
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup genGroup(config, "General");
+        genGroup.writeEntry("MinimizeToTray", true);
+        config->sync();
+
+        QList<SearchProvider*> emptyProviders;
+
+        // Test Cancel
+        SettingsDialog *dialog = new SettingsDialog(emptyProviders);
+        QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>();
+        minimizeCheck->setChecked(false);
+        dialog->button(QDialogButtonBox::Cancel)->click();
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", false), true);
+        delete dialog;
+
+        // Test Apply
+        dialog = new SettingsDialog(emptyProviders);
+        dialog->show(); // Needs to be shown for isVisible checks
+        minimizeCheck = dialog->findChild<QCheckBox*>();
+        minimizeCheck->setChecked(false);
+        dialog->button(QDialogButtonBox::Apply)->click();
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
+        QVERIFY(dialog->isVisible()); // Apply should not close
+        dialog->reject();
+        delete dialog;
+
+        // Test OK
+        dialog = new SettingsDialog(emptyProviders);
+        dialog->show();
+        minimizeCheck = dialog->findChild<QCheckBox*>();
+        minimizeCheck->setChecked(true);
+        dialog->button(QDialogButtonBox::Ok)->click();
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", false), true);
+        QVERIFY(!dialog->isVisible()); // OK should close
+        delete dialog;
     }
 
     void testProviderDisplayNameInResults()

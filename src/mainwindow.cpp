@@ -285,15 +285,19 @@ void MainWindow::loadPlugins()
         }
     }
 
-    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
-    KConfigGroup providersGroup(config, QStringLiteral("Providers"));
     for (SearchProvider *provider : m_providers) {
-        provider->setEnabled(providersGroup.readEntry(provider->id() + QStringLiteral("_Enabled"), true));
+        restoreProviderState(provider);
     }
 
     qCDebug(KLOOKUP_PLUGINS) << "Plugin discovery finished. Total loaded providers:" << m_providers.size();
 }
 
+void MainWindow::restoreProviderState(SearchProvider* provider)
+{
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup providersGroup(config, QStringLiteral("Providers"));
+    provider->setEnabled(providersGroup.readEntry(provider->id() + QStringLiteral("_Enabled"), true));
+}
 void MainWindow::performSearch(const QString &query)
 {
     SearchTab *tab = new SearchTab(query, this);

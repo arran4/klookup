@@ -77,7 +77,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     connect(button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::saveSettings);
     connect(button(QDialogButtonBox::Ok), &QPushButton::clicked, this, &SettingsDialog::saveSettings);
-    connect(this, &QDialog::rejected, this, &SettingsDialog::reject);
+
 }
 
 SettingsDialog::~SettingsDialog()

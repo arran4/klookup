@@ -2,7 +2,8 @@
 #include <QAction>
 #include <QCoreApplication>
 #include <QLineEdit>
-#include <QSettings>
+#include <KSharedConfig>
+#include <KConfigGroup>
 #include <QTabWidget>
 #include <QTextStream>
 #include <QTimer>
@@ -36,17 +37,17 @@ QStringList history(MainWindow &window)
 
 bool savedStateIs(MainWindow &window, const QStringList &queries, const QStringList &expectedHistory)
 {
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    Q_UNUSED(window);
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    config->reparseConfiguration(); // Make sure we read the latest changes from disk
+    KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
     QStringList savedQueries;
-    const int count = settings.beginReadArray(QStringLiteral("OpenTabs"));
+    const int count = tabGroup.readEntry(QStringLiteral("Count"), 0);
     for (int index = 0; index < count; ++index) {
-        settings.setArrayIndex(index);
-        savedQueries.append(settings.value(QStringLiteral("query")).toString());
+        savedQueries.append(tabGroup.readEntry(QStringLiteral("Tab%1").arg(index), QString()));
     }
-    settings.endArray();
-    settings.beginGroup(QStringLiteral("History"));
-    const QStringList savedHistory = settings.value(QStringLiteral("SearchHistory")).toStringList();
-    settings.endGroup();
+    KConfigGroup historyGroup(config, QStringLiteral("History"));
+    const QStringList savedHistory = historyGroup.readEntry(QStringLiteral("SearchHistory"), QStringList());
     return savedQueries == queries && savedHistory == expectedHistory;
 }
 
@@ -66,7 +67,7 @@ int main(int argc, char *argv[])
         return 64;
     }
     const QString mode = app.arguments().at(1);
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
 
     if (mode == QStringLiteral("restore")) {
         MainWindow window;
@@ -74,9 +75,13 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    settings.clear();
-    settings.setValue(QStringLiteral("MinimizeToTray"), mode != QStringLiteral("close"));
-    settings.sync();
+    config->deleteGroup("General");
+    config->deleteGroup("OpenTabs");
+    config->deleteGroup("History");
+    KConfigGroup genGroup(config, QStringLiteral("General"));
+    genGroup.writeEntry(QStringLiteral("MinimizeToTray"), mode != QStringLiteral("close"));
+    genGroup.writeEntry(QStringLiteral("MigratedToKConfig"), true);
+    config->sync();
 
     MainWindow window;
     QAction *quitAction = window.actionCollection()->action(KStandardAction::name(KStandardAction::Quit));
@@ -107,6 +112,7 @@ int main(int argc, char *argv[])
             }
         } else if (mode == QStringLiteral("close")) {
             window.close();
+            KSharedConfig::openConfig(QStringLiteral("klookuprc"))->sync();
             if (!savedStateIs(window, expectedQueries, expectedHistory)) {
                 QCoreApplication::exit(67);
                 return;

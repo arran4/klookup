@@ -3,6 +3,8 @@
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QTreeWidget>
+#include <KSharedConfig>
+#include <KConfigGroup>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -61,10 +63,47 @@ private slots:
         QStandardPaths::setTestModeEnabled(false);
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settingsRoot.path());
+
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        // KConfig might just return "klookuprc" for name(), let's just make sure it's valid
+        QVERIFY(config);
+
+        // Also ensure QSettings is clean for migration testing
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-        const QString isolatedPrefix = m_settingsRoot.path() + QLatin1Char('/');
-        QVERIFY2(settings.fileName().startsWith(isolatedPrefix), qPrintable(settings.fileName()));
         settings.clear();
+    }
+
+    void testMigration()
+    {
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.clear();
+        settings.setValue("MinimizeToTray", false);
+        settings.setValue("MonitorClipboard", true);
+        settings.beginGroup("History");
+        settings.setValue("SearchHistory", QStringList() << "old search");
+        settings.endGroup();
+        settings.setValue("ugly_id_123_Enabled", false);
+        settings.sync();
+
+        // Clear KConfig
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup("General");
+        config->deleteGroup("History");
+        config->deleteGroup("Providers");
+        config->sync();
+
+        MainWindow mainWindow; // Should trigger loadSettings migration
+
+        KConfigGroup genGroup(config, "General");
+        QVERIFY(genGroup.readEntry("MigratedToKConfig", false));
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
+        QCOMPARE(genGroup.readEntry("MonitorClipboard", false), true);
+
+        KConfigGroup historyGroup(config, "History");
+        QCOMPARE(historyGroup.readEntry("SearchHistory", QStringList()), QStringList() << "old search");
+
+        KConfigGroup provGroup(config, "Providers");
+        QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), false);
     }
 
     void testClipboardDeduplication()
@@ -99,8 +138,11 @@ private slots:
 
     void testSaveSettingsSerializesTabsAndHistory()
     {
-        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-        settings.clear();
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup("OpenTabs");
+        config->deleteGroup("History");
+        config->sync();
+
         MainWindow *mainWindow = new MainWindow;
         mainWindow->performSearch("test_quit_query_1");
         mainWindow->performSearch("test_quit_query_2");
@@ -116,30 +158,22 @@ private slots:
         QCOMPARE(tabWidget->count(), 4); // dashboard + two tabs + history search
 
         // Add obsolete on-disk array entries after window restoration, not before.
-        settings.beginWriteArray(QStringLiteral("OpenTabs"));
-        settings.setArrayIndex(5);
-        settings.setValue(QStringLiteral("query"), QStringLiteral("stale"));
-        settings.endArray();
-        settings.sync();
+        KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+        tabGroup.writeEntry(QStringLiteral("Tab5"), QStringLiteral("stale"));
+        config->sync();
 
         mainWindow->saveSettings();
 
-        const int size = settings.beginReadArray("OpenTabs");
-        QCOMPARE(size, 3);
-        settings.setArrayIndex(0);
-        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_1"));
-        settings.setArrayIndex(1);
-        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("test_quit_query_2"));
-        settings.setArrayIndex(2);
-        QCOMPARE(settings.value(QStringLiteral("query")).toString(), QStringLiteral("history entry"));
-        settings.endArray();
+        QCOMPARE(tabGroup.readEntry("Count", 0), 3);
+        QCOMPARE(tabGroup.readEntry(QStringLiteral("Tab0"), QString()), QStringLiteral("test_quit_query_1"));
+        QCOMPARE(tabGroup.readEntry(QStringLiteral("Tab1"), QString()), QStringLiteral("test_quit_query_2"));
+        QCOMPARE(tabGroup.readEntry(QStringLiteral("Tab2"), QString()), QStringLiteral("history entry"));
+        QVERIFY(tabGroup.readEntry(QStringLiteral("Tab5"), QString()).isEmpty());
 
-        settings.beginGroup(QStringLiteral("History"));
-        QCOMPARE(settings.value(QStringLiteral("SearchHistory")).toStringList(), QStringList { QStringLiteral("history entry") });
-        settings.endGroup();
+        KConfigGroup historyGroup(config, QStringLiteral("History"));
+        QCOMPARE(historyGroup.readEntry(QStringLiteral("SearchHistory"), QStringList()), QStringList { QStringLiteral("history entry") });
 
         delete mainWindow;
-        settings.clear();
     }
 
     void testProviderDisplayNameInResults()

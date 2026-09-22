@@ -7,6 +7,8 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QSettings>
+#include <KSharedConfig>
+#include <KConfigGroup>
 #include <QTabWidget>
 #include <QWidget>
 #include <QLabel>
@@ -59,11 +61,12 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     tabWidget->addTab(generalWidget, QStringLiteral("General"));
 
     // Load current settings
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-    m_minimizeToTrayCheck->setChecked(settings.value(QStringLiteral("MinimizeToTray"), true).toBool());
-    m_monitorClipboardCheck->setChecked(settings.value(QStringLiteral("MonitorClipboard"), false).toBool());
-    m_autoSearchClipboardCheck->setChecked(settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool());
-    m_onlyFocusedClipboardCheck->setChecked(settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool());
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup genGroup(config, QStringLiteral("General"));
+    m_minimizeToTrayCheck->setChecked(genGroup.readEntry(QStringLiteral("MinimizeToTray"), true));
+    m_monitorClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("MonitorClipboard"), false));
+    m_autoSearchClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("AutoSearchClipboard"), false));
+    m_onlyFocusedClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("ClipboardOnlyWhenFocused"), true));
 
     connect(m_monitorClipboardCheck, &QCheckBox::toggled, this, [this](bool checked) {
         m_autoSearchClipboardCheck->setEnabled(checked);
@@ -131,19 +134,25 @@ void SettingsDialog::showLoginDialog()
 
 void SettingsDialog::saveSettings()
 {
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup providersGroup(config, QStringLiteral("Providers"));
+
     for (int i = 0; i < m_listWidget->count(); ++i) {
         QListWidgetItem *item = m_listWidget->item(i);
         SearchProvider *provider = item->data(Qt::UserRole).value<SearchProvider*>();
         if (provider) {
-            provider->setEnabled(item->checkState() == Qt::Checked);
+            bool isEnabled = (item->checkState() == Qt::Checked);
+            provider->setEnabled(isEnabled);
+            providersGroup.writeEntry(provider->id() + QStringLiteral("_Enabled"), isEnabled);
         }
     }
 
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-    settings.setValue(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
-    settings.setValue(QStringLiteral("MonitorClipboard"), m_monitorClipboardCheck->isChecked());
-    settings.setValue(QStringLiteral("AutoSearchClipboard"), m_autoSearchClipboardCheck->isChecked());
-    settings.setValue(QStringLiteral("ClipboardOnlyWhenFocused"), m_onlyFocusedClipboardCheck->isChecked());
+    KConfigGroup genGroup(config, QStringLiteral("General"));
+    genGroup.writeEntry(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("MonitorClipboard"), m_monitorClipboardCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("AutoSearchClipboard"), m_autoSearchClipboardCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), m_onlyFocusedClipboardCheck->isChecked());
+    config->sync();
 
     accept();
 }

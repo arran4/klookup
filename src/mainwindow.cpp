@@ -21,6 +21,8 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <QGuiApplication>
 #include <KNotification>
 #include <QSettings>
+#include <KSharedConfig>
+#include <KConfigGroup>
 #include <QStyle>
 
 #ifndef Q_OS_WASM
@@ -123,10 +125,11 @@ void MainWindow::showSettingsDialog()
 
 void MainWindow::onClipboardChanged()
 {
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-    bool monitorClipboard = settings.value(QStringLiteral("MonitorClipboard"), false).toBool();
-    bool autoSearch = settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool();
-    bool onlyWhenFocused = settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool();
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup genGroup(config, QStringLiteral("General"));
+    bool monitorClipboard = genGroup.readEntry(QStringLiteral("MonitorClipboard"), false);
+    bool autoSearch = genGroup.readEntry(QStringLiteral("AutoSearchClipboard"), false);
+    bool onlyWhenFocused = genGroup.readEntry(QStringLiteral("ClipboardOnlyWhenFocused"), true);
 
     if (!monitorClipboard) return;
     if (onlyWhenFocused && !isActiveWindow()) return;
@@ -206,6 +209,10 @@ void MainWindow::loadPlugins()
                         loadedProviderIds.insert(provider->id());
                         qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
 
+                        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+                        KConfigGroup providersGroup(config, QStringLiteral("Providers"));
+                        provider->setEnabled(providersGroup.readEntry(provider->id() + QStringLiteral("_Enabled"), true));
+
                         // Load wallet credentials if supported
                         if (provider->supportsAuthentication()) {
 #ifndef Q_OS_WASM
@@ -273,8 +280,9 @@ void MainWindow::performSearch(const QString &query)
 
 bool MainWindow::queryClose()
 {
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
-    bool minimizeToTray = settings.value(QStringLiteral("MinimizeToTray"), true).toBool();
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup genGroup(config, QStringLiteral("General"));
+    bool minimizeToTray = genGroup.readEntry(QStringLiteral("MinimizeToTray"), true);
 
     if (minimizeToTray && m_trayIcon->isVisible() && !qApp->isSavingSession()) {
         hide();
@@ -289,21 +297,55 @@ bool MainWindow::queryClose()
 
 void MainWindow::loadSettings()
 {
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup genGroup(config, QStringLiteral("General"));
 
-    int size = settings.beginReadArray("OpenTabs");
+    if (!genGroup.readEntry("MigratedToKConfig", false)) {
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+
+        genGroup.writeEntry("MinimizeToTray", settings.value(QStringLiteral("MinimizeToTray"), true).toBool());
+        genGroup.writeEntry("MonitorClipboard", settings.value(QStringLiteral("MonitorClipboard"), false).toBool());
+        genGroup.writeEntry("AutoSearchClipboard", settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool());
+        genGroup.writeEntry("ClipboardOnlyWhenFocused", settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool());
+
+        KConfigGroup historyGroup(config, QStringLiteral("History"));
+        settings.beginGroup("History");
+        historyGroup.writeEntry("SearchHistory", settings.value("SearchHistory").toStringList());
+        settings.endGroup();
+
+        KConfigGroup providersGroup(config, QStringLiteral("Providers"));
+        for (const QString &key : settings.allKeys()) {
+            if (key.endsWith(QStringLiteral("_Enabled"))) {
+                providersGroup.writeEntry(key, settings.value(key, true).toBool());
+            }
+        }
+
+        int size = settings.beginReadArray("OpenTabs");
+        for (int i = 0; i < size; ++i) {
+            settings.setArrayIndex(i);
+            QString query = settings.value("query").toString();
+            KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+            tabGroup.writeEntry(QStringLiteral("Tab%1").arg(i), query);
+        }
+        KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+        tabGroup.writeEntry("Count", size);
+        settings.endArray();
+
+        genGroup.writeEntry("MigratedToKConfig", true);
+        config->sync();
+    }
+
+    KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+    int size = tabGroup.readEntry("Count", 0);
     for (int i = 0; i < size; ++i) {
-        settings.setArrayIndex(i);
-        QString query = settings.value("query").toString();
+        QString query = tabGroup.readEntry(QStringLiteral("Tab%1").arg(i), QString());
         if (!query.isEmpty()) {
             performSearch(query);
         }
     }
-    settings.endArray();
 
-    settings.beginGroup("History");
-    m_dashboard->loadHistory(settings.value("SearchHistory").toStringList());
-    settings.endGroup();
+    KConfigGroup historyGroup(config, QStringLiteral("History"));
+    m_dashboard->loadHistory(historyGroup.readEntry("SearchHistory", QStringList()));
 }
 
 void MainWindow::saveSettings()
@@ -312,22 +354,21 @@ void MainWindow::saveSettings()
         return;
     }
 
-    QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
 
-    settings.remove(QStringLiteral("OpenTabs"));
+    KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+    tabGroup.deleteGroup();
 
-    settings.beginWriteArray("OpenTabs");
     int writeIndex = 0;
     for (int i = 1; i < m_tabWidget->count(); ++i) {
         QString query = m_tabWidget->tabText(i);
-        settings.setArrayIndex(writeIndex++);
-        settings.setValue("query", query);
+        tabGroup.writeEntry(QStringLiteral("Tab%1").arg(writeIndex++), query);
     }
-    settings.endArray();
+    tabGroup.writeEntry("Count", writeIndex);
 
-    settings.beginGroup("History");
-    settings.setValue("SearchHistory", m_dashboard->saveHistory());
-    settings.endGroup();
-    settings.sync();
+    KConfigGroup historyGroup(config, QStringLiteral("History"));
+    historyGroup.writeEntry("SearchHistory", m_dashboard->saveHistory());
+
+    config->sync();
     m_settingsSaved = true;
 }

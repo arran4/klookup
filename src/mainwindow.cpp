@@ -71,32 +71,38 @@ MainWindow::MainWindow(QWidget *parent)
     if (!genGroup.readEntry("MigratedToKConfig", false)) {
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
 
-        if (!genGroup.hasKey("MinimizeToTray")) genGroup.writeEntry("MinimizeToTray", settings.value(QStringLiteral("MinimizeToTray"), true).toBool());
-        if (!genGroup.hasKey("MonitorClipboard")) genGroup.writeEntry("MonitorClipboard", settings.value(QStringLiteral("MonitorClipboard"), false).toBool());
-        if (!genGroup.hasKey("AutoSearchClipboard")) genGroup.writeEntry("AutoSearchClipboard", settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool());
-        if (!genGroup.hasKey("ClipboardOnlyWhenFocused")) genGroup.writeEntry("ClipboardOnlyWhenFocused", settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool());
+        if (!genGroup.hasKey("MinimizeToTray") && settings.contains(QStringLiteral("MinimizeToTray"))) genGroup.writeEntry("MinimizeToTray", settings.value(QStringLiteral("MinimizeToTray"), true).toBool());
+        if (!genGroup.hasKey("MonitorClipboard") && settings.contains(QStringLiteral("MonitorClipboard"))) genGroup.writeEntry("MonitorClipboard", settings.value(QStringLiteral("MonitorClipboard"), false).toBool());
+        if (!genGroup.hasKey("AutoSearchClipboard") && settings.contains(QStringLiteral("AutoSearchClipboard"))) genGroup.writeEntry("AutoSearchClipboard", settings.value(QStringLiteral("AutoSearchClipboard"), false).toBool());
+        if (!genGroup.hasKey("ClipboardOnlyWhenFocused") && settings.contains(QStringLiteral("ClipboardOnlyWhenFocused"))) genGroup.writeEntry("ClipboardOnlyWhenFocused", settings.value(QStringLiteral("ClipboardOnlyWhenFocused"), true).toBool());
 
         KConfigGroup historyGroup(config, QStringLiteral("History"));
         settings.beginGroup("History");
-        if (!historyGroup.hasKey("SearchHistory")) historyGroup.writeEntry("SearchHistory", settings.value("SearchHistory").toStringList());
+        if (!historyGroup.hasKey("SearchHistory") && settings.contains("SearchHistory")) historyGroup.writeEntry("SearchHistory", settings.value("SearchHistory").toStringList());
         settings.endGroup();
 
         KConfigGroup providersGroup(config, QStringLiteral("Providers"));
         for (const QString &key : settings.allKeys()) {
             if (key.endsWith(QStringLiteral("_Enabled"))) {
-                if (!providersGroup.hasKey(key)) providersGroup.writeEntry(key, settings.value(key, true).toBool());
+                if (!providersGroup.hasKey(key) && settings.contains(key)) providersGroup.writeEntry(key, settings.value(key, true).toBool());
             }
         }
 
         int size = settings.beginReadArray("OpenTabs");
         KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
         if (!tabGroup.hasKey("Count")) {
-            for (int i = 0; i < size; ++i) {
-                settings.setArrayIndex(i);
-                QString query = settings.value("query").toString();
-                tabGroup.writeEntry(QStringLiteral("Tab%1").arg(i), query);
+            bool destinationHasTabs = false;
+            for (const QString &key : tabGroup.keyList()) {
+                if (key.startsWith(QStringLiteral("Tab"))) destinationHasTabs = true;
             }
-            tabGroup.writeEntry("Count", size);
+            if (!destinationHasTabs && size > 0) {
+                for (int i = 0; i < size; ++i) {
+                    settings.setArrayIndex(i);
+                    QString query = settings.value("query").toString();
+                    tabGroup.writeEntry(QStringLiteral("Tab%1").arg(i), query);
+                }
+                tabGroup.writeEntry("Count", size);
+            }
         }
         settings.endArray();
 

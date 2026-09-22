@@ -226,6 +226,15 @@ private slots:
 
         QCOMPARE(mock->isEnabled(), false);
         QCOMPARE(errMock->isEnabled(), true);
+
+        mainWindow.performSearch("test query");
+
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        SearchTab *searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+
+        QCOMPARE(treeWidget->topLevelItemCount(), 1);
+        QCOMPARE(treeWidget->topLevelItem(0)->text(0), QStringLiteral("Error Friendly Name"));
     }
 
     void testSettingsDialogLifecycle()
@@ -235,10 +244,12 @@ private slots:
         genGroup.writeEntry("MinimizeToTray", true);
         config->sync();
 
-        QList<SearchProvider*> emptyProviders;
+        QList<SearchProvider*> providers;
+        MockProvider mock;
+        providers.append(&mock);
 
         // Test Cancel
-        SettingsDialog *dialog = new SettingsDialog(emptyProviders);
+        SettingsDialog *dialog = new SettingsDialog(providers);
         QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>();
         minimizeCheck->setChecked(false);
         dialog->button(QDialogButtonBox::Cancel)->click();
@@ -246,18 +257,29 @@ private slots:
         delete dialog;
 
         // Test Apply
-        dialog = new SettingsDialog(emptyProviders);
+        dialog = new SettingsDialog(providers);
         dialog->show(); // Needs to be shown for isVisible checks
         minimizeCheck = dialog->findChild<QCheckBox*>();
         minimizeCheck->setChecked(false);
+
+        QListWidget* listWidget = dialog->findChild<QListWidget*>();
+        if (listWidget && listWidget->count() > 0) {
+            listWidget->item(0)->setCheckState(Qt::Unchecked);
+        }
+
         dialog->button(QDialogButtonBox::Apply)->click();
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
+
+        KConfigGroup provGroup(config, "Providers");
+        QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), false);
+        QCOMPARE(mock.isEnabled(), false);
+
         QVERIFY(dialog->isVisible()); // Apply should not close
         dialog->reject();
         delete dialog;
 
         // Test OK
-        dialog = new SettingsDialog(emptyProviders);
+        dialog = new SettingsDialog(providers);
         dialog->show();
         minimizeCheck = dialog->findChild<QCheckBox*>();
         minimizeCheck->setChecked(true);

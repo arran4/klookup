@@ -18,13 +18,11 @@
 #endif
 
 SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent)
-    : QDialog(parent), m_providers(providers)
+    : KPageDialog(parent), m_providers(providers)
 {
     setWindowTitle(QStringLiteral("Configure KLookup"));
-
-    QVBoxLayout *mainLayout = new QVBoxLayout(this);
-    QTabWidget *tabWidget = new QTabWidget(this);
-    mainLayout->addWidget(tabWidget);
+    setFaceType(KPageDialog::Tabbed);
+    setStandardButtons(QDialogButtonBox::Ok | QDialogButtonBox::Apply | QDialogButtonBox::Cancel);
 
     // Providers Tab
     QWidget *providersWidget = new QWidget(this);
@@ -40,7 +38,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     QPushButton *loginButton = new QPushButton(QStringLiteral("Authenticate Selected Provider..."), this);
     providersLayout->addWidget(loginButton);
-    tabWidget->addTab(providersWidget, QStringLiteral("Providers"));
+    addPage(providersWidget, QStringLiteral("Providers"));
 
     // General Settings Tab
     QWidget *generalWidget = new QWidget(this);
@@ -58,7 +56,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     generalLayout->addWidget(m_onlyFocusedClipboardCheck);
     generalLayout->addStretch();
 
-    tabWidget->addTab(generalWidget, QStringLiteral("General"));
+    addPage(generalWidget, QStringLiteral("General"));
 
     // Load current settings
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
@@ -75,19 +73,11 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_autoSearchClipboardCheck->setEnabled(m_monitorClipboardCheck->isChecked());
     m_onlyFocusedClipboardCheck->setEnabled(m_monitorClipboardCheck->isChecked());
 
-    QHBoxLayout *buttonLayout = new QHBoxLayout();
-    QPushButton *okButton = new QPushButton(QStringLiteral("OK"), this);
-    QPushButton *cancelButton = new QPushButton(QStringLiteral("Cancel"), this);
-
-    buttonLayout->addStretch();
-    buttonLayout->addWidget(okButton);
-    buttonLayout->addWidget(cancelButton);
-
-    mainLayout->addLayout(buttonLayout);
-
     connect(loginButton, &QPushButton::clicked, this, &SettingsDialog::showLoginDialog);
-    connect(okButton, &QPushButton::clicked, this, &SettingsDialog::saveSettings);
-    connect(cancelButton, &QPushButton::clicked, this, &SettingsDialog::reject);
+
+    connect(button(QDialogButtonBox::Apply), &QPushButton::clicked, this, &SettingsDialog::saveSettings);
+    connect(button(QDialogButtonBox::Ok), &QPushButton::clicked, this, &SettingsDialog::saveSettings);
+    connect(this, &QDialog::rejected, this, &SettingsDialog::reject);
 }
 
 SettingsDialog::~SettingsDialog()
@@ -153,6 +143,4 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("AutoSearchClipboard"), m_autoSearchClipboardCheck->isChecked());
     genGroup.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), m_onlyFocusedClipboardCheck->isChecked());
     config->sync();
-
-    accept();
 }

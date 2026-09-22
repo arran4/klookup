@@ -106,6 +106,30 @@ private slots:
         QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), false);
     }
 
+    void testMigrationNoOverwrite()
+    {
+        // Setup KConfig to already have a value and migration marker
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup genGroup(config, "General");
+        genGroup.writeEntry("MinimizeToTray", false);
+        genGroup.writeEntry("MigratedToKConfig", true);
+        config->sync();
+
+        // Setup QSettings to have conflicting value
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.clear();
+        settings.setValue("MinimizeToTray", true);
+        settings.sync();
+
+        MainWindow mainWindow; // Should NOT trigger overwrite
+
+        // KConfig value should remain untouched
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
+
+        genGroup.deleteEntry("MigratedToKConfig"); // Cleanup
+        config->sync();
+    }
+
     void testClipboardDeduplication()
     {
         MainWindow mainWindow;
@@ -174,6 +198,37 @@ private slots:
         QCOMPARE(historyGroup.readEntry(QStringLiteral("SearchHistory"), QStringList()), QStringList { QStringLiteral("history entry") });
 
         delete mainWindow;
+    }
+
+    void testProviderEnablement()
+    {
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup provGroup(config, "Providers");
+        provGroup.writeEntry("ugly_id_123_Enabled", false); // MockProvider id
+        provGroup.writeEntry("error_ugly_id_456_Enabled", true); // ErrorMockProvider id
+        config->sync();
+
+        MainWindow mainWindow;
+
+        MockProvider *mock = new MockProvider(&mainWindow);
+        ErrorMockProvider *errMock = new ErrorMockProvider(&mainWindow);
+        mainWindow.m_providers.append(mock);
+        mainWindow.m_providers.append(errMock);
+
+        // Reload plugins should apply the configuration
+        // We cheat and call loadPlugins logic manually for our injected mocks since we didn't export loadPlugins
+        mock->setEnabled(provGroup.readEntry(mock->id() + "_Enabled", true));
+        errMock->setEnabled(provGroup.readEntry(errMock->id() + "_Enabled", true));
+
+        mainWindow.performSearch("test query");
+
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        SearchTab *searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+
+        // MockProvider is disabled, should not be in results
+        QCOMPARE(treeWidget->topLevelItemCount(), 1);
+        QCOMPARE(treeWidget->topLevelItem(0)->text(0), QStringLiteral("Error Friendly Name"));
     }
 
     void testProviderDisplayNameInResults()

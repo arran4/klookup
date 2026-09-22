@@ -1,13 +1,13 @@
 #ifndef SETTINGSDIALOG_H
 #define SETTINGSDIALOG_H
 
-#include <QDialog>
+#include <KPageDialog>
 #include <QListWidget>
 
 class SearchProvider;
 class QCheckBox;
 
-class SettingsDialog : public QDialog
+class SettingsDialog : public KPageDialog
 {
     Q_OBJECT
 

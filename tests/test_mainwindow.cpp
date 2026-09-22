@@ -157,6 +157,27 @@ private slots:
         config->sync();
     }
 
+    void testMigrationSparseTabs()
+    {
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup("OpenTabs");
+        KConfigGroup tabGroup(config, "OpenTabs");
+        tabGroup.writeEntry("TabFoo", "garbage");
+        tabGroup.writeEntry("Tab5", "valid sparse tab");
+        config->sync();
+
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.clear();
+        settings.sync();
+
+        MainWindow mainWindow;
+
+        // Count should be 6 because max index is 5.
+        QCOMPARE(tabGroup.readEntry("Count", 0), 6);
+        QCOMPARE(tabGroup.readEntry("Tab5", QString()), QStringLiteral("valid sparse tab"));
+        QCOMPARE(tabGroup.readEntry("TabFoo", QString()), QStringLiteral("garbage"));
+    }
+
     void testMigrationEmptyLegacy()
     {
         // Ensure completely empty legacy does not create garbage defaults in KConfig

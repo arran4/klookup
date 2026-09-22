@@ -95,11 +95,13 @@ MainWindow::MainWindow(QWidget *parent)
             int maxTab = -1;
             for (const QString &key : tabGroup.keyList()) {
                 if (key.startsWith(QStringLiteral("Tab"))) {
-                    destinationHasTabs = true;
                     bool ok;
                     int tabNum = key.mid(3).toInt(&ok);
-                    if (ok && tabNum > maxTab) {
-                        maxTab = tabNum;
+                    if (ok && tabNum >= 0) {
+                        destinationHasTabs = true;
+                        if (tabNum > maxTab) {
+                            maxTab = tabNum;
+                        }
                     }
                 }
             }

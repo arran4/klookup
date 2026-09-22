@@ -112,17 +112,36 @@ private slots:
 
     void testMigrationNoOverwrite()
     {
-        // Setup KConfig to already have a value and migration marker
+        // Clear config first
         KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup("General");
+        config->deleteGroup("History");
+        config->deleteGroup("Providers");
+        config->deleteGroup("OpenTabs");
+        config->sync();
+
+        // Setup KConfig to already have a value and migration marker
         KConfigGroup genGroup(config, "General");
         genGroup.writeEntry("MinimizeToTray", false);
-        genGroup.writeEntry("MigratedToKConfig", true);
+        // The conflict test should have the marker *absent*
+        // genGroup.writeEntry("MigratedToKConfig", true);
+
+        KConfigGroup tabGroup(config, "OpenTabs");
+        tabGroup.writeEntry("Tab0", "some destination tab");
+        // explicitly DO NOT write Count
+
         config->sync();
 
         // Setup QSettings to have conflicting value
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
         settings.clear();
         settings.setValue("MinimizeToTray", true);
+
+        settings.beginWriteArray("OpenTabs");
+        settings.setArrayIndex(0);
+        settings.setValue("query", "legacy tab");
+        settings.endArray();
+
         settings.sync();
 
         MainWindow mainWindow; // Should NOT trigger overwrite
@@ -130,8 +149,36 @@ private slots:
         // KConfig value should remain untouched
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
 
+        // The destination tab should have its count recovered
+        QCOMPARE(tabGroup.readEntry("Count", 0), 1);
+        QCOMPARE(tabGroup.readEntry("Tab0", QString()), QStringLiteral("some destination tab"));
+
         genGroup.deleteEntry("MigratedToKConfig"); // Cleanup
         config->sync();
+    }
+
+    void testMigrationEmptyLegacy()
+    {
+        // Ensure completely empty legacy does not create garbage defaults in KConfig
+        QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
+        settings.clear();
+        settings.sync();
+
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup("General");
+        config->deleteGroup("History");
+        config->deleteGroup("Providers");
+        config->deleteGroup("OpenTabs");
+        config->sync();
+
+        MainWindow mainWindow;
+
+        KConfigGroup genGroup(config, "General");
+        QVERIFY(!genGroup.hasKey("MinimizeToTray"));
+        QVERIFY(!genGroup.hasKey("MonitorClipboard"));
+
+        KConfigGroup tabGroup(config, "OpenTabs");
+        QVERIFY(!tabGroup.hasKey("Count"));
     }
 
     void testClipboardDeduplication()

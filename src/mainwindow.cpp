@@ -92,8 +92,16 @@ MainWindow::MainWindow(QWidget *parent)
         KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
         if (!tabGroup.hasKey("Count")) {
             bool destinationHasTabs = false;
+            int maxTab = -1;
             for (const QString &key : tabGroup.keyList()) {
-                if (key.startsWith(QStringLiteral("Tab"))) destinationHasTabs = true;
+                if (key.startsWith(QStringLiteral("Tab"))) {
+                    destinationHasTabs = true;
+                    bool ok;
+                    int tabNum = key.mid(3).toInt(&ok);
+                    if (ok && tabNum > maxTab) {
+                        maxTab = tabNum;
+                    }
+                }
             }
             if (!destinationHasTabs && size > 0) {
                 for (int i = 0; i < size; ++i) {
@@ -102,6 +110,8 @@ MainWindow::MainWindow(QWidget *parent)
                     tabGroup.writeEntry(QStringLiteral("Tab%1").arg(i), query);
                 }
                 tabGroup.writeEntry("Count", size);
+            } else if (destinationHasTabs) {
+                tabGroup.writeEntry("Count", maxTab + 1);
             }
         }
         settings.endArray();

@@ -388,9 +388,8 @@ private slots:
         minimizeCheck->setChecked(false);
 
         listWidget = dialog->findChild<QListWidget*>();
-        if (listWidget && listWidget->count() > 0) {
-            listWidget->item(0)->setCheckState(Qt::Unchecked);
-        }
+        QVERIFY(listWidget && listWidget->count() > 0);
+        listWidget->item(0)->setCheckState(Qt::Unchecked);
 
         dialog->button(QDialogButtonBox::Apply)->click();
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
@@ -448,6 +447,8 @@ private slots:
         QCOMPARE(treeWidget->topLevelItemCount(), 1); // Participated
 
         // Verify unknown provider defaults to enabled
+        provGroup.deleteEntry("error_ugly_id_456_Enabled");
+        QVERIFY(!provGroup.hasKey("error_ugly_id_456_Enabled"));
         ErrorMockProvider errMock;
         mainWindow3.restoreProviderState(&errMock);
         QCOMPARE(errMock.isEnabled(), true);

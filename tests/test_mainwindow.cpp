@@ -345,8 +345,11 @@ private slots:
         mainWindow.performSearch("test query");
 
         QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
         SearchTab *searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QVERIFY(searchTab);
         QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+        QVERIFY(treeWidget);
 
         QCOMPARE(treeWidget->topLevelItemCount(), 1);
         QCOMPARE(treeWidget->topLevelItem(0)->text(0), QStringLiteral("Error Friendly Name"));
@@ -379,6 +382,7 @@ private slots:
         QCOMPARE(genGroup.readEntry("MinimizeToTray", false), true);
         KConfigGroup provGroup(config, "Providers");
         QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), true); // Unchanged
+        QCOMPARE(mock.isEnabled(), true); // Unchanged runtime state
         delete dialog;
 
         // Test Apply
@@ -410,8 +414,11 @@ private slots:
         QCOMPARE(mock2->isEnabled(), false);
         mainWindow.performSearch("test query 2");
         QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
         SearchTab *searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QVERIFY(searchTab);
         QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+        QVERIFY(treeWidget);
         QCOMPARE(treeWidget->topLevelItemCount(), 0); // Skipped
 
         // Test OK

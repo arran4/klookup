@@ -437,6 +437,25 @@ private slots:
         mainWindow3.m_providers.append(mock3);
         mainWindow3.restoreProviderState(mock3);
         QCOMPARE(mock3->isEnabled(), true);
+
+        mainWindow3.performSearch("test query 3");
+        tabWidget = mainWindow3.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+        searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QVERIFY(searchTab);
+        treeWidget = searchTab->findChild<QTreeWidget*>();
+        QVERIFY(treeWidget);
+        QCOMPARE(treeWidget->topLevelItemCount(), 1); // Participated
+
+        // Verify unknown provider defaults to enabled
+        ErrorMockProvider errMock;
+        mainWindow3.restoreProviderState(&errMock);
+        QCOMPARE(errMock.isEnabled(), true);
+
+        // Verify an unrelated stale ID does not affect configured provider
+        provGroup.writeEntry("some_stale_id_Enabled", false);
+        mainWindow3.restoreProviderState(mock3);
+        QCOMPARE(mock3->isEnabled(), true);
     }
 
     void testProviderDisplayNameInResults()

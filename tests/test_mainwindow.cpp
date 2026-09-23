@@ -123,8 +123,6 @@ private slots:
         // Setup KConfig to already have a value and migration marker
         KConfigGroup genGroup(config, "General");
         genGroup.writeEntry("MinimizeToTray", false);
-        // The conflict test should have the marker *absent*
-        // genGroup.writeEntry("MigratedToKConfig", true);
 
         KConfigGroup tabGroup(config, "OpenTabs");
         tabGroup.writeEntry("Tab0", "some destination tab");
@@ -170,9 +168,31 @@ private slots:
         QCOMPARE(tabGroup.readEntry("Count", 0), 1);
         QCOMPARE(tabGroup.readEntry("Tab0", QString()), QStringLiteral("some destination tab"));
 
+        // Verify UI restored correctly
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        QVERIFY(tabWidget);
+        // Dashboard (1) + destination tab (1) = 2
+        QCOMPARE(tabWidget->count(), 2);
+        QCOMPARE(tabWidget->tabText(1), QStringLiteral("some destination tab"));
+
+        SearchDashboard *dashboard = mainWindow.findChild<SearchDashboard*>();
+        QVERIFY(dashboard);
+        QCOMPARE(dashboard->saveHistory(), QStringList() << "dest history");
+
+        mainWindow.close();
+
         // Verify idempotency
         MainWindow mainWindow2;
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
+
+        QTabWidget *tabWidget2 = mainWindow2.findChild<QTabWidget*>();
+        QVERIFY(tabWidget2);
+        QCOMPARE(tabWidget2->count(), 2);
+        QCOMPARE(tabWidget2->tabText(1), QStringLiteral("some destination tab"));
+
+        SearchDashboard *dashboard2 = mainWindow2.findChild<SearchDashboard*>();
+        QVERIFY(dashboard2);
+        QCOMPARE(dashboard2->saveHistory(), QStringList() << "dest history");
 
         genGroup.deleteEntry("MigratedToKConfig"); // Cleanup
         config->sync();
@@ -197,6 +217,12 @@ private slots:
         QCOMPARE(tabGroup.readEntry("Count", 0), 6);
         QCOMPARE(tabGroup.readEntry("Tab5", QString()), QStringLiteral("valid sparse tab"));
         QCOMPARE(tabGroup.readEntry("TabFoo", QString()), QStringLiteral("garbage"));
+
+        QTabWidget *tabs = mainWindow.findChild<QTabWidget*>();
+        // Dashboard (1) + only ONE real tab restored for Tab5 (1) = 2
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 2);
+        QCOMPARE(tabs->tabText(1), QStringLiteral("valid sparse tab"));
     }
 
     void testMigrationEmptyLegacy()

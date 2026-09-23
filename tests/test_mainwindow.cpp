@@ -130,12 +130,23 @@ private slots:
         tabGroup.writeEntry("Tab0", "some destination tab");
         // explicitly DO NOT write Count
 
+        KConfigGroup historyGroup(config, "History");
+        historyGroup.writeEntry("SearchHistory", QStringList() << "dest history");
+
+        KConfigGroup provGroup(config, "Providers");
+        provGroup.writeEntry("ugly_id_123_Enabled", false);
+
         config->sync();
 
         // Setup QSettings to have conflicting value
         QSettings settings(QStringLiteral("KDE"), QStringLiteral("klookup"));
         settings.clear();
         settings.setValue("MinimizeToTray", true);
+        settings.setValue("MonitorClipboard", true); // Missing destination key
+        settings.setValue("ugly_id_123_Enabled", true);
+        settings.beginGroup("History");
+        settings.setValue("SearchHistory", QStringList() << "legacy history");
+        settings.endGroup();
 
         settings.beginWriteArray("OpenTabs");
         settings.setArrayIndex(0);
@@ -149,9 +160,19 @@ private slots:
         // KConfig value should remain untouched
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
 
+        // Missing destination key should be imported
+        QCOMPARE(genGroup.readEntry("MonitorClipboard", false), true);
+
+        QCOMPARE(historyGroup.readEntry("SearchHistory", QStringList()), QStringList() << "dest history");
+        QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), false);
+
         // The destination tab should have its count recovered
         QCOMPARE(tabGroup.readEntry("Count", 0), 1);
         QCOMPARE(tabGroup.readEntry("Tab0", QString()), QStringLiteral("some destination tab"));
+
+        // Verify idempotency
+        MainWindow mainWindow2;
+        QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
 
         genGroup.deleteEntry("MigratedToKConfig"); // Cleanup
         config->sync();
@@ -310,6 +331,8 @@ private slots:
         KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
         KConfigGroup genGroup(config, "General");
         genGroup.writeEntry("MinimizeToTray", true);
+        KConfigGroup initProvGroup(config, "Providers");
+        initProvGroup.writeEntry("ugly_id_123_Enabled", true);
         config->sync();
 
         QList<SearchProvider*> providers;
@@ -318,10 +341,18 @@ private slots:
 
         // Test Cancel
         SettingsDialog *dialog = new SettingsDialog(providers);
+        dialog->show();
         QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>();
+        QVERIFY(minimizeCheck);
         minimizeCheck->setChecked(false);
+        QListWidget* listWidget = dialog->findChild<QListWidget*>();
+        QVERIFY(listWidget);
+        QVERIFY(listWidget->count() > 0);
+        listWidget->item(0)->setCheckState(Qt::Unchecked);
         dialog->button(QDialogButtonBox::Cancel)->click();
         QCOMPARE(genGroup.readEntry("MinimizeToTray", false), true);
+        KConfigGroup provGroup(config, "Providers");
+        QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), true); // Unchanged
         delete dialog;
 
         // Test Apply
@@ -330,7 +361,7 @@ private slots:
         minimizeCheck = dialog->findChild<QCheckBox*>();
         minimizeCheck->setChecked(false);
 
-        QListWidget* listWidget = dialog->findChild<QListWidget*>();
+        listWidget = dialog->findChild<QListWidget*>();
         if (listWidget && listWidget->count() > 0) {
             listWidget->item(0)->setCheckState(Qt::Unchecked);
         }
@@ -338,7 +369,7 @@ private slots:
         dialog->button(QDialogButtonBox::Apply)->click();
         QCOMPARE(genGroup.readEntry("MinimizeToTray", true), false);
 
-        KConfigGroup provGroup(config, "Providers");
+
         QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", true), false);
         QCOMPARE(mock.isEnabled(), false);
 
@@ -346,15 +377,40 @@ private slots:
         dialog->reject();
         delete dialog;
 
+        // Prove it persists by re-reconstructing
+        MainWindow mainWindow;
+        MockProvider *mock2 = new MockProvider(&mainWindow);
+        mainWindow.m_providers.append(mock2);
+        mainWindow.restoreProviderState(mock2);
+        QCOMPARE(mock2->isEnabled(), false);
+        mainWindow.performSearch("test query 2");
+        QTabWidget *tabWidget = mainWindow.findChild<QTabWidget*>();
+        SearchTab *searchTab = qobject_cast<SearchTab*>(tabWidget->currentWidget());
+        QTreeWidget *treeWidget = searchTab->findChild<QTreeWidget*>();
+        QCOMPARE(treeWidget->topLevelItemCount(), 0); // Skipped
+
         // Test OK
         dialog = new SettingsDialog(providers);
         dialog->show();
         minimizeCheck = dialog->findChild<QCheckBox*>();
         minimizeCheck->setChecked(true);
+        listWidget = dialog->findChild<QListWidget*>();
+        QVERIFY(listWidget);
+        QVERIFY(listWidget->count() > 0);
+        listWidget->item(0)->setCheckState(Qt::Checked);
         dialog->button(QDialogButtonBox::Ok)->click();
         QCOMPARE(genGroup.readEntry("MinimizeToTray", false), true);
+        QCOMPARE(provGroup.readEntry("ugly_id_123_Enabled", false), true);
+        QCOMPARE(mock.isEnabled(), true);
         QVERIFY(!dialog->isVisible()); // OK should close
         delete dialog;
+
+        // Prove OK persists
+        MainWindow mainWindow3;
+        MockProvider *mock3 = new MockProvider(&mainWindow3);
+        mainWindow3.m_providers.append(mock3);
+        mainWindow3.restoreProviderState(mock3);
+        QCOMPARE(mock3->isEnabled(), true);
     }
 
     void testProviderDisplayNameInResults()

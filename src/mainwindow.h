@@ -21,6 +21,8 @@ public slots:
     void performSearch(const QString &query);
     void processClipboardText(const QString &text, bool autoSearch);
 
+    void restoreProviderState(SearchProvider* provider);
+
 protected:
     bool queryClose() override;
 

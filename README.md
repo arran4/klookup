@@ -12,7 +12,7 @@ KLookup queries a wide variety of services. The current build includes 12 backen
 | --- | --- | --- | --- |
 | `anilist` | AniList | `graphql.anilist.co` | No |
 | `duckduckgo` | DuckDuckGo | `api.duckduckgo.com` | No |
-| `github` | GitHub | `api.github.com/search/repositories` | Yes |
+| `github` | GitHub | `api.github.com/search/repositories` | Optional (personal access token) |
 | `lyrics_ovh` | Lyrics (OVH) | `api.lyrics.ovh/suggest` | No |
 | `mangadex` | MangaDex (Baka equivalent) | `api.mangadex.org/manga` | No |
 | `mangaupdates` | MangaUpdates | `api.mangaupdates.com/v1/series/search` | No |
@@ -32,7 +32,9 @@ KLookup queries a wide variety of services. The current build includes 12 backen
 
 KLookup provides configurable clipboard integration and system tray behaviors.
 
-Changes made in the Settings dialog are staged and do not alter the runtime state or persist to storage until you explicitly click **Apply** or **OK**. Clicking **Cancel** fully discards all modifications.
+For ordinary settings (like provider enablement and general options), changes made in the Settings dialog are staged and do not alter the runtime state or persist to storage until you explicitly click **Apply** or **OK**. Clicking **Cancel** fully discards these staged modifications.
+
+However, **authentication credentials** (API keys, tokens) entered via the provider login dialog are applied to the active runtime immediately and (where available) written to your local system wallet independent of the **Apply**/**OK** buttons. Clicking **Cancel** on the main Settings dialog will *not* undo a credential login.
 
 ### Clipboard Integration
 KLookup can interact with your clipboard to streamline searching:
@@ -49,7 +51,7 @@ KLookup can interact with your clipboard to streamline searching:
 
 Non-secret persistent application settings and state—such as provider enablement, search history, and open-tab session state—are stored using KDE's `KSharedConfig` and saved to `klookuprc` (migrated from the prior `QSettings` storage).
 
-**Security Warning:** Do not put API tokens or passwords directly into `klookuprc` or any other plaintext files. KLookup uses `KWallet` to securely store and manage all user-provided secret credentials.
+**Security Warning:** Do not put API tokens or passwords directly into `klookuprc` or any other plaintext files. KLookup attempts to use `KWallet` to securely store and manage user-provided secret credentials. *Note: KWallet availability depends on your OS environment. The application will attempt to securely persist credentials, but there is no guaranteed persistence (e.g., if you are running on a platform where KWallet is unsupported like WASM, or if the wallet fails to open).*
 
 ## Build Requirements
 

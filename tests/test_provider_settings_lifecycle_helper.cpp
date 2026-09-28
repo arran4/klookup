@@ -28,37 +28,15 @@ int main(int argc, char *argv[])
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
 
-    QCoreApplication::addLibraryPath(QCoreApplication::applicationDirPath());
-
-    // By default MainWindow searches a hardcoded list of paths in loadPlugins
-    // including QCoreApplication::applicationDirPath() + "/providers"
-    // But our mocks are in QCoreApplication::applicationDirPath() (the root of the build/tests bin dir).
-    // The loop in loadPlugins does this:
-    // for (const QString &libPath : QCoreApplication::libraryPaths()) {
-    //     pluginPaths.append(libPath + QStringLiteral("/klookup/providers"));
-    //     pluginPaths.append(libPath + QStringLiteral("/klookup"));
-    // }
-    // It doesn't load directly from libPath unless it's in a subfolder like /klookup/providers.
-
-    // Oh wait, MainWindow uses the following default paths:
-    // QStringList pluginPaths = {
-    //     QCoreApplication::applicationDirPath() + QStringLiteral("/../lib64/plugins/klookup"),
-    //     QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plugins/klookup"),
-    //     QCoreApplication::applicationDirPath() + QStringLiteral("/plugins/klookup"),
-    //     QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
-    // };
-    // Let's create a symlink or directory for providers in the helper
-    QDir().mkpath(QCoreApplication::applicationDirPath() + "/providers");
-    if (QFile::exists(QCoreApplication::applicationDirPath() + "/provider_mock_alpha.so")) {
-        QFile::copy(QCoreApplication::applicationDirPath() + "/provider_mock_alpha.so", QCoreApplication::applicationDirPath() + "/providers/provider_mock_alpha.so");
-    }
-    if (QFile::exists(QCoreApplication::applicationDirPath() + "/provider_mock_beta.so")) {
-        QFile::copy(QCoreApplication::applicationDirPath() + "/provider_mock_beta.so", QCoreApplication::applicationDirPath() + "/providers/provider_mock_beta.so");
-    }
+    // We do not copy files or use arbitrary QCoreApplication::addLibraryPath anymore.
+    // MainWindow default pluginPaths includes QCoreApplication::applicationDirPath() + "/providers"
+    // We configured CMake so that our mock MODULEs are directly built into that path.
 
     MainWindow window;
 
     if (mode == QStringLiteral("disable-alpha")) {
+        window.performSearch("test");
+
         providersGroup.writeEntry(QStringLiteral("mock_alpha_Enabled"), false);
         config->sync();
 

@@ -20,3 +20,34 @@ add_test(NAME test_searchtab COMMAND test_searchtab)
 add_executable(test_provider_network test_provider_network.cpp ../providers/duckduckgo/provider_duckduckgo.cpp)
 target_link_libraries(test_provider_network Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network)
 add_test(NAME test_provider_network COMMAND test_provider_network)
+
+add_library(provider_mock_alpha MODULE provider_mock_alpha.cpp)
+target_link_libraries(provider_mock_alpha klookup_core Qt6::Core)
+target_include_directories(provider_mock_alpha PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+add_library(provider_mock_beta MODULE provider_mock_beta.cpp)
+target_link_libraries(provider_mock_beta klookup_core Qt6::Core)
+target_include_directories(provider_mock_beta PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
+add_executable(test_provider_settings_lifecycle_helper test_provider_settings_lifecycle_helper.cpp)
+target_link_libraries(test_provider_settings_lifecycle_helper klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+add_dependencies(test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
+
+set_target_properties(test_provider_settings_lifecycle_helper PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider-settings-lifecycle"
+)
+
+# Ensure the mock providers are output directly into a 'providers' directory next to the helper executable
+set_target_properties(provider_mock_alpha PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider-settings-lifecycle/providers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider-settings-lifecycle/providers"
+)
+set_target_properties(provider_mock_beta PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider-settings-lifecycle/providers"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/provider-settings-lifecycle/providers"
+)
+
+add_executable(test_provider_settings_lifecycle test_provider_settings_lifecycle.cpp)
+target_link_libraries(test_provider_settings_lifecycle Qt6::Test Qt6::Core)
+target_compile_definitions(test_provider_settings_lifecycle PRIVATE HELPER_PATH="$<TARGET_FILE:test_provider_settings_lifecycle_helper>")
+add_test(NAME test_provider_settings_lifecycle COMMAND test_provider_settings_lifecycle)

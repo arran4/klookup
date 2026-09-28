@@ -18,7 +18,7 @@ private:
         environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
         helper.setProcessEnvironment(environment);
 
-        QString helperPath = QCoreApplication::applicationDirPath() + QStringLiteral("/test_provider_settings_lifecycle_helper");
+        QString helperPath = QStringLiteral(HELPER_PATH);
         helper.start(helperPath, { mode });
         if (!helper.waitForStarted() || !helper.waitForFinished()
             || helper.exitStatus() != QProcess::NormalExit || helper.exitCode() != 0) {

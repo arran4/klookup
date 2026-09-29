@@ -90,7 +90,10 @@ private slots:
             {"file:///etc/passwd", false},
             {"https://example.com\" onclick=\"alert(1)", false}, // Invalid URL due to spaces and quotes when parsed by QUrl
             {"", false},
-            {"malformed::/url", false}
+            {"malformed::/url", false},
+            {"https://", false}, // Valid scheme, but no host
+            {"http:", false}, // Valid scheme, no host
+            {"https:///path/only", false} // Valid scheme, no host
         };
 
         QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();

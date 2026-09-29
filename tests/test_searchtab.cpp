@@ -1,5 +1,8 @@
 #include <QTest>
 #include <QTreeWidget>
+#include <QTextDocument>
+#include <QTextBlock>
+#include <QTextFragment>
 #include "../src/searchtab.h"
 #include "../src/searchprovider.h"
 
@@ -112,20 +115,28 @@ private slots:
 
             emit treeWidget->itemClicked(childItem, 0);
 
-            QString html = detailsView->toHtml();
-            if (tc.shouldBeClickable) {
-                // Should contain a valid link
-                QVERIFY(html.contains("href="));
-                // Extract the href value from the HTML to verify it matches the canonicalized URL
-                QUrl qurl(tc.url, QUrl::StrictMode);
-                QString expectedHref = QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped();
-                QVERIFY(html.contains(QString("href=\"%1\"").arg(expectedHref)));
-            } else {
-                // If not empty, it should say Invalid or unsupported URL and contain no link for that url
-                if (!tc.url.isEmpty()) {
-                    QVERIFY(html.contains("Invalid or unsupported URL"));
+            QTextDocument *doc = detailsView->document();
+            bool foundAnchor = false;
+            QString anchorHref;
+
+            for (QTextBlock block = doc->begin(); block != doc->end(); block = block.next()) {
+                for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+                    QTextFragment fragment = it.fragment();
+                    QTextCharFormat format = fragment.charFormat();
+                    if (format.isAnchor()) {
+                        foundAnchor = true;
+                        anchorHref = format.anchorHref();
+                    }
                 }
-                QVERIFY(!html.contains("href="));
+            }
+
+            if (tc.shouldBeClickable) {
+                QVERIFY2(foundAnchor, "Expected to find an anchor in the rendered document");
+                QUrl qurl(tc.url, QUrl::StrictMode);
+                QString expectedHref = QString::fromUtf8(qurl.toEncoded());
+                QCOMPARE(anchorHref, expectedHref);
+            } else {
+                QVERIFY2(!foundAnchor, "Expected NO anchor for invalid/unsupported URL");
             }
         }
     }

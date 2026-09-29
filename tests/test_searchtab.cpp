@@ -116,6 +116,10 @@ private slots:
             if (tc.shouldBeClickable) {
                 // Should contain a valid link
                 QVERIFY(html.contains("href="));
+                // Extract the href value from the HTML to verify it matches the canonicalized URL
+                QUrl qurl(tc.url, QUrl::StrictMode);
+                QString expectedHref = QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped();
+                QVERIFY(html.contains(QString("href=\"%1\"").arg(expectedHref)));
             } else {
                 // If not empty, it should say Invalid or unsupported URL and contain no link for that url
                 if (!tc.url.isEmpty()) {

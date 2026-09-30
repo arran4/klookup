@@ -51,6 +51,30 @@ private slots:
         QVERIFY(providerItem->child(0)->text(0).contains("Connection failed"));
     }
 
+    void testPlainDescription()
+    {
+        SearchTab tab("test query");
+        QList<SearchResult> results;
+        SearchResult res;
+        res.title = "Result 1";
+        res.description = "A normal, ordinary description with punctuation: period. comma, etc!";
+        results.append(res);
+        tab.addResults("Provider", results);
+
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidgetItem *providerItem = treeWidget->topLevelItem(0);
+        QTreeWidgetItem *childItem = providerItem->child(0);
+
+        QTextBrowser *detailsView = tab.findChild<QTextBrowser*>();
+        QVERIFY(detailsView);
+
+        emit treeWidget->itemClicked(childItem, 0);
+
+        QTextDocument *doc = detailsView->document();
+        QString plainText = doc->toPlainText();
+        QVERIFY(plainText.contains(res.description));
+    }
+
     void testDescriptionEscaping()
     {
         SearchTab tab("test query");

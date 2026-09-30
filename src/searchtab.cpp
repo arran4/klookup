@@ -96,11 +96,16 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
         html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
     }
     if (!res.description.isEmpty()) {
-        html += QStringLiteral("<p>%1</p>").arg(res.description);
+        html += QStringLiteral("<p>%1</p>").arg(res.description.toHtmlEscaped());
     }
 
     if (!res.url.isEmpty()) {
-        html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(res.url);
+        QUrl qurl(res.url, QUrl::StrictMode);
+        if (qurl.isValid() && (qurl.scheme() == QStringLiteral("http") || qurl.scheme() == QStringLiteral("https")) && !qurl.host().isEmpty()) {
+            html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped());
+        } else {
+            html += QStringLiteral("<p>Invalid or unsupported URL: %1</p>").arg(res.url.toHtmlEscaped());
+        }
     }
 
     if (!res.additionalData.isEmpty()) {

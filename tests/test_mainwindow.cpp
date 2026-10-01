@@ -36,6 +36,25 @@ public:
     }
 };
 
+class AuthMockProvider : public SearchProvider
+{
+    Q_OBJECT
+public:
+    explicit AuthMockProvider(QObject *parent = nullptr) : SearchProvider(parent) {}
+    QString name() const override { return QStringLiteral("Auth Mock"); }
+    QString id() const override { return QStringLiteral("auth_mock_123"); }
+    void search(const QString &query) override { Q_UNUSED(query); }
+    SearchProvider* clone(QObject *parent = nullptr) const override { return new AuthMockProvider(parent); }
+
+    bool supportsAuthentication() const override { return true; }
+    void setCredentials(const QString &username, const QString &password) override {
+        Q_UNUSED(username);
+        m_savedToken = password;
+    }
+
+    QString m_savedToken;
+};
+
 class ErrorMockProvider : public SearchProvider
 {
     Q_OBJECT
@@ -464,6 +483,84 @@ private slots:
         provGroup.writeEntry("some_stale_id_Enabled", false);
         mainWindow3.restoreProviderState(mock3);
         QCOMPARE(mock3->isEnabled(), true);
+    }
+
+    void testCredentialPersistenceFailures()
+    {
+        AuthMockProvider mock;
+        QList<SearchProvider*> providers;
+        providers.append(&mock);
+
+        SettingsDialog dialog(providers);
+
+        QListWidget *listWidget = dialog.findChild<QListWidget*>();
+        QVERIFY(listWidget);
+        QVERIFY(listWidget->count() > 0);
+        listWidget->setCurrentRow(0);
+
+        // Dummy token
+        QString dummyToken = QStringLiteral("secret_dummy_token_999");
+        dialog.m_inputFunc = [dummyToken](QWidget *, const QString &, const QString &, bool *ok) {
+            *ok = true;
+            return dummyToken;
+        };
+
+        SettingsDialog::PersistResult currentExpectedResult;
+        SettingsDialog::PersistResult receivedResult;
+        bool feedbackCalled = false;
+
+        dialog.m_persistFunc = [&currentExpectedResult](const QString &, const QString &, WId) {
+            return currentExpectedResult;
+        };
+
+        dialog.m_feedbackFunc = [&receivedResult, &feedbackCalled](QWidget *, SettingsDialog::PersistResult result, const QString &) {
+            receivedResult = result;
+            feedbackCalled = true;
+        };
+
+        // Test Success
+        currentExpectedResult = SettingsDialog::PersistResult::Success;
+        feedbackCalled = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QVERIFY(feedbackCalled);
+        QCOMPARE(receivedResult, SettingsDialog::PersistResult::Success);
+        QCOMPARE(mock.m_savedToken, dummyToken);
+
+        // Test OpenFailed
+        mock.m_savedToken.clear();
+        currentExpectedResult = SettingsDialog::PersistResult::OpenFailed;
+        feedbackCalled = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QVERIFY(feedbackCalled);
+        QCOMPARE(receivedResult, SettingsDialog::PersistResult::OpenFailed);
+        QCOMPARE(mock.m_savedToken, dummyToken);
+
+        // Test FolderFailed
+        mock.m_savedToken.clear();
+        currentExpectedResult = SettingsDialog::PersistResult::FolderFailed;
+        feedbackCalled = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QVERIFY(feedbackCalled);
+        QCOMPARE(receivedResult, SettingsDialog::PersistResult::FolderFailed);
+        QCOMPARE(mock.m_savedToken, dummyToken);
+
+        // Test WriteFailed
+        mock.m_savedToken.clear();
+        currentExpectedResult = SettingsDialog::PersistResult::WriteFailed;
+        feedbackCalled = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QVERIFY(feedbackCalled);
+        QCOMPARE(receivedResult, SettingsDialog::PersistResult::WriteFailed);
+        QCOMPARE(mock.m_savedToken, dummyToken);
+
+        // Test Unavailable
+        mock.m_savedToken.clear();
+        currentExpectedResult = SettingsDialog::PersistResult::Unavailable;
+        feedbackCalled = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QVERIFY(feedbackCalled);
+        QCOMPARE(receivedResult, SettingsDialog::PersistResult::Unavailable);
+        QCOMPARE(mock.m_savedToken, dummyToken);
     }
 
     void testProviderDisplayNameInResults()

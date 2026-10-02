@@ -207,15 +207,7 @@ void MainWindow::processClipboardText(const QString &text, bool autoSearch)
         }
         m_lastAutoSearchClipboardText = text;
 
-        KNotification *notification = new KNotification(QStringLiteral("ClipboardSearch"), KNotification::CloseOnTimeout, this);
-        notification->setComponentName(QStringLiteral("org.kde.klookup"));
-        notification->setText(QStringLiteral("Searching for: ") + text);
-        notification->sendEvent();
-
         performSearch(text);
-        showNormal();
-        raise();
-        activateWindow();
     } else {
         // Just prepopulate
         m_lastAutoSearchClipboardText.clear();
@@ -271,16 +263,18 @@ void MainWindow::loadPlugins()
                         // Load wallet credentials if supported
                         if (provider->supportsAuthentication()) {
 #ifndef Q_OS_WASM
-                            KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                            if (wallet) {
-                                if (wallet->hasFolder(QStringLiteral("KLookup"))) {
-                                    wallet->setFolder(QStringLiteral("KLookup"));
-                                    QString token;
-                                    if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
-                                        provider->setCredentials(QString(), token);
+                            if (KWallet::Wallet::isOpen(KWallet::Wallet::LocalWallet())) {
+                                KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+                                if (wallet) {
+                                    if (wallet->hasFolder(QStringLiteral("KLookup"))) {
+                                        wallet->setFolder(QStringLiteral("KLookup"));
+                                        QString token;
+                                        if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
+                                            provider->setCredentials(QString(), token);
+                                        }
                                     }
+                                    delete wallet;
                                 }
-                                delete wallet;
                             }
 #endif
                         }

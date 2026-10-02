@@ -315,6 +315,24 @@ private slots:
         QVERIFY(!tabGroup.hasKey("Count"));
     }
 
+    void testClipboardBackgroundActivity()
+    {
+        MainWindow mainWindow;
+        // Verify it doesn't force itself visible/active
+        QVERIFY(!mainWindow.isVisible());
+        mainWindow.processClipboardText("background test", true);
+        QVERIFY(!mainWindow.isVisible());
+    }
+
+    void testLoadPluginsDoesNotHang()
+    {
+        MainWindow mainWindow;
+        // We trigger a search which ensures it completes without crashing
+        // and doesn't block waiting for wallet prompts.
+        mainWindow.performSearch("plugin load test");
+        QVERIFY(mainWindow.findChild<QTabWidget*>()->count() > 0);
+    }
+
     void testClipboardDeduplication()
     {
         MainWindow mainWindow;

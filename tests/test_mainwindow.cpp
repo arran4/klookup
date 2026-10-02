@@ -17,6 +17,39 @@
 #include "../src/settingsdialog.h"
 #include "../src/dbusadaptor.h"
 
+class TestableMainWindow : public MainWindow
+{
+public:
+    explicit TestableMainWindow(QWidget *parent = nullptr) : MainWindow(parent) {}
+
+    bool m_isOpenCalled = false;
+    bool m_openWalletCalled = false;
+    bool m_clipboardNotificationEmitted = false;
+
+    // Make it public so we can invoke it from the test
+    using MainWindow::loadWalletCredentials;
+
+protected:
+    void emitClipboardNotification(const QString &text) override {
+        Q_UNUSED(text);
+        m_clipboardNotificationEmitted = true;
+    }
+
+    bool isWalletOpen() const override {
+        // cast away constness to mutate the tracker in this mock
+        const_cast<TestableMainWindow*>(this)->m_isOpenCalled = true;
+        return m_mockIsOpenValue;
+    }
+
+    void readWalletPasswordAndSet(SearchProvider *provider) override {
+        Q_UNUSED(provider);
+        m_openWalletCalled = true;
+    }
+
+public:
+    bool m_mockIsOpenValue = false;
+};
+
 class MockProvider : public SearchProvider
 {
     Q_OBJECT
@@ -318,14 +351,16 @@ private slots:
 
     void testClipboardBackgroundActivity()
     {
-        MainWindow mainWindow;
+        TestableMainWindow mainWindow;
         mainWindow.showMinimized();
         QVERIFY(!mainWindow.isActiveWindow());
+        QVERIFY(!mainWindow.m_clipboardNotificationEmitted);
 
         mainWindow.processClipboardText("background test", true);
 
         QVERIFY(!mainWindow.isActiveWindow());
         QCOMPARE(mainWindow.windowState() & Qt::WindowMinimized, Qt::WindowMinimized);
+        QVERIFY(!mainWindow.m_clipboardNotificationEmitted); // No notification by default
     }
 
     void testDBusPerformSearchIsPassive()
@@ -343,31 +378,28 @@ private slots:
 
     void testWalletNotOpenedWhenClosed()
     {
-        // Proves that if KWallet::isOpen() reports false, we don't even attempt to
-        // open the wallet, preventing a blocking UI prompt.
-        bool isOpenCalled = false;
-        std::function<bool(const QString&)> mockIsOpen = [&isOpenCalled](const QString&) {
-            isOpenCalled = true;
-            return false; // act as if closed
-        };
-
-        MainWindow mainWindow(nullptr, mockIsOpen);
-
-        // We can explicitly test the seam by appending a mock provider and manually
-        // calling loadPlugins() again. Since loadPlugins skips duplicates, we use a mock with a unique ID.
+        TestableMainWindow mainWindow;
         AuthMockProvider authMock;
-        mainWindow.m_providers.append(&authMock);
 
-        // We simulate what loadPlugins does because we can't easily force it to discover the mock plugin
-        // from a .so file during tests without relying on the external test environment's build output.
-        // The core logic we want to test is the wallet condition check for auth providers.
-        if (authMock.supportsAuthentication()) {
-            if (mainWindow.m_walletIsOpenFn) {
-                mainWindow.m_walletIsOpenFn(QStringLiteral("kdewallet"));
-            }
-        }
+        // Test case 1: Wallet is closed (mock returns false)
+        mainWindow.m_mockIsOpenValue = false;
+        mainWindow.m_isOpenCalled = false;
+        mainWindow.m_openWalletCalled = false;
 
-        QVERIFY(isOpenCalled);
+        mainWindow.loadWalletCredentials(&authMock);
+
+        QVERIFY(mainWindow.m_isOpenCalled);
+        QVERIFY(!mainWindow.m_openWalletCalled); // Should not attempt to open
+
+        // Test case 2: Wallet is open (mock returns true)
+        mainWindow.m_mockIsOpenValue = true;
+        mainWindow.m_isOpenCalled = false;
+        mainWindow.m_openWalletCalled = false;
+
+        mainWindow.loadWalletCredentials(&authMock);
+
+        QVERIFY(mainWindow.m_isOpenCalled);
+        QVERIFY(mainWindow.m_openWalletCalled); // Should attempt to open/read
     }
 
     void testClipboardDeduplication()

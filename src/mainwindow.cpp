@@ -29,22 +29,12 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KWallet>
 #endif
 
-MainWindow::MainWindow(QWidget *parent, std::function<bool(const QString&)> walletIsOpenFn)
+MainWindow::MainWindow(QWidget *parent)
     : KXmlGuiWindow(parent)
     , m_tabWidget(new QTabWidget(this))
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
 {
-#ifndef Q_OS_WASM
-    if (walletIsOpenFn) {
-        m_walletIsOpenFn = walletIsOpenFn;
-    } else {
-        m_walletIsOpenFn = [](const QString &name) {
-            return KWallet::Wallet::isOpen(name);
-        };
-    }
-#endif
-
     QIcon icon = QIcon::fromTheme(QStringLiteral("dictionary"));
     if (icon.isNull()) {
         icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
@@ -217,6 +207,7 @@ void MainWindow::processClipboardText(const QString &text, bool autoSearch)
         }
         m_lastAutoSearchClipboardText = text;
 
+        // emitClipboardNotification(text); // Unsolicited background notifications removed per issue #39 policy.
         performSearch(text);
     } else {
         // Just prepopulate
@@ -270,24 +261,7 @@ void MainWindow::loadPlugins()
                         loadedProviderIds.insert(provider->id());
                         qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
 
-                        // Load wallet credentials if supported
-                        if (provider->supportsAuthentication()) {
-#ifndef Q_OS_WASM
-                            if (m_walletIsOpenFn && m_walletIsOpenFn(KWallet::Wallet::LocalWallet())) {
-                                KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                                if (wallet) {
-                                    if (wallet->hasFolder(QStringLiteral("KLookup"))) {
-                                        wallet->setFolder(QStringLiteral("KLookup"));
-                                        QString token;
-                                        if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
-                                            provider->setCredentials(QString(), token);
-                                        }
-                                    }
-                                    delete wallet;
-                                }
-                            }
-#endif
-                        }
+                        loadWalletCredentials(provider);
                         m_providers.append(provider);
                         m_providerLoaders.append(loader);
                     } else {
@@ -405,4 +379,49 @@ void MainWindow::saveSettings()
 
     config->sync();
     m_settingsSaved = true;
+}
+
+void MainWindow::emitClipboardNotification(const QString &text)
+{
+    Q_UNUSED(text);
+    // Explicitly suppressed by default as per issue #39 policy.
+    // If we want it configurable later, we add the config check here.
+    // We intentionally emit nothing by default.
+}
+
+void MainWindow::loadWalletCredentials(SearchProvider *provider)
+{
+    if (!provider->supportsAuthentication()) return;
+
+    if (isWalletOpen()) {
+        readWalletPasswordAndSet(provider);
+    }
+}
+
+bool MainWindow::isWalletOpen() const
+{
+#ifndef Q_OS_WASM
+    return KWallet::Wallet::isOpen(KWallet::Wallet::LocalWallet());
+#else
+    return false;
+#endif
+}
+
+void MainWindow::readWalletPasswordAndSet(SearchProvider *provider)
+{
+#ifndef Q_OS_WASM
+    KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+    if (wallet) {
+        if (wallet->hasFolder(QStringLiteral("KLookup"))) {
+            wallet->setFolder(QStringLiteral("KLookup"));
+            QString token;
+            if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
+                provider->setCredentials(QString(), token);
+            }
+        }
+        delete wallet;
+    }
+#else
+    Q_UNUSED(provider);
+#endif
 }

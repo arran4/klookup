@@ -3,6 +3,7 @@
 
 #include <KXmlGuiWindow>
 #include <QTabWidget>
+#include <functional>
 #include "searchprovider.h"
 #include "searchdashboard.h"
 
@@ -14,7 +15,7 @@ class MainWindow : public KXmlGuiWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr, std::function<bool(const QString&)> walletIsOpenFn = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
 public slots:
@@ -47,8 +48,13 @@ private:
     QString m_lastAutoSearchClipboardText;
     bool m_settingsSaved = false;
 
-    // Test seam for KWallet::Wallet::isOpen
-    std::function<bool(const QString&)> m_walletIsOpenFn;
+protected:
+    virtual void loadWalletCredentials(SearchProvider *provider);
+    virtual void emitClipboardNotification(const QString &text);
+
+    // Narrow virtual wallet operations for testing
+    virtual bool isWalletOpen() const;
+    virtual void readWalletPasswordAndSet(SearchProvider *provider);
 
     friend class MainWindowTest;
 };

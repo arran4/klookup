@@ -50,6 +50,7 @@ private:
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);
+    virtual bool clipboardSearchNotificationsEnabled() const;
     virtual void emitClipboardNotification(const QString &text);
 
     // Narrow virtual wallet operations for testing

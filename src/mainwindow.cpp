@@ -207,7 +207,10 @@ void MainWindow::processClipboardText(const QString &text, bool autoSearch)
         }
         m_lastAutoSearchClipboardText = text;
 
-        // emitClipboardNotification(text); // Unsolicited background notifications removed per issue #39 policy.
+        if (clipboardSearchNotificationsEnabled()) {
+            emitClipboardNotification(text);
+        }
+
         performSearch(text);
     } else {
         // Just prepopulate
@@ -381,12 +384,19 @@ void MainWindow::saveSettings()
     m_settingsSaved = true;
 }
 
-void MainWindow::emitClipboardNotification(const QString &text)
+bool MainWindow::clipboardSearchNotificationsEnabled() const
 {
-    Q_UNUSED(text);
     // Explicitly suppressed by default as per issue #39 policy.
     // If we want it configurable later, we add the config check here.
-    // We intentionally emit nothing by default.
+    return false;
+}
+
+void MainWindow::emitClipboardNotification(const QString &text)
+{
+    KNotification *notification = new KNotification(QStringLiteral("ClipboardSearch"), KNotification::CloseOnTimeout, this);
+    notification->setComponentName(QStringLiteral("org.kde.klookup"));
+    notification->setText(QStringLiteral("Searching for: ") + text);
+    notification->sendEvent();
 }
 
 void MainWindow::loadWalletCredentials(SearchProvider *provider)

@@ -47,7 +47,13 @@ protected:
     }
 
 public:
+    bool clipboardSearchNotificationsEnabled() const override {
+        return m_mockClipboardNotificationsEnabled;
+    }
+
+public:
     bool m_mockIsOpenValue = false;
+    bool m_mockClipboardNotificationsEnabled = false; // Issue #39 default is false
 };
 
 class MockProvider : public SearchProvider
@@ -361,6 +367,11 @@ private slots:
         QVERIFY(!mainWindow.isActiveWindow());
         QCOMPARE(mainWindow.windowState() & Qt::WindowMinimized, Qt::WindowMinimized);
         QVERIFY(!mainWindow.m_clipboardNotificationEmitted); // No notification by default
+
+        // Prove the seam protects a real branch: if enabled, it should emit
+        mainWindow.m_mockClipboardNotificationsEnabled = true;
+        mainWindow.processClipboardText("another test", true);
+        QVERIFY(mainWindow.m_clipboardNotificationEmitted);
     }
 
     void testDBusPerformSearchIsPassive()

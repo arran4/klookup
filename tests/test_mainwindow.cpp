@@ -51,8 +51,9 @@ public:
     bool m_walletSetFolderSuccess = true;
     int m_walletWritePasswordReturn = 0;
 
+    int m_openWalletCallCount = 0;
     bool isWalletAvailable() const override { return m_isWalletAvailable; }
-    bool openWallet() override { return m_openWalletSuccess; }
+    bool openWallet() override { m_openWalletCallCount++; return m_openWalletSuccess; }
     bool walletHasFolder(const QString&) override { return m_walletHasFolder; }
     bool walletCreateFolder(const QString&) override { return m_walletCreateFolderSuccess; }
     bool walletSetFolder(const QString&) override { return m_walletSetFolderSuccess; }
@@ -558,6 +559,7 @@ private slots:
             dialog.m_walletSetFolderSuccess = true;
             dialog.m_walletWritePasswordReturn = 0;
             dialog.m_dummyOk = true;
+            dialog.m_openWalletCallCount = 0;
         };
 
         // Test Cancel (No input)
@@ -567,6 +569,7 @@ private slots:
         QVERIFY(mock.m_savedToken.isEmpty()); // Should not have applied
         QVERIFY(dialog.m_lastInfoTitle.isEmpty());
         QVERIFY(dialog.m_lastWarningTitle.isEmpty());
+        QCOMPARE(dialog.m_openWalletCallCount, 0);
 
         // Test Success (Folder Exists)
         resetMocks();
@@ -599,6 +602,7 @@ private slots:
         QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
         QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
         QVERIFY(dialog.m_lastWarningText.contains("Failed to create or access the required wallet folder."));
+        QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
 
         // Test FolderFailed (Set failed)
         resetMocks();
@@ -608,6 +612,7 @@ private slots:
         QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
         QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
         QVERIFY(dialog.m_lastWarningText.contains("Failed to create or access the required wallet folder."));
+        QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
 
         // Test WriteFailed
         resetMocks();
@@ -616,6 +621,7 @@ private slots:
         QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
         QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
         QVERIFY(dialog.m_lastWarningText.contains("Failed to save credentials to the wallet."));
+        QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
 
         // Test Unavailable
         resetMocks();
@@ -624,6 +630,7 @@ private slots:
         QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
         QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Unavailable"));
         QVERIFY(dialog.m_lastWarningText.contains("Credential storage is not available on this platform."));
+        QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
     }
 
     void testProviderDisplayNameInResults()

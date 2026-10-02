@@ -29,12 +29,22 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KWallet>
 #endif
 
-MainWindow::MainWindow(QWidget *parent)
+MainWindow::MainWindow(QWidget *parent, std::function<bool(const QString&)> walletIsOpenFn)
     : KXmlGuiWindow(parent)
     , m_tabWidget(new QTabWidget(this))
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
 {
+#ifndef Q_OS_WASM
+    if (walletIsOpenFn) {
+        m_walletIsOpenFn = walletIsOpenFn;
+    } else {
+        m_walletIsOpenFn = [](const QString &name) {
+            return KWallet::Wallet::isOpen(name);
+        };
+    }
+#endif
+
     QIcon icon = QIcon::fromTheme(QStringLiteral("dictionary"));
     if (icon.isNull()) {
         icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
@@ -263,7 +273,7 @@ void MainWindow::loadPlugins()
                         // Load wallet credentials if supported
                         if (provider->supportsAuthentication()) {
 #ifndef Q_OS_WASM
-                            if (KWallet::Wallet::isOpen(KWallet::Wallet::LocalWallet())) {
+                            if (m_walletIsOpenFn && m_walletIsOpenFn(KWallet::Wallet::LocalWallet())) {
                                 KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
                                 if (wallet) {
                                     if (wallet->hasFolder(QStringLiteral("KLookup"))) {

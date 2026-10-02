@@ -14,7 +14,7 @@ class MainWindow : public KXmlGuiWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    explicit MainWindow(QWidget *parent = nullptr, std::function<bool(const QString&)> walletIsOpenFn = nullptr);
     ~MainWindow();
 
 public slots:
@@ -46,6 +46,9 @@ private:
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
     bool m_settingsSaved = false;
+
+    // Test seam for KWallet::Wallet::isOpen
+    std::function<bool(const QString&)> m_walletIsOpenFn;
 
     friend class MainWindowTest;
 };

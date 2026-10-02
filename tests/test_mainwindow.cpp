@@ -36,6 +36,52 @@ public:
     }
 };
 
+class TestableSettingsDialog : public SettingsDialog
+{
+    Q_OBJECT
+public:
+    explicit TestableSettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr)
+        : SettingsDialog(providers, parent) {}
+
+    // Wallet overrides
+    bool m_isWalletAvailable = true;
+    bool m_openWalletSuccess = true;
+    bool m_walletHasFolder = true;
+    bool m_walletCreateFolderSuccess = true;
+    bool m_walletSetFolderSuccess = true;
+    int m_walletWritePasswordReturn = 0;
+
+    bool isWalletAvailable() const override { return m_isWalletAvailable; }
+    bool openWallet() override { return m_openWalletSuccess; }
+    bool walletHasFolder(const QString&) override { return m_walletHasFolder; }
+    bool walletCreateFolder(const QString&) override { return m_walletCreateFolderSuccess; }
+    bool walletSetFolder(const QString&) override { return m_walletSetFolderSuccess; }
+    int walletWritePassword(const QString&, const QString&) override { return m_walletWritePasswordReturn; }
+    void closeWallet() override {} // Do nothing
+
+    // UI overrides
+    QString m_dummyToken = QStringLiteral("secret_dummy_token_999");
+    bool m_dummyOk = true;
+    QString promptForToken(const QString&, const QString&, bool *ok) override {
+        *ok = m_dummyOk;
+        return m_dummyToken;
+    }
+
+    QString m_lastWarningTitle;
+    QString m_lastWarningText;
+    void displayWarning(const QString& title, const QString& text) override {
+        m_lastWarningTitle = title;
+        m_lastWarningText = text;
+    }
+
+    QString m_lastInfoTitle;
+    QString m_lastInfoText;
+    void displayInfo(const QString& title, const QString& text) override {
+        m_lastInfoTitle = title;
+        m_lastInfoText = text;
+    }
+};
+
 class AuthMockProvider : public SearchProvider
 {
     Q_OBJECT
@@ -491,76 +537,93 @@ private slots:
         QList<SearchProvider*> providers;
         providers.append(&mock);
 
-        SettingsDialog dialog(providers);
+        TestableSettingsDialog dialog(providers);
 
         QListWidget *listWidget = dialog.findChild<QListWidget*>();
         QVERIFY(listWidget);
         QVERIFY(listWidget->count() > 0);
         listWidget->setCurrentRow(0);
 
-        // Dummy token
-        QString dummyToken = QStringLiteral("secret_dummy_token_999");
-        dialog.m_inputFunc = [dummyToken](QWidget *, const QString &, const QString &, bool *ok) {
-            *ok = true;
-            return dummyToken;
+        // Reset
+        auto resetMocks = [&]() {
+            mock.m_savedToken.clear();
+            dialog.m_lastInfoText.clear();
+            dialog.m_lastInfoTitle.clear();
+            dialog.m_lastWarningText.clear();
+            dialog.m_lastWarningTitle.clear();
+            dialog.m_isWalletAvailable = true;
+            dialog.m_openWalletSuccess = true;
+            dialog.m_walletHasFolder = true;
+            dialog.m_walletCreateFolderSuccess = true;
+            dialog.m_walletSetFolderSuccess = true;
+            dialog.m_walletWritePasswordReturn = 0;
+            dialog.m_dummyOk = true;
         };
 
-        SettingsDialog::PersistResult currentExpectedResult;
-        SettingsDialog::PersistResult receivedResult;
-        bool feedbackCalled = false;
-
-        dialog.m_persistFunc = [&currentExpectedResult](const QString &, const QString &, WId) {
-            return currentExpectedResult;
-        };
-
-        dialog.m_feedbackFunc = [&receivedResult, &feedbackCalled](QWidget *, SettingsDialog::PersistResult result, const QString &) {
-            receivedResult = result;
-            feedbackCalled = true;
-        };
-
-        // Test Success
-        currentExpectedResult = SettingsDialog::PersistResult::Success;
-        feedbackCalled = false;
+        // Test Cancel (No input)
+        resetMocks();
+        dialog.m_dummyOk = false;
         QMetaObject::invokeMethod(&dialog, "showLoginDialog");
-        QVERIFY(feedbackCalled);
-        QCOMPARE(receivedResult, SettingsDialog::PersistResult::Success);
-        QCOMPARE(mock.m_savedToken, dummyToken);
+        QVERIFY(mock.m_savedToken.isEmpty()); // Should not have applied
+        QVERIFY(dialog.m_lastInfoTitle.isEmpty());
+        QVERIFY(dialog.m_lastWarningTitle.isEmpty());
+
+        // Test Success (Folder Exists)
+        resetMocks();
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastInfoTitle, QStringLiteral("Saved"));
+        QVERIFY(dialog.m_lastInfoText.contains("Credentials saved for"));
+
+        // Test Success (Folder doesn't exist, create succeeds)
+        resetMocks();
+        dialog.m_walletHasFolder = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastInfoTitle, QStringLiteral("Saved"));
 
         // Test OpenFailed
-        mock.m_savedToken.clear();
-        currentExpectedResult = SettingsDialog::PersistResult::OpenFailed;
-        feedbackCalled = false;
+        resetMocks();
+        dialog.m_openWalletSuccess = false;
         QMetaObject::invokeMethod(&dialog, "showLoginDialog");
-        QVERIFY(feedbackCalled);
-        QCOMPARE(receivedResult, SettingsDialog::PersistResult::OpenFailed);
-        QCOMPARE(mock.m_savedToken, dummyToken);
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
+        QVERIFY(dialog.m_lastWarningText.contains("Failed to open the wallet."));
+        QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
 
-        // Test FolderFailed
-        mock.m_savedToken.clear();
-        currentExpectedResult = SettingsDialog::PersistResult::FolderFailed;
-        feedbackCalled = false;
+        // Test FolderFailed (Create failed)
+        resetMocks();
+        dialog.m_walletHasFolder = false;
+        dialog.m_walletCreateFolderSuccess = false;
         QMetaObject::invokeMethod(&dialog, "showLoginDialog");
-        QVERIFY(feedbackCalled);
-        QCOMPARE(receivedResult, SettingsDialog::PersistResult::FolderFailed);
-        QCOMPARE(mock.m_savedToken, dummyToken);
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
+        QVERIFY(dialog.m_lastWarningText.contains("Failed to create or access the required wallet folder."));
+
+        // Test FolderFailed (Set failed)
+        resetMocks();
+        dialog.m_walletHasFolder = true;
+        dialog.m_walletSetFolderSuccess = false;
+        QMetaObject::invokeMethod(&dialog, "showLoginDialog");
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
+        QVERIFY(dialog.m_lastWarningText.contains("Failed to create or access the required wallet folder."));
 
         // Test WriteFailed
-        mock.m_savedToken.clear();
-        currentExpectedResult = SettingsDialog::PersistResult::WriteFailed;
-        feedbackCalled = false;
+        resetMocks();
+        dialog.m_walletWritePasswordReturn = -1;
         QMetaObject::invokeMethod(&dialog, "showLoginDialog");
-        QVERIFY(feedbackCalled);
-        QCOMPARE(receivedResult, SettingsDialog::PersistResult::WriteFailed);
-        QCOMPARE(mock.m_savedToken, dummyToken);
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Error"));
+        QVERIFY(dialog.m_lastWarningText.contains("Failed to save credentials to the wallet."));
 
         // Test Unavailable
-        mock.m_savedToken.clear();
-        currentExpectedResult = SettingsDialog::PersistResult::Unavailable;
-        feedbackCalled = false;
+        resetMocks();
+        dialog.m_isWalletAvailable = false;
         QMetaObject::invokeMethod(&dialog, "showLoginDialog");
-        QVERIFY(feedbackCalled);
-        QCOMPARE(receivedResult, SettingsDialog::PersistResult::Unavailable);
-        QCOMPARE(mock.m_savedToken, dummyToken);
+        QCOMPARE(mock.m_savedToken, dialog.m_dummyToken);
+        QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Unavailable"));
+        QVERIFY(dialog.m_lastWarningText.contains("Credential storage is not available on this platform."));
     }
 
     void testProviderDisplayNameInResults()

@@ -20,59 +20,7 @@
 SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent)
     : KPageDialog(parent), m_providers(providers)
 {
-    m_inputFunc = [](QWidget *parent, const QString &title, const QString &label, bool *ok) {
-        return QInputDialog::getText(parent, title, label, QLineEdit::Password, QString(), ok);
-    };
 
-    m_persistFunc = [](const QString &providerId, const QString &token, WId winId) {
-#ifndef Q_OS_WASM
-        KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId, KWallet::Wallet::Synchronous);
-        if (!wallet) {
-            return PersistResult::OpenFailed;
-        }
-        if (!wallet->hasFolder(QStringLiteral("KLookup"))) {
-            if (!wallet->createFolder(QStringLiteral("KLookup"))) {
-                delete wallet;
-                return PersistResult::FolderFailed;
-            }
-        }
-        if (!wallet->setFolder(QStringLiteral("KLookup"))) {
-            delete wallet;
-            return PersistResult::FolderFailed;
-        }
-        if (wallet->writePassword(providerId, token) != 0) {
-            delete wallet;
-            return PersistResult::WriteFailed;
-        }
-        delete wallet;
-        return PersistResult::Success;
-#else
-        Q_UNUSED(providerId);
-        Q_UNUSED(token);
-        Q_UNUSED(winId);
-        return PersistResult::Unavailable;
-#endif
-    };
-
-    m_feedbackFunc = [](QWidget *parent, PersistResult result, const QString &providerName) {
-        switch (result) {
-        case PersistResult::Success:
-            QMessageBox::information(parent, QStringLiteral("Saved"), QStringLiteral("Credentials saved for %1.").arg(providerName));
-            break;
-        case PersistResult::Unavailable:
-            QMessageBox::warning(parent, QStringLiteral("Storage Unavailable"), QStringLiteral("Credential storage is not available on this platform. Credentials will only be used for this session."));
-            break;
-        case PersistResult::OpenFailed:
-            QMessageBox::warning(parent, QStringLiteral("Storage Error"), QStringLiteral("Failed to open the wallet. Credentials will only be used for this session."));
-            break;
-        case PersistResult::FolderFailed:
-            QMessageBox::warning(parent, QStringLiteral("Storage Error"), QStringLiteral("Failed to create or access the required wallet folder. Credentials will only be used for this session."));
-            break;
-        case PersistResult::WriteFailed:
-            QMessageBox::warning(parent, QStringLiteral("Storage Error"), QStringLiteral("Failed to save credentials to the wallet. Credentials will only be used for this session."));
-            break;
-        }
-    };
 
     setWindowTitle(QStringLiteral("Configure KLookup"));
     setFaceType(KPageDialog::Tabbed);
@@ -153,14 +101,13 @@ void SettingsDialog::showLoginDialog()
     }
 
     bool ok;
-    QString token = m_inputFunc(this,
-                                QStringLiteral("Login to %1").arg(provider->name()),
-                                QStringLiteral("Token/Password/API Key:"),
-                                &ok);
+    QString token = promptForToken(QStringLiteral("Login to %1").arg(provider->name()),
+                                   QStringLiteral("Token/Password/API Key:"),
+                                   &ok);
     if (ok) {
         provider->setCredentials(QString(), token);
-        SettingsDialog::PersistResult result = m_persistFunc(provider->id(), token, winId());
-        m_feedbackFunc(this, result, provider->name());
+        SettingsDialog::PersistResult result = performPersistence(provider->id(), token);
+        showPersistenceFeedback(result, provider->name());
     }
 }
 
@@ -185,4 +132,125 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("AutoSearchClipboard"), m_autoSearchClipboardCheck->isChecked());
     genGroup.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), m_onlyFocusedClipboardCheck->isChecked());
     config->sync();
+}
+
+SettingsDialog::PersistResult SettingsDialog::performPersistence(const QString &providerId, const QString &token)
+{
+    if (!isWalletAvailable()) {
+        return PersistResult::Unavailable;
+    }
+    if (!openWallet()) {
+        return PersistResult::OpenFailed;
+    }
+    if (!walletHasFolder(QStringLiteral("KLookup"))) {
+        if (!walletCreateFolder(QStringLiteral("KLookup"))) {
+            closeWallet();
+            return PersistResult::FolderFailed;
+        }
+    }
+    if (!walletSetFolder(QStringLiteral("KLookup"))) {
+        closeWallet();
+        return PersistResult::FolderFailed;
+    }
+    if (walletWritePassword(providerId, token) != 0) {
+        closeWallet();
+        return PersistResult::WriteFailed;
+    }
+    closeWallet();
+    return PersistResult::Success;
+}
+
+void SettingsDialog::showPersistenceFeedback(PersistResult result, const QString &providerName)
+{
+    switch (result) {
+    case PersistResult::Success:
+        displayInfo(QStringLiteral("Saved"), QStringLiteral("Credentials saved for %1.").arg(providerName));
+        break;
+    case PersistResult::Unavailable:
+        displayWarning(QStringLiteral("Storage Unavailable"), QStringLiteral("Credential storage is not available on this platform. Credentials will only be used for this session."));
+        break;
+    case PersistResult::OpenFailed:
+        displayWarning(QStringLiteral("Storage Error"), QStringLiteral("Failed to open the wallet. Credentials will only be used for this session."));
+        break;
+    case PersistResult::FolderFailed:
+        displayWarning(QStringLiteral("Storage Error"), QStringLiteral("Failed to create or access the required wallet folder. Credentials will only be used for this session."));
+        break;
+    case PersistResult::WriteFailed:
+        displayWarning(QStringLiteral("Storage Error"), QStringLiteral("Failed to save credentials to the wallet. Credentials will only be used for this session."));
+        break;
+    }
+}
+
+bool SettingsDialog::isWalletAvailable() const {
+#ifndef Q_OS_WASM
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool SettingsDialog::openWallet() {
+#ifndef Q_OS_WASM
+    m_wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+    return m_wallet != nullptr;
+#else
+    return false;
+#endif
+}
+
+bool SettingsDialog::walletHasFolder(const QString& folder) {
+#ifndef Q_OS_WASM
+    return m_wallet && m_wallet->hasFolder(folder);
+#else
+    Q_UNUSED(folder);
+    return false;
+#endif
+}
+
+bool SettingsDialog::walletCreateFolder(const QString& folder) {
+#ifndef Q_OS_WASM
+    return m_wallet && m_wallet->createFolder(folder);
+#else
+    Q_UNUSED(folder);
+    return false;
+#endif
+}
+
+bool SettingsDialog::walletSetFolder(const QString& folder) {
+#ifndef Q_OS_WASM
+    return m_wallet && m_wallet->setFolder(folder);
+#else
+    Q_UNUSED(folder);
+    return false;
+#endif
+}
+
+int SettingsDialog::walletWritePassword(const QString& key, const QString& password) {
+#ifndef Q_OS_WASM
+    if (!m_wallet) return -1;
+    return m_wallet->writePassword(key, password);
+#else
+    Q_UNUSED(key);
+    Q_UNUSED(password);
+    return -1;
+#endif
+}
+
+void SettingsDialog::closeWallet() {
+#ifndef Q_OS_WASM
+    delete m_wallet;
+    m_wallet = nullptr;
+#endif
+}
+
+void SettingsDialog::displayWarning(const QString& title, const QString& text) {
+    QMessageBox::warning(this, title, text);
+}
+
+void SettingsDialog::displayInfo(const QString& title, const QString& text) {
+    QMessageBox::information(this, title, text);
+}
+
+QString SettingsDialog::promptForToken(const QString& title, const QString& label, bool *ok) {
+    return QInputDialog::getText(this, title, label, QLineEdit::Password, QString(), ok);
 }

@@ -15,6 +15,50 @@
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
 #include "../src/settingsdialog.h"
+#include "../src/dbusadaptor.h"
+
+class TestableMainWindow : public MainWindow
+{
+public:
+    explicit TestableMainWindow(QWidget *parent = nullptr) : MainWindow(parent) {}
+
+    bool m_isOpenCalled = false;
+    bool m_openWalletCalled = false;
+    bool m_clipboardNotificationEmitted = false;
+
+    // Make it public so we can invoke it from the test
+    using MainWindow::loadWalletCredentials;
+
+protected:
+    void emitClipboardNotification(const QString &text) override {
+        Q_UNUSED(text);
+        m_clipboardNotificationEmitted = true;
+    }
+
+    bool isWalletOpen() const override {
+        // cast away constness to mutate the tracker in this mock
+        const_cast<TestableMainWindow*>(this)->m_isOpenCalled = true;
+        return m_mockIsOpenValue;
+    }
+
+    void readWalletPasswordAndSet(SearchProvider *provider) override {
+        Q_UNUSED(provider);
+        m_openWalletCalled = true;
+    }
+
+public:
+    bool clipboardSearchNotificationsEnabled() const override {
+        if (m_overrideClipboardNotificationsEnabled) {
+            return m_mockClipboardNotificationsEnabled;
+        }
+        return MainWindow::clipboardSearchNotificationsEnabled();
+    }
+
+public:
+    bool m_mockIsOpenValue = false;
+    bool m_overrideClipboardNotificationsEnabled = false;
+    bool m_mockClipboardNotificationsEnabled = false;
+};
 
 class MockProvider : public SearchProvider
 {
@@ -313,6 +357,66 @@ private slots:
 
         KConfigGroup tabGroup(config, "OpenTabs");
         QVERIFY(!tabGroup.hasKey("Count"));
+    }
+
+    void testClipboardBackgroundActivity()
+    {
+        TestableMainWindow mainWindow;
+        mainWindow.showMinimized();
+        QVERIFY(!mainWindow.isActiveWindow());
+        QVERIFY(!mainWindow.m_clipboardNotificationEmitted);
+
+        // This exercises the production MainWindow::clipboardSearchNotificationsEnabled()
+        mainWindow.processClipboardText("background test", true);
+
+        QVERIFY(!mainWindow.isActiveWindow());
+        QCOMPARE(mainWindow.windowState() & Qt::WindowMinimized, Qt::WindowMinimized);
+        QVERIFY(!mainWindow.m_clipboardNotificationEmitted); // No notification by default
+
+        // Prove the seam protects a real branch: if enabled, it should emit
+        mainWindow.m_overrideClipboardNotificationsEnabled = true;
+        mainWindow.m_mockClipboardNotificationsEnabled = true;
+        mainWindow.processClipboardText("another test", true);
+        QVERIFY(mainWindow.m_clipboardNotificationEmitted);
+    }
+
+    void testDBusPerformSearchIsPassive()
+    {
+        MainWindow mainWindow;
+        mainWindow.showMinimized();
+        QVERIFY(!mainWindow.isActiveWindow());
+
+        DBusAdaptor adaptor(&mainWindow);
+        adaptor.performSearch("dbus search test");
+
+        QVERIFY(!mainWindow.isActiveWindow());
+        QCOMPARE(mainWindow.windowState() & Qt::WindowMinimized, Qt::WindowMinimized);
+    }
+
+    void testWalletNotOpenedWhenClosed()
+    {
+        TestableMainWindow mainWindow;
+        AuthMockProvider authMock;
+
+        // Test case 1: Wallet is closed (mock returns false)
+        mainWindow.m_mockIsOpenValue = false;
+        mainWindow.m_isOpenCalled = false;
+        mainWindow.m_openWalletCalled = false;
+
+        mainWindow.loadWalletCredentials(&authMock);
+
+        QVERIFY(mainWindow.m_isOpenCalled);
+        QVERIFY(!mainWindow.m_openWalletCalled); // Should not attempt to open
+
+        // Test case 2: Wallet is open (mock returns true)
+        mainWindow.m_mockIsOpenValue = true;
+        mainWindow.m_isOpenCalled = false;
+        mainWindow.m_openWalletCalled = false;
+
+        mainWindow.loadWalletCredentials(&authMock);
+
+        QVERIFY(mainWindow.m_isOpenCalled);
+        QVERIFY(mainWindow.m_openWalletCalled); // Should attempt to open/read
     }
 
     void testClipboardDeduplication()

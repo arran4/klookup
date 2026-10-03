@@ -207,15 +207,11 @@ void MainWindow::processClipboardText(const QString &text, bool autoSearch)
         }
         m_lastAutoSearchClipboardText = text;
 
-        KNotification *notification = new KNotification(QStringLiteral("ClipboardSearch"), KNotification::CloseOnTimeout, this);
-        notification->setComponentName(QStringLiteral("org.kde.klookup"));
-        notification->setText(QStringLiteral("Searching for: ") + text);
-        notification->sendEvent();
+        if (clipboardSearchNotificationsEnabled()) {
+            emitClipboardNotification(text);
+        }
 
         performSearch(text);
-        showNormal();
-        raise();
-        activateWindow();
     } else {
         // Just prepopulate
         m_lastAutoSearchClipboardText.clear();
@@ -268,22 +264,7 @@ void MainWindow::loadPlugins()
                         loadedProviderIds.insert(provider->id());
                         qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
 
-                        // Load wallet credentials if supported
-                        if (provider->supportsAuthentication()) {
-#ifndef Q_OS_WASM
-                            KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-                            if (wallet) {
-                                if (wallet->hasFolder(QStringLiteral("KLookup"))) {
-                                    wallet->setFolder(QStringLiteral("KLookup"));
-                                    QString token;
-                                    if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
-                                        provider->setCredentials(QString(), token);
-                                    }
-                                }
-                                delete wallet;
-                            }
-#endif
-                        }
+                        loadWalletCredentials(provider);
                         m_providers.append(provider);
                         m_providerLoaders.append(loader);
                     } else {
@@ -401,4 +382,56 @@ void MainWindow::saveSettings()
 
     config->sync();
     m_settingsSaved = true;
+}
+
+bool MainWindow::clipboardSearchNotificationsEnabled() const
+{
+    // Explicitly suppressed by default as per issue #39 policy.
+    // If we want it configurable later, we add the config check here.
+    return false;
+}
+
+void MainWindow::emitClipboardNotification(const QString &text)
+{
+    KNotification *notification = new KNotification(QStringLiteral("ClipboardSearch"), KNotification::CloseOnTimeout, this);
+    notification->setComponentName(QStringLiteral("org.kde.klookup"));
+    notification->setText(QStringLiteral("Searching for: ") + text);
+    notification->sendEvent();
+}
+
+void MainWindow::loadWalletCredentials(SearchProvider *provider)
+{
+    if (!provider->supportsAuthentication()) return;
+
+    if (isWalletOpen()) {
+        readWalletPasswordAndSet(provider);
+    }
+}
+
+bool MainWindow::isWalletOpen() const
+{
+#ifndef Q_OS_WASM
+    return KWallet::Wallet::isOpen(KWallet::Wallet::LocalWallet());
+#else
+    return false;
+#endif
+}
+
+void MainWindow::readWalletPasswordAndSet(SearchProvider *provider)
+{
+#ifndef Q_OS_WASM
+    KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
+    if (wallet) {
+        if (wallet->hasFolder(QStringLiteral("KLookup"))) {
+            wallet->setFolder(QStringLiteral("KLookup"));
+            QString token;
+            if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
+                provider->setCredentials(QString(), token);
+            }
+        }
+        delete wallet;
+    }
+#else
+    Q_UNUSED(provider);
+#endif
 }

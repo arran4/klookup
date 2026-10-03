@@ -3,6 +3,7 @@
 
 #include <KXmlGuiWindow>
 #include <QTabWidget>
+#include <functional>
 #include "searchprovider.h"
 #include "searchdashboard.h"
 
@@ -46,6 +47,15 @@ private:
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
     bool m_settingsSaved = false;
+
+protected:
+    virtual void loadWalletCredentials(SearchProvider *provider);
+    virtual bool clipboardSearchNotificationsEnabled() const;
+    virtual void emitClipboardNotification(const QString &text);
+
+    // Narrow virtual wallet operations for testing
+    virtual bool isWalletOpen() const;
+    virtual void readWalletPasswordAndSet(SearchProvider *provider);
 
     friend class MainWindowTest;
 };

@@ -14,6 +14,9 @@ It allows you to look up queries across various information providers globally, 
 - **Plugin System**: Every backend is an independent, dynamic `QPluginLoader` module, making it extraordinarily easy to add custom third-party integrations.
 - **KWallet Integration**: Secure authentication capabilities natively backed by KDE's local wallet storage subsystem.
 
+## Attribution
+
+Data provided by MangaBaka is available under the terms required by MangaBaka.
 ## Build Requirements
 
 - CMake 3.16+

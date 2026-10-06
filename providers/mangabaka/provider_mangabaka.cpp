@@ -19,12 +19,12 @@ ProviderMangaBaka::~ProviderMangaBaka()
 
 QString ProviderMangaBaka::name() const
 {
-    return QStringLiteral("MangaDex (Baka equivalent)");
+    return QStringLiteral("MangaBaka");
 }
 
 QString ProviderMangaBaka::id() const
 {
-    return QStringLiteral("mangadex");
+    return QStringLiteral("mangabaka");
 }
 
 void ProviderMangaBaka::search(const QString &query)
@@ -39,14 +39,16 @@ void ProviderMangaBaka::search(const QString &query)
         oldReply->deleteLater();
     }
 
-    QUrl url(QStringLiteral("https://api.mangadex.org/manga"));
+    QUrl url(QStringLiteral("https://api.mangabaka.org/v2/series/search"));
     QUrlQuery q;
-    q.addQueryItem(QStringLiteral("title"), query);
+    q.addQueryItem(QStringLiteral("q"), query);
     q.addQueryItem(QStringLiteral("limit"), QStringLiteral("10"));
     url.setQuery(q);
 
     QNetworkRequest request(url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup-App"));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
+    request.setRawHeader("Accept", "application/json");
 
     m_reply = m_nam->get(request);
 
@@ -65,8 +67,6 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
     }
 
     reply->deleteLater();
-
-
 
     if (reply->error() != QNetworkReply::NoError) {
         emit searchFailed(id(), reply->errorString());
@@ -91,32 +91,36 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
         QJsonObject obj = val.toObject();
 
         SearchResult res;
-        res.id = obj.value(QStringLiteral("id")).toString();
+        // API returns id as number but we store it as string.
+        res.id = QString::number(obj.value(QStringLiteral("id")).toInt());
 
-        QJsonObject attributes = obj.value(QStringLiteral("attributes")).toObject();
-        QJsonObject titleObj = attributes.value(QStringLiteral("title")).toObject();
-
-        res.title = titleObj.value(QStringLiteral("en")).toString();
-        if (res.title.isEmpty() && !titleObj.keys().isEmpty()) {
-            res.title = titleObj.value(titleObj.keys().first()).toString();
+        QJsonArray titlesArray = obj.value(QStringLiteral("titles")).toArray();
+        for (const QJsonValue &tVal : titlesArray) {
+            QJsonObject tObj = tVal.toObject();
+            if (tObj.value(QStringLiteral("language")).toString() == QStringLiteral("en")) {
+                res.title = tObj.value(QStringLiteral("title")).toString();
+                break;
+            }
+        }
+        if (res.title.isEmpty() && !titlesArray.isEmpty()) {
+            res.title = titlesArray.first().toObject().value(QStringLiteral("title")).toString();
+        }
+        if (res.title.isEmpty()) {
+            res.title = obj.value(QStringLiteral("title")).toString();
         }
 
-        QJsonObject descObj = attributes.value(QStringLiteral("description")).toObject();
-        res.description = descObj.value(QStringLiteral("en")).toString();
-        if (res.description.isEmpty() && !descObj.keys().isEmpty()) {
-            res.description = descObj.value(descObj.keys().first()).toString();
-        }
+        res.description = obj.value(QStringLiteral("description")).toString();
 
         if (res.description.length() > 200) {
             res.description = res.description.left(200) + QStringLiteral("...");
         }
 
-        res.url = QStringLiteral("https://mangadex.org/title/") + res.id;
-        res.type = QStringLiteral("manga");
+        res.url = obj.value(QStringLiteral("canonical_url")).toString();
+        res.type = obj.value(QStringLiteral("type")).toString();
 
         QVariantMap additional;
-        additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
-        additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
+        additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
+        additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
         res.additionalData = additional;
 
         results.append(res);

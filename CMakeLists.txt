@@ -49,6 +49,7 @@ add_subdirectory(providers/openlibrary)
 add_subdirectory(providers/themoviedb)
 add_subdirectory(providers/omdb)
 add_subdirectory(providers/myanimelist)
+add_subdirectory(providers/mangadex)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(runner)
 
@@ -69,6 +70,7 @@ set(KLOOKUP_PROVIDERS
     provider_themoviedb
     provider_omdb
     provider_myanimelist
+    provider_mangadex
     provider_mangabaka
 )
 

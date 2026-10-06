@@ -23,7 +23,7 @@ public:
 private slots:
     void onReplyFinished(QNetworkReply *reply);
 
-private:
+protected:
     QNetworkAccessManager *m_nam;
     QPointer<QNetworkReply> m_reply;
 };

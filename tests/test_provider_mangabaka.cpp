@@ -84,8 +84,12 @@ class TestProviderMangaBaka : public QObject
     Q_OBJECT
 private slots:
     void testIdentity();
+    void testRequestConstructionAndEncoding();
     void testSearchSuccess();
     void testNetworkFailure();
+    void testMalformedJsonStructure();
+    void testMalformedRecordSkip();
+    void testRateLimitFailure();
     void testParseError();
     void testReplaceStale();
 };
@@ -95,6 +99,20 @@ void TestProviderMangaBaka::testIdentity() {
     QCOMPARE(provider.id(), QStringLiteral("mangabaka"));
     QCOMPARE(provider.name(), QStringLiteral("MangaBaka"));
 }
+
+void TestProviderMangaBaka::testRequestConstructionAndEncoding() {
+        TestableProviderMangaBaka provider;
+        provider.search("naruto & sasuke");
+
+        QUrl url = provider.mockNam->lastUrl;
+        QCOMPARE(url.scheme(), QStringLiteral("https"));
+        QCOMPARE(url.host(), QStringLiteral("api.mangabaka.org"));
+        QCOMPARE(url.path(), QStringLiteral("/v2/series/search"));
+
+        QUrlQuery query(url);
+        QCOMPARE(query.queryItemValue(QStringLiteral("q")), QStringLiteral("naruto & sasuke"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("limit")), QStringLiteral("10"));
+    }
 
 void TestProviderMangaBaka::testSearchSuccess() {
     TestableProviderMangaBaka provider;
@@ -187,6 +205,80 @@ void TestProviderMangaBaka::testNetworkFailure() {
     QCOMPARE(completeSpy.count(), 0);
     QCOMPARE(failSpy.count(), 1);
 }
+
+void TestProviderMangaBaka::testMalformedJsonStructure() {
+        TestableProviderMangaBaka provider;
+        provider.mockNam->nextResponse = R"({ "unexpected_field": [] })";
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        failSpy.wait(100);
+
+        QCOMPARE(completeSpy.count(), 0);
+        QCOMPARE(failSpy.count(), 1);
+        QList<QVariant> args = failSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangabaka"));
+        QVERIFY(args.at(1).toString().contains(QStringLiteral("Malformed response: missing 'data' array")));
+    }
+
+    void TestProviderMangaBaka::testMalformedRecordSkip() {
+        TestableProviderMangaBaka provider;
+        provider.mockNam->nextResponse = R"({
+            "status": 200,
+            "data": [
+                {
+                    "title": "Missing ID",
+                    "type": "manga"
+                },
+                {
+                    "id": "not_a_number",
+                    "title": "String ID",
+                    "type": "manga"
+                },
+                {
+                    "id": 270,
+                    "title": "Valid Record",
+                    "type": "manga"
+                }
+            ]
+        })";
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        completeSpy.wait(100);
+
+        QCOMPARE(failSpy.count(), 0);
+        QCOMPARE(completeSpy.count(), 1);
+        QList<QVariant> args = completeSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangabaka"));
+        QList<SearchResult> results = args.at(1).value<QList<SearchResult>>();
+
+        QCOMPARE(results.count(), 1);
+        QCOMPARE(results[0].id, QStringLiteral("270"));
+    }
+
+    void TestProviderMangaBaka::testRateLimitFailure() {
+        TestableProviderMangaBaka provider;
+        provider.mockNam->nextResponse = "Rate Limited";
+        provider.mockNam->nextError = QNetworkReply::NoError;
+        provider.mockNam->nextHttpStatus = 429;
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        failSpy.wait(100);
+
+        QCOMPARE(completeSpy.count(), 0);
+        QCOMPARE(failSpy.count(), 1);
+        QList<QVariant> args = failSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangabaka"));
+        QVERIFY(args.at(1).toString().contains(QStringLiteral("HTTP Error: 429")));
+    }
 
 void TestProviderMangaBaka::testParseError() {
     TestableProviderMangaBaka provider;

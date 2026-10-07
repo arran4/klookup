@@ -6,7 +6,7 @@ It allows you to look up queries across various information providers globally, 
 
 ## Key Features
 
-- **Multi-Provider Architecture**: Query data from Wikipedia, GitHub, MangaUpdates, AniList, TVMaze, LyricsOVH, DuckDuckGo, OpenLibrary, TMDb, and OMDb.
+- **Multi-Provider Architecture**: Query data from Wikipedia, GitHub, MangaUpdates, AniList, TVMaze, LyricsOVH, DuckDuckGo, OpenLibrary, TMDb, OMDb, MangaDex, and MangaBaka.
 - **Dynamic Tab Interface**: View multiple active queries across non-blocking tabs.
 - **KRunner Integration**: Includes a companion D-Bus plugin that integrates natively into KRunner (`Alt` + `Space` > `:q: query`).
 - **Clipboard Monitoring**: Automatically monitor or auto-search queries derived straight from clipboard activity.

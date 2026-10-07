@@ -84,8 +84,12 @@ class TestProviderMangaDex : public QObject
     Q_OBJECT
 private slots:
     void testIdentity();
+    void testRequestConstructionAndEncoding();
     void testSearchSuccess();
     void testNetworkFailure();
+    void testMalformedJsonStructure();
+    void testMalformedRecordSkip();
+    void testRateLimitFailure();
     void testParseError();
     void testReplaceStale();
 };
@@ -95,6 +99,20 @@ void TestProviderMangaDex::testIdentity() {
     QCOMPARE(provider.id(), QStringLiteral("mangadex"));
     QCOMPARE(provider.name(), QStringLiteral("MangaDex"));
 }
+
+void TestProviderMangaDex::testRequestConstructionAndEncoding() {
+        TestableProviderMangaDex provider;
+        provider.search("naruto & sasuke");
+
+        QUrl url = provider.mockNam->lastUrl;
+        QCOMPARE(url.scheme(), QStringLiteral("https"));
+        QCOMPARE(url.host(), QStringLiteral("api.mangadex.org"));
+        QCOMPARE(url.path(), QStringLiteral("/manga"));
+
+        QUrlQuery query(url);
+        QCOMPARE(query.queryItemValue(QStringLiteral("title")), QStringLiteral("naruto & sasuke"));
+        QCOMPARE(query.queryItemValue(QStringLiteral("limit")), QStringLiteral("10"));
+    }
 
 void TestProviderMangaDex::testSearchSuccess() {
     TestableProviderMangaDex provider;
@@ -148,7 +166,7 @@ void TestProviderMangaDex::testSearchSuccess() {
     QCOMPARE(results[1].url, QStringLiteral("https://mangadex.org/title/12346"));
     QCOMPARE(results[1].type, QStringLiteral("manga"));
     QVERIFY(!results[1].additionalData.contains(QStringLiteral("status")));
-    QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
+        QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
 }
 
 void TestProviderMangaDex::testNetworkFailure() {
@@ -164,6 +182,83 @@ void TestProviderMangaDex::testNetworkFailure() {
     QCOMPARE(completeSpy.count(), 0);
     QCOMPARE(failSpy.count(), 1);
 }
+
+void TestProviderMangaDex::testMalformedJsonStructure() {
+        TestableProviderMangaDex provider;
+        provider.mockNam->nextResponse = R"({ "unexpected_field": [] })";
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        failSpy.wait(100);
+
+        QCOMPARE(completeSpy.count(), 0);
+        QCOMPARE(failSpy.count(), 1);
+        QList<QVariant> args = failSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangadex"));
+        QVERIFY(args.at(1).toString().contains(QStringLiteral("Malformed response: missing 'data' array")));
+    }
+
+    void TestProviderMangaDex::testMalformedRecordSkip() {
+        TestableProviderMangaDex provider;
+        provider.mockNam->nextResponse = R"({
+            "data": [
+                {
+                    "attributes": {
+                        "title": {"en": "Missing ID"}
+                    }
+                },
+                {
+                    "id": 12345,
+                    "attributes": {
+                        "title": {"en": "Integer ID"}
+                    }
+                },
+                {
+                    "id": "12345",
+                    "attributes": {
+                        "title": {"en": "Valid Record"}
+                    }
+                }
+            ]
+        })";
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        completeSpy.wait(100);
+
+        QCOMPARE(failSpy.count(), 0);
+        QCOMPARE(completeSpy.count(), 1);
+        QList<QVariant> args = completeSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangadex"));
+        QList<SearchResult> results = args.at(1).value<QList<SearchResult>>();
+
+        QCOMPARE(results.count(), 1);
+        QCOMPARE(results[0].id, QStringLiteral("12345"));
+        QCOMPARE(results[0].title, QStringLiteral("Valid Record"));
+    }
+
+    void TestProviderMangaDex::testRateLimitFailure() {
+        TestableProviderMangaDex provider;
+        provider.mockNam->nextResponse = "Rate Limited";
+        provider.mockNam->nextError = QNetworkReply::NoError;
+        provider.mockNam->nextHttpStatus = 429;
+
+        QSignalSpy completeSpy(&provider, &SearchProvider::searchCompleted);
+        QSignalSpy failSpy(&provider, &SearchProvider::searchFailed);
+
+        provider.search("naruto");
+        failSpy.wait(100);
+
+        QCOMPARE(completeSpy.count(), 0);
+        QCOMPARE(failSpy.count(), 1);
+        QList<QVariant> args = failSpy.takeFirst();
+        QCOMPARE(args.at(0).toString(), QStringLiteral("mangadex"));
+        QVERIFY(args.at(1).toString().contains(QStringLiteral("HTTP Error: 429")));
+    }
 
 void TestProviderMangaDex::testParseError() {
     TestableProviderMangaDex provider;

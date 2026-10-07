@@ -169,8 +169,8 @@ void TestProviderMangaBaka::testSearchSuccess() {
     QCOMPARE(results[1].description, QStringLiteral(""));
     QCOMPARE(results[1].url, QStringLiteral("https://mangabaka.org/manga/271/no-desc"));
     QCOMPARE(results[1].type, QStringLiteral("manga"));
-    QCOMPARE(results[1].additionalData.value("status").toString(), QStringLiteral(""));
-    QCOMPARE(results[1].additionalData.value("year").toInt(), 0);
+    QVERIFY(!results[1].additionalData.contains(QStringLiteral("status")));
+    QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
 }
 
 void TestProviderMangaBaka::testNetworkFailure() {

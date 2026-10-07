@@ -115,9 +115,15 @@ void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
         res.type = QStringLiteral("manga");
 
         QVariantMap additional;
-        additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
-        additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
-        res.additionalData = additional;
+        if (attributes.contains(QStringLiteral("status")) && !attributes.value(QStringLiteral("status")).isNull()) {
+            additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
+        }
+        if (attributes.contains(QStringLiteral("year")) && !attributes.value(QStringLiteral("year")).isNull()) {
+            additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
+        }
+        if (!additional.isEmpty()) {
+            res.additionalData = additional;
+        }
 
         results.append(res);
     }

@@ -8,11 +8,11 @@
 class DummyNetworkReplyMangaBaka : public QNetworkReply {
     Q_OBJECT
 public:
-    DummyNetworkReplyMangaBaka(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError)
+    DummyNetworkReplyMangaBaka(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError, int httpStatus = 200)
         : QNetworkReply(parent), m_data(data) {
         setOpenMode(QIODevice::ReadOnly);
         setError(err, "");
-        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, err == QNetworkReply::NoError ? 200 : 500);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, httpStatus);
     }
 
     void finish() {
@@ -49,6 +49,7 @@ public:
     QList<DummyNetworkReplyMangaBaka*> replies;
     QByteArray nextResponse;
     QNetworkReply::NetworkError nextError = QNetworkReply::NoError;
+    int nextHttpStatus = 200;
     QUrl lastUrl;
 
 protected:
@@ -56,7 +57,7 @@ protected:
         Q_UNUSED(op);
         Q_UNUSED(outgoingData);
         lastUrl = request.url();
-        DummyNetworkReplyMangaBaka *reply = new DummyNetworkReplyMangaBaka(this, nextResponse, nextError);
+        DummyNetworkReplyMangaBaka *reply = new DummyNetworkReplyMangaBaka(this, nextResponse, nextError, nextHttpStatus);
         replies.append(reply);
         QTimer::singleShot(0, reply, &DummyNetworkReplyMangaBaka::finish);
         return reply;
@@ -169,8 +170,8 @@ void TestProviderMangaBaka::testSearchSuccess() {
     QCOMPARE(results[1].description, QStringLiteral(""));
     QCOMPARE(results[1].url, QStringLiteral("https://mangabaka.org/manga/271/no-desc"));
     QCOMPARE(results[1].type, QStringLiteral("manga"));
-    QCOMPARE(results[1].additionalData.value("status").toString(), QStringLiteral(""));
-    QCOMPARE(results[1].additionalData.value("year").toInt(), 0);
+    QVERIFY(!results[1].additionalData.contains(QStringLiteral("status")));
+        QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
 }
 
 void TestProviderMangaBaka::testNetworkFailure() {

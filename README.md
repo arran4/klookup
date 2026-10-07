@@ -16,7 +16,7 @@ It allows you to look up queries across various information providers globally, 
 
 ## Attribution
 
-Data provided by MangaBaka is available under the terms required by MangaBaka.
+Data provided by MangaBaka is available under the terms required by MangaBaka and the underlying metadata providers. Third-party data remains subject to those upstream providers' respective terms. For full details on API usage and data licensing, see the [MangaBaka API documentation](https://mangabaka.org/data/api).
 ## Build Requirements
 
 - CMake 3.16+

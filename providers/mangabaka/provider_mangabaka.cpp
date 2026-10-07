@@ -73,6 +73,15 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
         return;
     }
 
+    QVariant statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    if (statusCode.isValid()) {
+        int status = statusCode.toInt();
+        if (status < 200 || status >= 300) {
+            emit searchFailed(id(), QStringLiteral("HTTP Error: ") + QString::number(status));
+            return;
+        }
+    }
+
     QByteArray data = reply->readAll();
 
     QJsonParseError error;
@@ -84,6 +93,10 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
     }
 
     QJsonObject root = doc.object();
+    if (!root.contains(QStringLiteral("data")) || !root.value(QStringLiteral("data")).isArray()) {
+        emit searchFailed(id(), QStringLiteral("Malformed response: missing 'data' array"));
+        return;
+    }
     QJsonArray resultsArray = root.value(QStringLiteral("data")).toArray();
 
     QList<SearchResult> results;
@@ -119,9 +132,15 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
         res.type = obj.value(QStringLiteral("type")).toString();
 
         QVariantMap additional;
-        additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
-        additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
-        res.additionalData = additional;
+        if (obj.contains(QStringLiteral("status")) && !obj.value(QStringLiteral("status")).isNull()) {
+            additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
+        }
+        if (obj.contains(QStringLiteral("year")) && !obj.value(QStringLiteral("year")).isNull()) {
+            additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
+        }
+        if (!additional.isEmpty()) {
+            res.additionalData = additional;
+        }
 
         results.append(res);
     }

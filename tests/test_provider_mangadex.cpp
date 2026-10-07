@@ -8,11 +8,11 @@
 class DummyNetworkReplyMangaDex : public QNetworkReply {
     Q_OBJECT
 public:
-    DummyNetworkReplyMangaDex(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError)
+    DummyNetworkReplyMangaDex(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError, int httpStatus = 200)
         : QNetworkReply(parent), m_data(data) {
         setOpenMode(QIODevice::ReadOnly);
         setError(err, "");
-        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, err == QNetworkReply::NoError ? 200 : 500);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, httpStatus);
     }
 
     void finish() {
@@ -49,6 +49,7 @@ public:
     QList<DummyNetworkReplyMangaDex*> replies;
     QByteArray nextResponse;
     QNetworkReply::NetworkError nextError = QNetworkReply::NoError;
+    int nextHttpStatus = 200;
     QUrl lastUrl;
 
 protected:
@@ -56,7 +57,7 @@ protected:
         Q_UNUSED(op);
         Q_UNUSED(outgoingData);
         lastUrl = request.url();
-        DummyNetworkReplyMangaDex *reply = new DummyNetworkReplyMangaDex(this, nextResponse, nextError);
+        DummyNetworkReplyMangaDex *reply = new DummyNetworkReplyMangaDex(this, nextResponse, nextError, nextHttpStatus);
         replies.append(reply);
         QTimer::singleShot(0, reply, &DummyNetworkReplyMangaDex::finish);
         return reply;

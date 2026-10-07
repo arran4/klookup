@@ -73,6 +73,15 @@ void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
         return;
     }
 
+    QVariant statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
+    if (statusCode.isValid()) {
+        int status = statusCode.toInt();
+        if (status < 200 || status >= 300) {
+            emit searchFailed(id(), QStringLiteral("HTTP Error: ") + QString::number(status));
+            return;
+        }
+    }
+
     QByteArray data = reply->readAll();
 
     QJsonParseError error;
@@ -84,6 +93,10 @@ void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
     }
 
     QJsonObject root = doc.object();
+    if (!root.contains(QStringLiteral("data")) || !root.value(QStringLiteral("data")).isArray()) {
+        emit searchFailed(id(), QStringLiteral("Malformed response: missing 'data' array"));
+        return;
+    }
     QJsonArray resultsArray = root.value(QStringLiteral("data")).toArray();
 
     QList<SearchResult> results;
@@ -91,7 +104,11 @@ void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
         QJsonObject obj = val.toObject();
 
         SearchResult res;
-        res.id = obj.value(QStringLiteral("id")).toString();
+        QJsonValue idVal = obj.value(QStringLiteral("id"));
+        if (!idVal.isString()) {
+            continue; // Skip malformed individual records without a valid ID string
+        }
+        res.id = idVal.toString();
 
         QJsonObject attributes = obj.value(QStringLiteral("attributes")).toObject();
         QJsonObject titleObj = attributes.value(QStringLiteral("title")).toObject();
@@ -115,10 +132,10 @@ void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
         res.type = QStringLiteral("manga");
 
         QVariantMap additional;
-        if (attributes.contains(QStringLiteral("status")) && !attributes.value(QStringLiteral("status")).isNull()) {
+        if (attributes.contains(QStringLiteral("status")) && attributes.value(QStringLiteral("status")).isString()) {
             additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
         }
-        if (attributes.contains(QStringLiteral("year")) && !attributes.value(QStringLiteral("year")).isNull()) {
+        if (attributes.contains(QStringLiteral("year")) && attributes.value(QStringLiteral("year")).isDouble()) {
             additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
         }
         if (!additional.isEmpty()) {

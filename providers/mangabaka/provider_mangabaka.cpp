@@ -105,7 +105,11 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
 
         SearchResult res;
         // API returns id as number but we store it as string.
-        res.id = QString::number(obj.value(QStringLiteral("id")).toInt());
+        QJsonValue idVal = obj.value(QStringLiteral("id"));
+        if (!idVal.isDouble()) {
+            continue; // Skip malformed individual records without a valid ID
+        }
+        res.id = QString::number(idVal.toInt());
 
         QJsonArray titlesArray = obj.value(QStringLiteral("titles")).toArray();
         for (const QJsonValue &tVal : titlesArray) {
@@ -132,10 +136,10 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
         res.type = obj.value(QStringLiteral("type")).toString();
 
         QVariantMap additional;
-        if (obj.contains(QStringLiteral("status")) && !obj.value(QStringLiteral("status")).isNull()) {
+        if (obj.contains(QStringLiteral("status")) && obj.value(QStringLiteral("status")).isString()) {
             additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
         }
-        if (obj.contains(QStringLiteral("year")) && !obj.value(QStringLiteral("year")).isNull()) {
+        if (obj.contains(QStringLiteral("year")) && obj.value(QStringLiteral("year")).isDouble()) {
             additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
         }
         if (!additional.isEmpty()) {

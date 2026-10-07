@@ -119,15 +119,9 @@ void ProviderMangaBaka::onReplyFinished(QNetworkReply *reply)
         res.type = obj.value(QStringLiteral("type")).toString();
 
         QVariantMap additional;
-        if (obj.contains(QStringLiteral("status")) && !obj.value(QStringLiteral("status")).isNull()) {
-            additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
-        }
-        if (obj.contains(QStringLiteral("year")) && !obj.value(QStringLiteral("year")).isNull()) {
-            additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
-        }
-        if (!additional.isEmpty()) {
-            res.additionalData = additional;
-        }
+        additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
+        additional[QStringLiteral("year")] = obj.value(QStringLiteral("year")).toInt();
+        res.additionalData = additional;
 
         results.append(res);
     }

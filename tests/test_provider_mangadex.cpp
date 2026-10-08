@@ -1,4 +1,5 @@
 #include <QtTest>
+#include <QUrlQuery>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>

@@ -13,18 +13,18 @@ public:
         setOpenMode(QIODevice::ReadOnly);
         setError(err, "");
         setAttribute(QNetworkRequest::HttpStatusCodeAttribute, httpStatus);
-}
+    }
 
     void finish() {
         setFinished(true);
         emit finished();
-}
+    }
 
     void abort() override {
         setError(QNetworkReply::OperationCanceledError, "Operation canceled");
         setFinished(true);
         emit finished();
-}
+    }
 
     qint64 bytesAvailable() const override { return m_data.size() + QNetworkReply::bytesAvailable(); }
     bool isSequential() const override { return true; }
@@ -35,7 +35,7 @@ protected:
         memcpy(data, m_data.constData(), len);
         m_data.remove(0, len);
         return len;
-}
+    }
 
 private:
     QByteArray m_data;
@@ -61,7 +61,7 @@ protected:
         replies.append(reply);
         QTimer::singleShot(0, reply, &DummyNetworkReplyMangaDex::finish);
         return reply;
-}
+    }
 };
 
 class TestableProviderMangaDex : public ProviderMangaDex {
@@ -74,7 +74,7 @@ public:
         }
         mockNam = new MockNetworkAccessManagerMangaDex(this);
         m_nam = mockNam;
-}
+    }
     MockNetworkAccessManagerMangaDex *mockNam;
     QNetworkReply* activeReply() const { return m_reply; }
 };
@@ -289,7 +289,7 @@ void TestProviderMangaDex::testReplaceStale() {
 
     if (firstReply) {
         firstReply->finish();
-}
+    }
 
     QCOMPARE(failSpy.count(), 0);
     QCOMPARE(completeSpy.count(), 0);

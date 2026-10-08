@@ -6,7 +6,7 @@ It allows you to look up queries across various information providers globally, 
 
 ## Key Features
 
-- **Multi-Provider Architecture**: Query data from Wikipedia, GitHub, MangaUpdates, AniList, TVMaze, LyricsOVH, DuckDuckGo, OpenLibrary, TMDb, and OMDb.
+- **Multi-Provider Architecture**: Query data from Wikipedia, GitHub, MangaUpdates, AniList, TVMaze, LyricsOVH, DuckDuckGo, OpenLibrary, TMDb, OMDb, MangaDex, and MangaBaka.
 - **Dynamic Tab Interface**: View multiple active queries across non-blocking tabs.
 - **KRunner Integration**: Includes a companion D-Bus plugin that integrates natively into KRunner (`Alt` + `Space` > `:q: query`).
 - **Clipboard Monitoring**: Automatically monitor or auto-search queries derived straight from clipboard activity.
@@ -14,6 +14,9 @@ It allows you to look up queries across various information providers globally, 
 - **Plugin System**: Every backend is an independent, dynamic `QPluginLoader` module, making it extraordinarily easy to add custom third-party integrations.
 - **KWallet Integration**: Secure authentication capabilities natively backed by KDE's local wallet storage subsystem.
 
+## Attribution
+
+Data provided by MangaBaka is available under the terms required by MangaBaka and the underlying metadata providers. Third-party data remains subject to those upstream providers' respective terms. For full details on API usage and data licensing, see the [MangaBaka API documentation](https://mangabaka.org/data/api).
 ## Build Requirements
 
 - CMake 3.16+

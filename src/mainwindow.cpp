@@ -300,22 +300,7 @@ void MainWindow::performSearch(const QString &query)
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
 
-        SearchProvider *provider = providerTemplate->clone(tab);
-
-        QString providerName = provider->name();
-
-        connect(provider, &SearchProvider::searchCompleted, tab, [tab, provider, providerName](const QString &providerId, const QList<SearchResult> &results) {
-            Q_UNUSED(providerId);
-            tab->addResults(providerName, results);
-            provider->deleteLater();
-        });
-        connect(provider, &SearchProvider::searchFailed, tab, [tab, provider, providerName](const QString &providerId, const QString &error) {
-            Q_UNUSED(providerId);
-            tab->setError(providerName, error);
-            provider->deleteLater();
-        });
-
-        provider->search(query);
+        tab->startProvider(providerTemplate->clone(tab));
     }
 }
 

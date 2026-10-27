@@ -1,80 +1,239 @@
 #include "searchtab.h"
+#include "searchcontinuation.h"
 #include <QHBoxLayout>
-#include <QVBoxLayout>
 #include <QLabel>
-#include <QDesktopServices>
+#include <QPushButton>
+#include <QTimer>
 #include <QUrl>
+#include <QVBoxLayout>
+#include <utility>
+
+namespace
+{
+constexpr int ProviderRole = Qt::UserRole + 1;
+constexpr int DetailLoadedRole = Qt::UserRole + 2;
+constexpr int DetailTokenRole = Qt::UserRole + 3;
+} // namespace
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
-    : QWidget(parent)
-    , m_query(query)
-    , m_resultsTree(new QTreeWidget(this))
-    , m_detailsView(new QTextBrowser(this))
+    : QWidget(parent), m_query(query), m_resultsTree(new QTreeWidget(this)), m_detailsView(new QTextBrowser(this)),
+      m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
 {
-    QHBoxLayout *mainLayout = new QHBoxLayout(this);
-
-    QVBoxLayout *leftLayout = new QVBoxLayout();
-    QLabel *queryLabel = new QLabel(QStringLiteral("Results for: ") + query, this);
-    leftLayout->addWidget(queryLabel);
-
+    auto *layout = new QHBoxLayout(this);
+    auto *left = new QVBoxLayout;
+    auto *label = new QLabel(QStringLiteral("Results for: ") + query, this);
+    label->setTextFormat(Qt::PlainText);
+    left->addWidget(label);
     m_resultsTree->setHeaderHidden(true);
-    leftLayout->addWidget(m_resultsTree);
-
-    mainLayout->addLayout(leftLayout, 1);
-    mainLayout->addWidget(m_detailsView, 2);
-
+    left->addWidget(m_resultsTree);
+    auto *right = new QVBoxLayout;
+    right->addWidget(m_detailsView);
+    right->addWidget(m_detailsButton);
+    layout->addLayout(left, 1);
+    layout->addLayout(right, 2);
+    m_detailsButton->setObjectName(QStringLiteral("loadDetails"));
+    m_detailsButton->hide();
+    connect(m_detailsButton, &QPushButton::clicked, this, [this] { loadDetails(); });
     connect(m_resultsTree, &QTreeWidget::itemClicked, this, &SearchTab::onResultClicked);
-
+    connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) { onResultClicked(item, 0); });
     m_detailsView->setOpenExternalLinks(true);
 }
 
 SearchTab::~SearchTab()
 {
+    for (const auto &state : std::as_const(m_states)) {
+        if (state.provider) {
+            state.provider->disconnect(this);
+            if (auto *continuation = qobject_cast<SearchProviderContinuation *>(state.provider)) {
+                continuation->cancelRequests();
+            }
+            // Delete while the tab's state still exists; legacy providers own
+            // their network managers/replies and Qt disconnects their callbacks.
+            delete state.provider;
+        }
+    }
+}
+
+void SearchTab::startProvider(SearchProvider *provider)
+{
+    if (!provider || m_states.contains(provider->id())) {
+        return;
+    }
+    provider->setParent(this);
+    ProviderState state;
+    state.provider = provider;
+    state.group = new QTreeWidgetItem(m_resultsTree);
+    state.group->setText(0, provider->name());
+    state.group->setFlags(state.group->flags() & ~Qt::ItemIsSelectable);
+    state.group->setExpanded(true);
+    const QString id = provider->id();
+    m_states.insert(id, state);
+    connect(provider, &SearchProvider::pageCompleted, this, [this, id](quint64 requestId, const SearchPage &page) {
+        auto &state = m_states[id];
+        if (!state.pending || state.pending != requestId)
+            return;
+        state.pending = 0;
+        state.started = true;
+        state.retryAt = {};
+        // A repeated token cannot advance and must not create an endless loop.
+        state.nextToken = state.seenTokens.contains(page.nextToken) ? QString() : page.nextToken;
+        if (!state.nextToken.isEmpty())
+            state.seenTokens.insert(state.nextToken);
+        appendResults(state.group, page.results, &state);
+        pageStatus(state,
+                   state.nextToken.isEmpty() ? (state.items.isEmpty() ? QStringLiteral("No results") : QStringLiteral("No more results"))
+                                             : QStringLiteral("Load more results"),
+                   !state.nextToken.isEmpty());
+    });
+    connect(provider, &SearchProvider::searchCompleted, this, [this, id](const QString &, const QList<SearchResult> &results) {
+        auto &state = m_states[id];
+        if (qobject_cast<SearchProviderContinuation *>(state.provider) || !state.pending)
+            return;
+        state.pending = 0;
+        state.started = true;
+        if (state.status) {
+            delete state.status;
+            state.status = nullptr;
+        }
+        appendResults(state.group, results, &state);
+        if (results.isEmpty())
+            pageStatus(state, QStringLiteral("No results"), false);
+    });
+    connect(provider, &SearchProvider::searchFailed, this, [this, id](const QString &, const QString &error) {
+        auto &state = m_states[id];
+        if (qobject_cast<SearchProviderContinuation *>(state.provider) || !state.pending)
+            return;
+        state.pending = 0;
+        pageStatus(state, QStringLiteral("Error: %1 — Retry").arg(error), true);
+    });
+    connect(provider, &SearchProvider::requestFailed, this, [this, id](quint64 requestId, const QString &error, int retryMs) {
+        auto &state = m_states[id];
+        if (requestId == state.pending && state.pending) {
+            state.pending = 0;
+            state.retryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
+            pageStatus(state, QStringLiteral("Error: %1 — Retry").arg(error), true);
+        } else if (requestId == m_detailRequest && m_detailRequest && id == m_detailProvider) {
+            m_detailRequest = 0;
+            m_detailRetryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
+            if (m_selected && m_selected->data(0, ProviderRole).toString() == id &&
+                m_selected->data(0, Qt::UserRole).value<SearchResult>().id == m_detailId) {
+                renderResult(m_selected);
+                m_detailsView->append(QStringLiteral("<p>%1</p>").arg((QStringLiteral("Details error: ") + error).toHtmlEscaped()));
+            }
+            updateDetailsControl();
+        }
+    });
+    connect(provider, &SearchProvider::detailsCompleted, this, [this, id](quint64 requestId, const SearchDetails &details) {
+        if (!m_detailRequest || m_detailRequest != requestId || id != m_detailProvider)
+            return;
+        m_detailRequest = 0;
+        auto &state = m_states[id];
+        auto *item = state.items.value(m_detailId);
+        if (item && details.result.id == m_detailId) {
+            item->setData(0, Qt::UserRole, QVariant::fromValue(details.result));
+            item->setData(0, DetailLoadedRole, true);
+            const QString previousToken = item->data(0, DetailTokenRole).toString();
+            item->setData(0, DetailTokenRole, details.nextToken == previousToken ? QString() : details.nextToken);
+            item->setText(0, details.result.title);
+            if (item == m_selected)
+                renderResult(item);
+        }
+        updateDetailsControl();
+    });
+    loadMore(id);
+}
+
+void SearchTab::loadMore(const QString &providerId)
+{
+    auto it = m_states.find(providerId);
+    if (it == m_states.end())
+        return;
+    auto &state = it.value();
+    if (!state.provider || state.pending || (state.started && state.nextToken.isEmpty()) || state.retryAt > QDateTime::currentDateTimeUtc())
+        return;
+    state.pending = ++m_nextRequest;
+    pageStatus(state, QStringLiteral("Loading…"), false);
+    if (auto *continuation = qobject_cast<SearchProviderContinuation *>(state.provider)) {
+        continuation->requestPage(m_query, state.nextToken, state.pending);
+    } else {
+        state.provider->search(m_query);
+    }
+}
+
+void SearchTab::pageStatus(ProviderState &state, const QString &text, bool actionable)
+{
+    if (state.status) {
+        delete state.status;
+        state.status = nullptr;
+    }
+    state.status = new QTreeWidgetItem(state.group);
+    state.status->setFlags(state.status->flags() & ~Qt::ItemIsSelectable);
+    state.status->setText(0, text);
+    if (actionable) {
+        auto *button = new QPushButton(text, m_resultsTree);
+        button->setObjectName(QStringLiteral("loadMore_") + state.provider->id());
+        const QString id = state.provider->id();
+        connect(button, &QPushButton::clicked, this, [this, id] { loadMore(id); });
+        const qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(state.retryAt);
+        if (delay > 0) {
+            button->setEnabled(false);
+            QTimer::singleShot(int(delay), button, [button] { button->setEnabled(true); });
+        }
+        m_resultsTree->setItemWidget(state.status, 0, button);
+    }
+}
+
+QTreeWidgetItem *SearchTab::groupForName(const QString &name)
+{
+    const auto items = m_resultsTree->findItems(name, Qt::MatchExactly, 0);
+    if (!items.isEmpty())
+        return items.first();
+    auto *group = new QTreeWidgetItem(m_resultsTree);
+    group->setText(0, name);
+    group->setFlags(group->flags() & ~Qt::ItemIsSelectable);
+    group->setExpanded(true);
+    return group;
+}
+
+void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state)
+{
+    if (results.isEmpty() && (!state || state->items.isEmpty())) {
+        // Attached providers use their status row for empty state.
+        if (state)
+            return;
+        auto *item = new QTreeWidgetItem(group);
+        item->setText(0, QStringLiteral("No results"));
+        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+    }
+    for (const auto &result : results) {
+        QString identity = result.id;
+        if (state && identity.isEmpty()) {
+            if (qobject_cast<SearchProviderContinuation *>(state->provider))
+                continue;
+            // Legacy plugins are permitted to omit IDs; preserve their rows.
+            identity = QStringLiteral("legacy:%1").arg(state->items.size());
+        }
+        if (state && state->items.contains(identity))
+            continue;
+        auto *item = new QTreeWidgetItem;
+        item->setText(0, result.title);
+        item->setData(0, Qt::UserRole, QVariant::fromValue(result));
+        if (state) {
+            item->setData(0, ProviderRole, state->provider->id());
+            state->items.insert(identity, item);
+        }
+        group->insertChild(state && state->status ? group->indexOfChild(state->status) : group->childCount(), item);
+    }
 }
 
 void SearchTab::addResults(const QString &providerName, const QList<SearchResult> &results)
 {
-    QList<QTreeWidgetItem*> items = m_resultsTree->findItems(providerName, Qt::MatchExactly, 0);
-    QTreeWidgetItem *providerItem;
-    if (items.isEmpty()) {
-        providerItem = new QTreeWidgetItem(m_resultsTree);
-        providerItem->setText(0, providerName);
-        providerItem->setFlags(providerItem->flags() & ~Qt::ItemIsSelectable);
-        m_resultsTree->addTopLevelItem(providerItem);
-    } else {
-        providerItem = items.first();
-    }
-
-    if (results.isEmpty()) {
-        QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
-        item->setText(0, QStringLiteral("No results"));
-        item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
-        return;
-    }
-
-    for (const SearchResult &res : results) {
-        QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
-        item->setText(0, res.title);
-        item->setData(0, Qt::UserRole, QVariant::fromValue(res));
-    }
-
-    providerItem->setExpanded(true);
+    appendResults(groupForName(providerName), results);
 }
 
 void SearchTab::setError(const QString &providerName, const QString &errorMsg)
 {
-    QList<QTreeWidgetItem*> items = m_resultsTree->findItems(providerName, Qt::MatchExactly, 0);
-    QTreeWidgetItem *providerItem;
-    if (items.isEmpty()) {
-        providerItem = new QTreeWidgetItem(m_resultsTree);
-        providerItem->setText(0, providerName);
-        providerItem->setFlags(providerItem->flags() & ~Qt::ItemIsSelectable);
-        m_resultsTree->addTopLevelItem(providerItem);
-    } else {
-        providerItem = items.first();
-    }
-
-    QTreeWidgetItem *item = new QTreeWidgetItem(providerItem);
+    auto *item = new QTreeWidgetItem(groupForName(providerName));
     item->setText(0, QStringLiteral("Error: ") + errorMsg);
     item->setForeground(0, Qt::red);
     item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
@@ -83,14 +242,62 @@ void SearchTab::setError(const QString &providerName, const QString &errorMsg)
 void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
 {
     Q_UNUSED(column);
-    QVariant data = item->data(0, Qt::UserRole);
-    if (!data.isValid()) {
+    m_selected = item && item->data(0, Qt::UserRole).isValid() ? item : nullptr;
+    renderResult(m_selected);
+    updateDetailsControl();
+}
+
+void SearchTab::loadDetails(bool refresh)
+{
+    if (!m_selected || m_detailRequest || m_detailRetryAt > QDateTime::currentDateTimeUtc())
+        return;
+    if (!refresh && m_selected->data(0, DetailLoadedRole).toBool() && m_selected->data(0, DetailTokenRole).toString().isEmpty())
+        return;
+    const auto result = m_selected->data(0, Qt::UserRole).value<SearchResult>();
+    const QString id = m_selected->data(0, ProviderRole).toString();
+    auto it = m_states.find(id);
+    if (it == m_states.end() || !it->provider)
+        return;
+    auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
+    if (!continuation || !continuation->supportsDetails())
+        return;
+    m_detailProvider = id;
+    m_detailId = result.id;
+    m_detailRequest = ++m_nextRequest;
+    const QString token = refresh ? QString() : m_selected->data(0, DetailTokenRole).toString();
+    updateDetailsControl();
+    continuation->requestDetails(result.id, token, m_detailRequest);
+}
+
+void SearchTab::updateDetailsControl()
+{
+    bool supported = false;
+    if (m_selected && m_selected->data(0, Qt::UserRole).isValid()) {
+        auto it = m_states.find(m_selected->data(0, ProviderRole).toString());
+        if (it != m_states.end() && it->provider) {
+            auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
+            supported = continuation && continuation->supportsDetails() &&
+                        (!m_selected->data(0, DetailLoadedRole).toBool() || !m_selected->data(0, DetailTokenRole).toString().isEmpty());
+        }
+    }
+    m_detailsButton->setVisible(supported);
+    m_detailsButton->setEnabled(!m_detailRequest && m_detailRetryAt <= QDateTime::currentDateTimeUtc());
+    m_detailsButton->setText(m_detailRequest ? QStringLiteral("Loading details…")
+                                             : (m_selected && !m_selected->data(0, DetailTokenRole).toString().isEmpty()
+                                                    ? QStringLiteral("Load more content")
+                                                    : QStringLiteral("Load full details")));
+    const qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(m_detailRetryAt);
+    if (delay > 0)
+        QTimer::singleShot(int(delay), this, &SearchTab::updateDetailsControl);
+}
+
+void SearchTab::renderResult(QTreeWidgetItem *item)
+{
+    if (!item || !item->data(0, Qt::UserRole).isValid()) {
         m_detailsView->clear();
         return;
     }
-
-    SearchResult res = data.value<SearchResult>();
-
+    const auto res = item->data(0, Qt::UserRole).value<SearchResult>();
     QString html = QStringLiteral("<h2>%1</h2>").arg(res.title.toHtmlEscaped());
     if (!res.type.isEmpty()) {
         html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
@@ -101,7 +308,8 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
 
     if (!res.url.isEmpty()) {
         QUrl qurl(res.url, QUrl::StrictMode);
-        if (qurl.isValid() && (qurl.scheme() == QStringLiteral("http") || qurl.scheme() == QStringLiteral("https")) && !qurl.host().isEmpty()) {
+        if (qurl.isValid() && (qurl.scheme() == QStringLiteral("http") || qurl.scheme() == QStringLiteral("https")) &&
+            !qurl.host().isEmpty()) {
             html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped());
         } else {
             html += QStringLiteral("<p>Invalid or unsupported URL: %1</p>").arg(res.url.toHtmlEscaped());
@@ -115,7 +323,5 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
         }
         html += QStringLiteral("</ul>");
     }
-
     m_detailsView->setHtml(html);
 }
-

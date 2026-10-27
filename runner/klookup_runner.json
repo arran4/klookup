@@ -2,7 +2,7 @@
     "KPlugin": {
         "Name": "KLookup",
         "Description": "Look up queries across various providers like Wikipedia, GitHub, etc.",
-        "Icon": "dictionary",
+        "Icon": "org.kde.klookup",
         "Authors": [
             {
                 "Name": "Jules",

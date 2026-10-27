@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "appicon.h"
 #include "searchtab.h"
 #include "dbusadaptor.h"
 #include "settingsdialog.h"
@@ -23,7 +24,6 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <QSettings>
 #include <KSharedConfig>
 #include <KConfigGroup>
-#include <QStyle>
 
 #ifndef Q_OS_WASM
 #include <KWallet>
@@ -35,13 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
 {
-    QIcon icon = QIcon::fromTheme(QStringLiteral("dictionary"));
-    if (icon.isNull()) {
-        icon = QIcon::fromTheme(QStringLiteral("application-x-executable"));
-        if (icon.isNull()) {
-            icon = QApplication::style()->standardIcon(QStyle::SP_ComputerIcon);
-        }
-    }
+    const QIcon icon = applicationIcon();
     QApplication::setWindowIcon(icon);
     m_trayIcon->setIcon(icon);
     m_tabWidget->setTabsClosable(true);
@@ -155,7 +149,7 @@ void MainWindow::setupTrayIcon()
 {
     QMenu *trayMenu = new QMenu(this);
 
-    QAction *restoreAction = trayMenu->addAction(QStringLiteral("Restore"));
+    QAction *restoreAction = trayMenu->addAction(QIcon::fromTheme(QStringLiteral("window-restore")), QStringLiteral("Restore"));
     connect(restoreAction, &QAction::triggered, this, &MainWindow::showNormal);
 
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Preferences)));

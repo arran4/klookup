@@ -5,11 +5,19 @@ add_library(klookup_core STATIC
     searchtab.cpp
     dbusadaptor.cpp
     settingsdialog.cpp
+    appicon.cpp
+)
+
+set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)
+set_source_files_properties(../icons/256x256/apps/org.kde.klookup.png PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.png)
+qt_add_resources(klookup_core "klookup_icons" PREFIX "/icons" FILES
+    ../icons/scalable/apps/org.kde.klookup.svg
+    ../icons/256x256/apps/org.kde.klookup.png
 )
 
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-target_link_libraries(klookup_core
+target_link_libraries(klookup_core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

@@ -18,5 +18,6 @@ struct Classification {
 constexpr int MaximumLength = 4096;
 Classification classifyText(const QString &text);
 Classification classifyMimeData(const QMimeData *mime);
+QString explicitQuery(const QMimeData *mime);
 } // namespace ClipboardInput
 #endif

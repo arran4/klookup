@@ -85,3 +85,19 @@ ClipboardInput::Classification ClipboardInput::classifyMimeData(const QMimeData 
         return {Kind::Unsupported, {}};
     return classifyText(mime->text());
 }
+
+QString ClipboardInput::explicitQuery(const QMimeData *mime)
+{
+    if (!mime || !mime->hasFormat(QStringLiteral("text/plain")))
+        return {};
+    const QString raw = mime->text();
+    if (raw.size() > MaximumLength)
+        return {};
+    for (const auto character : raw) {
+        if ((character.category() == QChar::Other_Control && character != QLatin1Char('\n') && character != QLatin1Char('\r') &&
+             character != QLatin1Char('\t')) ||
+            character == QChar::ReplacementCharacter)
+            return {};
+    }
+    return raw.trimmed();
+}

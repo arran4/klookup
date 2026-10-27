@@ -27,6 +27,7 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
 
 find_package(KF6 REQUIRED COMPONENTS
     CoreAddons
+    GlobalAccel
     Config
     I18n
     Runner
@@ -90,8 +91,11 @@ add_custom_target(klookup_with_plugins ALL
 )
 
 if(BUILD_TESTING)
-    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication)
+    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_globalshortcuts)
     add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
+    if(TARGET test_shortcut_activation)
+        add_dependencies(klookup_with_plugins test_shortcut_activation)
+    endif()
 endif()
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

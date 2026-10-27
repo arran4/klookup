@@ -13,6 +13,7 @@ public:
     explicit SearchDashboard(QWidget *parent = nullptr);
     ~SearchDashboard();
 
+    void focusQuery();
     void loadHistory(const QStringList &history);
     QStringList saveHistory() const;
     void prepareQuery(const QString &query, bool focus = true);

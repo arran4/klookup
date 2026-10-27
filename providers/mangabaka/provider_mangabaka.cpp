@@ -1,4 +1,5 @@
 #include "provider_mangabaka.h"
+#include "../manga_metadata.h"
 #include "providerrequest.h"
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -145,11 +146,122 @@ void ProviderMangaBaka::requestDetails(const QString &resultId, const QString &t
             ProviderRequest::fail(this, requestId, QStringLiteral("Malformed detail response: result identity mismatch"));
             return;
         }
-        emit detailsCompleted(requestId, SearchDetails{result, QString()});
+        emit detailsCompleted(requestId, SearchDetails{result, QString(), parseMetadata(root.value(QStringLiteral("data")).toObject())});
     });
 }
 
 SearchProvider *ProviderMangaBaka::clone(QObject *parent) const
 {
     return new ProviderMangaBaka(parent);
+}
+
+ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
+{
+    using namespace MangaMetadata;
+    ResultMetadata metadata;
+    MetadataNode series{QStringLiteral("Series"), {}, {}};
+    const QList<QPair<QString, QString>> fields = {{QStringLiteral("status"), QStringLiteral("Publication status")},
+                                                   {QStringLiteral("type"), QStringLiteral("Format")},
+                                                   {QStringLiteral("original_language"), QStringLiteral("Original language")},
+                                                   {QStringLiteral("content_rating"), QStringLiteral("Content rating")},
+                                                   {QStringLiteral("authors"), QStringLiteral("Authors")},
+                                                   {QStringLiteral("artists"), QStringLiteral("Artists")},
+                                                   {QStringLiteral("published"), QStringLiteral("Publication dates")},
+                                                   {QStringLiteral("year"), QStringLiteral("Year")},
+                                                   {QStringLiteral("rating"), QStringLiteral("Rating (0–100)")},
+                                                   {QStringLiteral("rating_count"), QStringLiteral("Rating count")},
+                                                   {QStringLiteral("popularity"), QStringLiteral("Popularity ranks")},
+                                                   {QStringLiteral("is_licensed"), QStringLiteral("Licensed in English")},
+                                                   {QStringLiteral("final_volume"), QStringLiteral("Final volume")},
+                                                   {QStringLiteral("total_chapters"), QStringLiteral("Total chapters")},
+                                                   {QStringLiteral("state"), QStringLiteral("Record state")},
+                                                   {QStringLiteral("merged_with"), QStringLiteral("Merged into series")},
+                                                   {QStringLiteral("last_updated_at"), QStringLiteral("Last updated")},
+                                                   {QStringLiteral("anime"), QStringLiteral("Anime adaptation")}};
+    for (const auto &entry : fields)
+        field(series, entry.second, obj.value(entry.first));
+    metadata.sections.append(series);
+
+    MetadataNode titles{QStringLiteral("Titles"), {}, {}};
+    for (const auto &value : obj.value(QStringLiteral("titles")).toArray()) {
+        const auto title = value.toObject();
+        const QString language = title.value(QStringLiteral("language")).toString(QStringLiteral("Unknown language"));
+        auto node = Metadata::text(language, {title.value(QStringLiteral("title")).toString()});
+        field(node, QStringLiteral("Traits"), title.value(QStringLiteral("traits")));
+        field(node, QStringLiteral("Primary"), title.value(QStringLiteral("is_primary")));
+        field(node, QStringLiteral("Note"), title.value(QStringLiteral("note")));
+        if (!node.values.isEmpty())
+            titles.children.append(node);
+    }
+    metadata.sections.append(titles);
+    MetadataNode publishers{QStringLiteral("Publishers"), {}, {}};
+    for (const auto &value : obj.value(QStringLiteral("publishers")).toArray()) {
+        const auto publisher = value.toObject();
+        MetadataNode node{publisher.value(QStringLiteral("name")).toString(QStringLiteral("Publisher")), {}, {}};
+        field(node, QStringLiteral("Language"), publisher.value(QStringLiteral("language")));
+        field(node, QStringLiteral("Note"), publisher.value(QStringLiteral("note")));
+        link(node, QStringLiteral("Publisher page"), publisher.value(QStringLiteral("canonical_url")).toString());
+        publishers.children.append(node);
+    }
+    metadata.sections.append(publishers);
+
+    MetadataNode tags{QStringLiteral("Tags"), {}, {}};
+    QMap<int, QJsonObject> tagsById;
+    for (const auto &value : obj.value(QStringLiteral("tags")).toArray()) {
+        const auto tag = value.toObject();
+        if (tag.value(QStringLiteral("id")).toInt() > 0)
+            tagsById.insert(tag.value(QStringLiteral("id")).toInt(), tag);
+    }
+    for (const auto &value : obj.value(QStringLiteral("tags")).toArray()) {
+        const auto tag = value.toObject();
+        QStringList path = tag.value(QStringLiteral("name_path")).toString().split(QStringLiteral(" > "), Qt::SkipEmptyParts);
+        if (path.isEmpty()) {
+            // Older/missing paths: follow available parents, with cycle/depth guards.
+            QJsonObject current = tag;
+            QSet<int> visited;
+            while (!current.isEmpty() && visited.size() < 12) {
+                const int id = current.value(QStringLiteral("id")).toInt();
+                if (visited.contains(id))
+                    break;
+                visited.insert(id);
+                const QString name = current.value(QStringLiteral("name")).toString();
+                if (!name.isEmpty())
+                    path.prepend(name);
+                current = tagsById.value(current.value(QStringLiteral("parent_id")).toInt());
+            }
+        }
+        if (path.isEmpty() || path.size() > 12)
+            continue;
+        MetadataNode *parent =
+            &category(tags, tag.value(QStringLiteral("is_genre")).toBool() ? QStringLiteral("Genres") : QStringLiteral("Taxonomy"));
+        for (const auto &part : path)
+            parent = &category(*parent, part);
+        field(*parent, QStringLiteral("Description"), tag.value(QStringLiteral("description")));
+        field(*parent, QStringLiteral("Relevance"), tag.value(QStringLiteral("weight")));
+        field(*parent, QStringLiteral("Spoiler"), tag.value(QStringLiteral("is_spoiler")));
+        field(*parent, QStringLiteral("Content rating"), tag.value(QStringLiteral("content_rating")));
+        field(*parent, QStringLiteral("Tag ID"), tag.value(QStringLiteral("id")));
+        field(*parent, QStringLiteral("Parent ID"), tag.value(QStringLiteral("parent_id")));
+        field(*parent, QStringLiteral("Level"), tag.value(QStringLiteral("level")));
+        field(*parent, QStringLiteral("Assigned explicitly (is_explicit)"), tag.value(QStringLiteral("is_explicit")));
+        field(*parent, QStringLiteral("Merged into tag"), tag.value(QStringLiteral("merged_with")));
+        field(*parent, QStringLiteral("Implied by tags"), tag.value(QStringLiteral("implied_by_tag_ids")));
+    }
+    metadata.sections.append(tags);
+    MetadataNode references{QStringLiteral("Sources and links"), {}, {}};
+    field(references, QStringLiteral("Upstream source IDs and ratings"), obj.value(QStringLiteral("source")));
+    for (const auto &value : obj.value(QStringLiteral("links")).toArray()) {
+        const auto reference = value.toObject();
+        auto &group = category(references, reference.value(QStringLiteral("type")).toString(QStringLiteral("Other")));
+        link(group, reference.value(QStringLiteral("name_display")).toString(reference.value(QStringLiteral("name")).toString()),
+             reference.value(QStringLiteral("url")).toString());
+    }
+    field(references, QStringLiteral("Related series"), obj.value(QStringLiteral("relationships")));
+    const auto cover = obj.value(QStringLiteral("cover")).toObject();
+    link(references, QStringLiteral("Cover image"),
+         cover.value(QStringLiteral("x250")).toString(cover.value(QStringLiteral("raw")).toString()), MetadataValue::Kind::Image);
+    metadata.sections.append(references);
+    metadata.attribution = {QStringLiteral(
+        "Data provided by MangaBaka and the upstream providers identified above. Third-party data remains subject to their terms.")};
+    return metadata;
 }

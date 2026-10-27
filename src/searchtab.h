@@ -40,22 +40,25 @@ private:
         quint64 pending = 0;
         bool started = false;
         QDateTime retryAt;
+        QDateTime detailRetryAt;
     };
     QTreeWidgetItem *groupForName(const QString &name);
     void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr);
     void pageStatus(ProviderState &state, const QString &text, bool actionable);
     void renderResult(QTreeWidgetItem *item);
+    void renderMetadata(const ResultMetadata &metadata);
+    void loadInitialDetails();
     void updateDetailsControl();
     QString m_query;
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;
+    QTreeWidget *m_metadataView;
     QPushButton *m_detailsButton;
     QMap<QString, ProviderState> m_states;
     quint64 m_nextRequest = 0;
     quint64 m_detailRequest = 0;
     QString m_detailProvider;
     QString m_detailId;
-    QDateTime m_detailRetryAt;
     QTreeWidgetItem *m_selected = nullptr;
 };
 #endif

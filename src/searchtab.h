@@ -12,6 +12,7 @@
 
 class QPushButton;
 class ProviderAuthSession;
+class QMenu;
 
 class SearchTab : public QWidget
 {
@@ -19,6 +20,7 @@ class SearchTab : public QWidget
 public:
     explicit SearchTab(const QString &query, QWidget *parent = nullptr);
     ~SearchTab() override;
+    QMenu *createResultMenu(QTreeWidgetItem *item);
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
     void addResults(const QString &providerName, const QList<SearchResult> &results);
     void setError(const QString &providerName, const QString &errorMsg);
@@ -26,6 +28,9 @@ public:
 public slots:
     void loadMore(const QString &providerId);
     void loadDetails(bool refresh = false);
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private slots:
     void onResultClicked(QTreeWidgetItem *item, int column);
@@ -46,6 +51,7 @@ private:
     };
     QTreeWidgetItem *groupForName(const QString &name);
     void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr);
+    void showResultMenu(QTreeWidgetItem *item, const QPoint &globalPosition);
     void pageStatus(ProviderState &state, const QString &text, bool actionable);
     void renderResult(QTreeWidgetItem *item);
     void renderMetadata(const ResultMetadata &metadata);

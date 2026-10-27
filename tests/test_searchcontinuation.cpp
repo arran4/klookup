@@ -1,5 +1,6 @@
 #include "../src/searchcontinuation.h"
 #include "../src/searchtab.h"
+#include <QMenu>
 #include <QPushButton>
 #include <QtTest>
 
@@ -271,6 +272,40 @@ private slots:
         tree->setCurrentItem(tree->topLevelItem(0)->child(0));
         QCOMPARE(provider->details.size(), 1); // cache reuse
         QCOMPARE(view->topLevelItemCount(), 3);
+    }
+    void refreshIsResultSpecificAndRespectsRequests()
+    {
+        SearchTab tab(QStringLiteral("query"));
+        auto *provider = new ContinuationMock(QStringLiteral("alpha"));
+        auto *other = new ContinuationMock(QStringLiteral("beta"));
+        tab.startProvider(provider);
+        tab.startProvider(other);
+        provider->finish({QStringLiteral("1"), QStringLiteral("2")});
+        other->finish({QStringLiteral("other")});
+        auto *tree = tab.findChild<QTreeWidget *>();
+        auto *target = tree->topLevelItem(0)->child(1);
+        auto *menu = tab.createResultMenu(target);
+        auto *refresh = menu->findChild<QAction *>(QStringLiteral("refresh_details"));
+        QVERIFY(refresh->isEnabled());
+        refresh->trigger();
+        QCOMPARE(provider->details.size(), 1);
+        QCOMPARE(provider->details.last().query, QStringLiteral("2"));
+        QCOMPARE(provider->pages.size(), 1);
+        QCOMPARE(other->pages.size(), 1);
+        QVERIFY(other->details.isEmpty());
+        auto *busy = tab.createResultMenu(target);
+        QVERIFY(!busy->findChild<QAction *>(QStringLiteral("refresh_details"))->isEnabled());
+        emit provider->requestFailed(provider->details.last().id, QStringLiteral("Refresh failed"));
+        QVERIFY(tab.findChild<QTextBrowser *>()->toPlainText().contains(QStringLiteral("Refresh failed")));
+        auto *retry = tab.createResultMenu(target);
+        QVERIFY(retry->findChild<QAction *>(QStringLiteral("refresh_details"))->isEnabled());
+        retry->findChild<QAction *>(QStringLiteral("refresh_details"))->trigger();
+        QCOMPARE(provider->details.size(), 2);
+        emit provider->detailsCompleted(
+            provider->details.last().id,
+            SearchDetails{ContinuationMock::result(QStringLiteral("2"), QStringLiteral("Refreshed content")), {}});
+        QCOMPARE(tree->currentItem(), target);
+        QVERIFY(tab.findChild<QTextBrowser *>()->toPlainText().contains(QStringLiteral("Refreshed content")));
     }
 
     void legacyAndTabDestruction()

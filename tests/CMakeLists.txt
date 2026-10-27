@@ -5,6 +5,10 @@ target_link_libraries(test_appicon Qt6::Test klookup_core)
 target_compile_definitions(test_appicon PRIVATE ICON_SOURCE_DIR="${CMAKE_SOURCE_DIR}/icons")
 add_test(NAME test_appicon COMMAND test_appicon)
 
+add_executable(test_clipboardinput test_clipboardinput.cpp)
+target_link_libraries(test_clipboardinput Qt6::Test klookup_core)
+add_test(NAME test_clipboardinput COMMAND test_clipboardinput)
+
 add_executable(test_searchdashboard test_searchdashboard.cpp)
 target_link_libraries(test_searchdashboard Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui)
 add_test(NAME test_searchdashboard COMMAND test_searchdashboard)

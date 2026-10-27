@@ -113,6 +113,7 @@ private slots:
         QList<TestCase> cases = {
             {"https://example.com/test?q=1", true},
             {"http://example.com", true},
+            {"https://user:token@example.com/", false},
             {"javascript:alert(1)", false},
             {"file:///etc/passwd", false},
             {"https://example.com\" onclick=\"alert(1)", false}, // Invalid URL due to spaces and quotes when parsed by QUrl

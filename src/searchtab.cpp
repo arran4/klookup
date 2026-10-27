@@ -1,5 +1,6 @@
 #include "searchtab.h"
 #include "searchcontinuation.h"
+#include "sourceurl.h"
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
@@ -307,9 +308,8 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
     }
 
     if (!res.url.isEmpty()) {
-        QUrl qurl(res.url, QUrl::StrictMode);
-        if (qurl.isValid() && (qurl.scheme() == QStringLiteral("http") || qurl.scheme() == QStringLiteral("https")) &&
-            !qurl.host().isEmpty()) {
+        const QUrl qurl = validatedSourceUrl(res.url);
+        if (!qurl.isEmpty()) {
             html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped());
         } else {
             html += QStringLiteral("<p>Invalid or unsupported URL: %1</p>").arg(res.url.toHtmlEscaped());

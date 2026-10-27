@@ -40,11 +40,11 @@ QStringList SearchDashboard::saveHistory() const
     return m_history;
 }
 
-void SearchDashboard::prepareQuery(const QString &query)
+void SearchDashboard::prepareQuery(const QString &query, bool focus)
 {
     m_searchBar->setText(query);
     m_searchBar->selectAll();
-    m_searchBar->setFocus();
+    if (focus) m_searchBar->setFocus();
 }
 
 void SearchDashboard::onSearchTriggered()

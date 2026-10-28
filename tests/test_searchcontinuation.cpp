@@ -261,6 +261,8 @@ private slots:
         QCOMPARE(view->topLevelItemCount(), 3);
         QCOMPARE(view->topLevelItem(0)->text(0), QStringLiteral("Activities"));
         QVERIFY(view->topLevelItem(0)->child(0)->text(1).contains(QStringLiteral("<script>untrusted</script>")));
+        QVERIFY(!view->topLevelItem(0)->child(0)->toolTip(1).contains(QStringLiteral("<script>")));
+        QVERIFY(view->topLevelItem(0)->child(0)->toolTip(1).contains(QStringLiteral("&lt;script&gt;")));
         QCOMPARE(view->topLevelItem(1)->childCount(), 1); // unsafe URL becomes text, never a link
         QCOMPARE(view->topLevelItem(1)->child(0)->data(1, Qt::UserRole).toString(), QStringLiteral("https://example.org/source"));
         QCOMPARE(view->topLevelItem(2)->text(1), QStringLiteral("Provider credit"));

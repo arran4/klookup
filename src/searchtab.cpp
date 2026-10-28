@@ -410,7 +410,7 @@ void SearchTab::renderMetadata(const ResultMetadata &metadata)
             }
         }
         item->setText(1, plainValues.join(QStringLiteral("; ")));
-        item->setToolTip(1, plainValues.join(QLatin1Char('\n')));
+        item->setToolTip(1, QStringLiteral("<p>%1</p>").arg(plainValues.join(QLatin1Char('\n')).toHtmlEscaped()));
         for (const auto &child : node.children)
             append(item, child, depth + 1);
         item->setExpanded(depth < 2);

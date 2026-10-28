@@ -1,0 +1,27 @@
+{
+  "data": {
+    "id": "example-id",
+    "attributes": {
+      "title": {"en": "Example Manga"},
+      "altTitles": [{"ja": "別名"}, {"en": "Another name"}],
+      "description": {"en": "Full MangaDex synopsis, without a 200-character cutoff.", "ja": "全文"},
+      "status": "completed",
+      "year": 2020,
+      "originalLanguage": "ja",
+      "publicationDemographic": "seinen",
+      "contentRating": "safe",
+      "availableTranslatedLanguages": ["en", "fr"],
+      "tags": [
+        {"id": "tag-fantasy", "attributes": {"group": "genre", "name": {"en": "Fantasy", "fr": "Fantaisie"}}},
+        {"id": "tag-journey", "attributes": {"group": "theme", "name": {"en": "Journey"}, "description": {"en": "Travelling"}}},
+        {"id": "tag-new", "attributes": {"group": "future-group", "name": {"ja": "新しい"}}}
+      ],
+      "links": {"al": "12345", "raw": "https://example.org/original", "unsafe": "file:///etc/passwd"}
+    },
+    "relationships": [
+      {"id": "author-id", "type": "author", "attributes": {"name": "Named Author"}},
+      {"id": "artist-id", "type": "artist", "attributes": {"name": "Named Artist"}},
+      {"id": "cover-id", "type": "cover_art", "attributes": {"fileName": "abc-123.jpg"}}
+    ]
+  }
+}

@@ -8,6 +8,10 @@ add_library(klookup_core STATIC
     recentactivity.cpp
     mainwindow.cpp
     searchtab.cpp
+    customhttpsource.cpp
+    customhttpprovider.cpp
+    customhttpsourcemanager.cpp
+    customsourceeditdialog.cpp
     dbusadaptor.cpp
     settingsdialog.cpp
     appicon.cpp

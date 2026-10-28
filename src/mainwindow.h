@@ -13,6 +13,7 @@ class QPluginLoader;
 class ProviderAuthManager;
 class GlobalShortcuts;
 class RecentActivity;
+class CustomHttpSourceManager;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -33,6 +34,7 @@ public slots:
     void restoreFromTray();
 
     void restoreProviderState(SearchProvider* provider);
+    CustomHttpSourceManager *customSourceManager() const;
 
 protected:
     bool queryClose() override;
@@ -67,6 +69,7 @@ private:
     bool m_settingsSaved = false;
     ProviderAuthManager *m_authManager;
     GlobalShortcuts *m_globalShortcuts = nullptr;
+    CustomHttpSourceManager *m_customSourceManager = nullptr;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

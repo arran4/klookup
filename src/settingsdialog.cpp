@@ -1,6 +1,9 @@
 #include "settingsdialog.h"
 #include "searchprovider.h"
 #include "providerauthmanager.h"
+#include "customhttpsource.h"
+#include "customhttpsourcemanager.h"
+#include "customsourceeditdialog.h"
 #include <QLineEdit>
 #include "clipboardpolicy.h"
 #include <QComboBox>
@@ -19,13 +22,19 @@
 #include <QTabWidget>
 #include <QWidget>
 #include <QLabel>
+#include <QTextBrowser>
+#include <QTreeWidget>
+#include <QHeaderView>
 
 #ifndef Q_OS_WASM
 #include <KWallet>
 #endif
 
-SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent, ProviderAuthManager *authentication)
-    : KPageDialog(parent), m_providers(providers), m_authentication(authentication)
+SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
+                               QWidget *parent,
+                               ProviderAuthManager *authentication,
+                               CustomHttpSourceManager *sourceManager)
+    : KPageDialog(parent), m_providers(providers), m_authentication(authentication), m_sourceManager(sourceManager)
 {
 
 
@@ -164,6 +173,128 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     addPage(generalWidget, QStringLiteral("General"));
 
+    // Custom Sources Tab
+    if (!m_sourceManager) {
+        m_sourceManager = new CustomHttpSourceManager(this);
+    }
+
+    QWidget *customWidget = new QWidget(this);
+    auto *customLayout = new QHBoxLayout(customWidget);
+    m_customSourcesList = new QTreeWidget(customWidget);
+    m_customSourcesList->setObjectName(QStringLiteral("customSourcesList"));
+    m_customSourcesList->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Method"), QStringLiteral("URL")});
+    m_customSourcesList->setRootIsDecorated(false);
+    m_customSourcesList->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_customSourcesList->header()->setStretchLastSection(true);
+    customLayout->addWidget(m_customSourcesList, 1);
+
+    auto *customBtnsLayout = new QVBoxLayout;
+    auto *addBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("list-add")), QStringLiteral("Add..."), customWidget);
+    addBtn->setObjectName(QStringLiteral("addCustomSource"));
+    auto *editBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("document-edit")), QStringLiteral("Edit..."), customWidget);
+    editBtn->setObjectName(QStringLiteral("editCustomSource"));
+    auto *dupBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("edit-copy")), QStringLiteral("Duplicate"), customWidget);
+    dupBtn->setObjectName(QStringLiteral("duplicateCustomSource"));
+    auto *delBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("list-remove")), QStringLiteral("Delete"), customWidget);
+    delBtn->setObjectName(QStringLiteral("deleteCustomSource"));
+    auto *importBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("document-import")), QStringLiteral("Import..."), customWidget);
+    importBtn->setObjectName(QStringLiteral("importCustomSources"));
+    auto *exportBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("document-export")), QStringLiteral("Export..."), customWidget);
+    exportBtn->setObjectName(QStringLiteral("exportCustomSources"));
+
+    customBtnsLayout->addWidget(addBtn);
+    customBtnsLayout->addWidget(editBtn);
+    customBtnsLayout->addWidget(dupBtn);
+    customBtnsLayout->addWidget(delBtn);
+    customBtnsLayout->addSpacing(15);
+    customBtnsLayout->addWidget(importBtn);
+    customBtnsLayout->addWidget(exportBtn);
+    customBtnsLayout->addStretch();
+    customLayout->addLayout(customBtnsLayout);
+
+    connect(addBtn, &QPushButton::clicked, this, [this] {
+        CustomSourceEditDialog dlg(CustomHttpSourceDefinition(), this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_sourceManager->addOrUpdateSource(dlg.definition());
+            refreshCustomSourcesList();
+        }
+    });
+
+    connect(editBtn, &QPushButton::clicked, this, [this] {
+        auto *item = m_customSourcesList->currentItem();
+        if (!item) return;
+        const QString id = item->data(0, Qt::UserRole).toString();
+        const auto def = m_sourceManager->source(id);
+        if (def.id.isEmpty()) return;
+        CustomSourceEditDialog dlg(def, this);
+        if (dlg.exec() == QDialog::Accepted) {
+            m_sourceManager->addOrUpdateSource(dlg.definition());
+            refreshCustomSourcesList();
+        }
+    });
+
+    connect(dupBtn, &QPushButton::clicked, this, [this] {
+        auto *item = m_customSourcesList->currentItem();
+        if (!item) return;
+        const QString id = item->data(0, Qt::UserRole).toString();
+        auto def = m_sourceManager->source(id);
+        if (def.id.isEmpty()) return;
+        def.id = QStringLiteral("%1-copy").arg(def.id);
+        def.name = QStringLiteral("%1 (Copy)").arg(def.name);
+        m_sourceManager->addOrUpdateSource(def);
+        refreshCustomSourcesList();
+    });
+
+    connect(delBtn, &QPushButton::clicked, this, [this] {
+        auto *item = m_customSourcesList->currentItem();
+        if (!item) return;
+        const QString id = item->data(0, Qt::UserRole).toString();
+        if (QMessageBox::question(this, QStringLiteral("Confirm Deletion"),
+                                  QStringLiteral("Delete custom lookup source '%1'?").arg(item->text(0))) == QMessageBox::Yes) {
+            m_sourceManager->removeSource(id);
+            refreshCustomSourcesList();
+        }
+    });
+
+    connect(importBtn, &QPushButton::clicked, this, [this] {
+        bool ok = false;
+        const QString json = QInputDialog::getMultiLineText(this, QStringLiteral("Import Custom Sources"),
+                                                            QStringLiteral("Paste JSON source definitions:"),
+                                                            QString(), &ok);
+        if (ok && !json.trimmed().isEmpty()) {
+            QString err;
+            if (!m_sourceManager->importJson(json, &err)) {
+                QMessageBox::warning(this, QStringLiteral("Import Failed"), err);
+            } else {
+                refreshCustomSourcesList();
+            }
+        }
+    });
+
+    connect(exportBtn, &QPushButton::clicked, this, [this] {
+        const QString json = m_sourceManager->exportJson();
+        auto *dlg = new QDialog(this);
+        dlg->setWindowTitle(QStringLiteral("Exported Custom Sources"));
+        dlg->resize(600, 450);
+        auto *layout = new QVBoxLayout(dlg);
+        auto *browser = new QTextBrowser(dlg);
+        browser->setPlainText(json);
+        layout->addWidget(browser);
+        auto *box = new QDialogButtonBox(QDialogButtonBox::Close, dlg);
+        connect(box, &QDialogButtonBox::rejected, dlg, &QDialog::accept);
+        layout->addWidget(box);
+        dlg->exec();
+    });
+
+    connect(m_customSourcesList, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
+        if (!item || column != 0) return;
+        const QString id = item->data(0, Qt::UserRole).toString();
+        m_sourceManager->setSourceEnabled(id, item->checkState(0) == Qt::Checked);
+    });
+
+    refreshCustomSourcesList();
+    addPage(customWidget, QStringLiteral("Custom Sources"));
+
     // Load current settings
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
@@ -292,8 +423,27 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
     ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
+    if (m_sourceManager) {
+        m_sourceManager->saveSources();
+    }
     config->sync();
     emit settingsApplied();
+}
+
+void SettingsDialog::refreshCustomSourcesList()
+{
+    if (!m_customSourcesList || !m_sourceManager) return;
+    m_customSourcesList->clear();
+    for (const auto &def : m_sourceManager->sources()) {
+        auto *item = new QTreeWidgetItem(m_customSourcesList);
+        item->setText(0, def.name);
+        item->setText(1, def.method == CustomHttpSourceDefinition::Method::Post ? QStringLiteral("POST") : QStringLiteral("GET"));
+        item->setText(2, def.urlTemplate);
+        item->setData(0, Qt::UserRole, def.id);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, def.enabled ? Qt::Checked : Qt::Unchecked);
+        item->setToolTip(0, def.description.isEmpty() ? def.urlTemplate : def.description);
+    }
 }
 
 SettingsDialog::PersistResult SettingsDialog::performPersistence(const QString &providerId, const QString &token)

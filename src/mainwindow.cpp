@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
+#include "customhttpsourcemanager.h"
 #include "globalshortcuts.h"
 #include <KShortcutsDialog>
 #include <QMessageBox>
@@ -131,6 +132,7 @@ MainWindow::MainWindow(QWidget *parent)
     config->sync();
 
     m_authManager = new ProviderAuthManager(this, this);
+    m_customSourceManager = new CustomHttpSourceManager(this);
     m_recent = new RecentActivity(config, this);
     m_dashboard->setRecentActivity(m_recent);
     connect(m_dashboard, &SearchDashboard::recentActivated, this, [this](const RecentItem &item) {
@@ -254,7 +256,7 @@ void MainWindow::searchClipboardNow()
 
 void MainWindow::showSettingsDialog()
 {
-    SettingsDialog dialog(m_providers, this, m_authManager);
+    SettingsDialog dialog(m_providers, this, m_authManager, m_customSourceManager);
     connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
     dialog.exec();
 
@@ -398,6 +400,13 @@ void MainWindow::loadPlugins()
         }
     }
 
+    if (m_customSourceManager) {
+        for (SearchProvider *customProvider : m_customSourceManager->createProviders(this)) {
+            loadWalletCredentials(customProvider);
+            m_providers.append(customProvider);
+        }
+    }
+
     for (SearchProvider *provider : m_providers) {
         restoreProviderState(provider);
     }
@@ -411,6 +420,12 @@ void MainWindow::restoreProviderState(SearchProvider* provider)
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
     provider->setEnabled(providersGroup.readEntry(provider->id() + QStringLiteral("_Enabled"), true));
 }
+
+CustomHttpSourceManager *MainWindow::customSourceManager() const
+{
+    return m_customSourceManager;
+}
+
 void MainWindow::performSearch(const QString &query)
 {
     performSearchInternal(query, false, true);

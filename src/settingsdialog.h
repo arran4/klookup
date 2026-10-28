@@ -7,6 +7,8 @@
 
 class SearchProvider;
 class ProviderAuthManager;
+class CustomHttpSourceManager;
+class QTreeWidget;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -24,7 +26,10 @@ class SettingsDialog : public KPageDialog
 public:
     enum class PersistResult { Success, Unavailable, OpenFailed, FolderFailed, WriteFailed };
 
-    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr);
+    explicit SettingsDialog(const QList<SearchProvider*> &providers,
+                            QWidget *parent = nullptr,
+                            ProviderAuthManager *authentication = nullptr,
+                            CustomHttpSourceManager *sourceManager = nullptr);
     ~SettingsDialog();
 
 signals:
@@ -75,6 +80,9 @@ private:
     QCheckBox *m_recordClipboardRecent;
     QCheckBox *m_persistClipboardRecent;
     KWallet::Wallet *m_wallet = nullptr;
+    CustomHttpSourceManager *m_sourceManager = nullptr;
+    QTreeWidget *m_customSourcesList = nullptr;
+    void refreshCustomSourcesList();
 };
 
 #endif // SETTINGSDIALOG_H

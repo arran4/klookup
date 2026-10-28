@@ -90,9 +90,8 @@ add_custom_target(klookup_with_plugins ALL
 )
 
 if(BUILD_TESTING)
-    add_dependencies(klookup_with_plugins test_appicon)
-    add_dependencies(klookup_with_plugins test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
-    add_dependencies(klookup_with_plugins test_clipboardinput)
+    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput)
+    add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
 endif()
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

@@ -1,0 +1,37 @@
+{
+  "data": {
+    "id": 84926,
+    "titles": [
+      {"language": "en", "title": "A novel & <b>escaped title</b>", "traits": ["official"], "is_primary": true},
+      {"language": "ja", "title": "異世界の物語", "traits": ["native", "alternative"]}
+    ],
+    "description": "Complete synopsis.\nSecond paragraph, with <script>untrusted()</script> kept as text.",
+    "canonical_url": "https://mangabaka.org/novel/84926/example",
+    "type": "novel",
+    "authors": ["Author One", "Author Two"],
+    "artists": ["Illustrator"],
+    "original_language": "ja",
+    "status": "releasing",
+    "published": {"start_date": "2014-01-01", "end_date": null},
+    "rating": 91.49,
+    "content_rating": "safe",
+    "publishers": [{"name": "Publisher", "language": "en", "note": "Ongoing", "canonical_url": "https://mangabaka.org/publisher/1/example"}],
+    "tags": [
+      {"id": 391, "parent_id": 1144, "name": "Travel", "name_path": "Activities > Leisure > Travel", "weight": "defining", "content_rating": "safe", "is_spoiler": false, "is_genre": false},
+      {"id": 500, "parent_id": null, "name": "Fantasy", "name_path": "Genres > Fantasy", "is_genre": true},
+      {"id": 600, "parent_id": null, "name": "Missing path parent"},
+      {"id": 601, "parent_id": 600, "name": "Missing path child"},
+      {"id": 602, "parent_id": 603, "name": "Cycle A"},
+      {"id": 603, "parent_id": 602, "name": "Cycle B"},
+      {"id": 604, "parent_id": 99999, "name": "Orphan tag"}
+    ],
+    "source": {"anilist": {"id": 85737, "rating": 8.8}, "my_anime_list": {"id": 74697}},
+    "links": [
+      {"name_display": "Source", "url": "https://example.org/series/1", "type": "info"},
+      {"name_display": "Unsafe", "url": "javascript:alert(1)", "type": "info"},
+      {"name_display": "Credential leak", "url": "https://secret:token@example.org/", "type": "info"}
+    ],
+    "cover": {"x250": "https://images.example.org/cover.jpg"},
+    "relationships": [{"to_series_id": 84927, "relation_type": "sequel"}]
+  }
+}

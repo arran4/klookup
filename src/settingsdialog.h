@@ -63,6 +63,7 @@ private:
     QPushButton *m_disconnectAuth;
     QPushButton *m_cancelAuth;
     QListWidget *m_listWidget;
+    QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;
     QComboBox *m_captureMode;

@@ -39,8 +39,6 @@ add_test(NAME test_resultactions COMMAND test_resultactions)
 add_executable(test_sourcelink test_sourcelink.cpp)
 target_link_libraries(test_sourcelink Qt6::Test klookup_core)
 add_test(NAME test_sourcelink COMMAND test_sourcelink)
-
-
 add_executable(test_provider_mangadex test_provider_mangadex.cpp ../providers/mangadex/provider_mangadex.cpp)
 target_link_libraries(test_provider_mangadex Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network)
 add_test(NAME test_provider_mangadex COMMAND test_provider_mangadex)
@@ -95,3 +93,7 @@ endforeach()
 add_executable(test_providerauthentication test_providerauthentication.cpp)
 target_link_libraries(test_providerauthentication Qt6::Test klookup_core)
 add_test(NAME test_providerauthentication COMMAND test_providerauthentication)
+
+add_executable(test_provider_wikipedia test_provider_wikipedia.cpp ../providers/wikipedia/provider_wikipedia.cpp)
+target_link_libraries(test_provider_wikipedia Qt6::Test klookup_core)
+add_test(NAME test_provider_wikipedia COMMAND test_provider_wikipedia)

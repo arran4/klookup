@@ -1,8 +1,10 @@
 #ifndef SEARCHPROVIDER_H
 #define SEARCHPROVIDER_H
 
+#include "resultcontent.h"
 #include "resultmetadata.h"
 #include <QJsonObject>
+#include <QMap>
 #include <QObject>
 #include <QString>
 #include <QVariantList>
@@ -22,6 +24,7 @@ Q_DECLARE_METATYPE(SearchResult)
 struct SearchPage {
     QList<SearchResult> results;
     QString nextToken;
+    QMap<QString, ResultContent> content = {}; // keyed by stable result ID
 };
 Q_DECLARE_METATYPE(SearchPage)
 
@@ -29,6 +32,7 @@ struct SearchDetails {
     SearchResult result;
     QString nextToken;
     ResultMetadata metadata = {};
+    ResultContent content = {};
 };
 Q_DECLARE_METATYPE(SearchDetails)
 

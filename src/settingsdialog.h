@@ -69,6 +69,7 @@ private:
     QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_clearTabsOnCloseCheck;
     QComboBox *m_captureMode;
     QComboBox *m_searchTrigger;
     QCheckBox *m_showRecent;

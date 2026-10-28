@@ -31,6 +31,7 @@ public slots:
     void searchClipboardNow();
     void notifyClipboardShortcutUsed();
     void restoreFromTray();
+    void clearSearchTabs();
 
     void restoreProviderState(SearchProvider* provider);
 

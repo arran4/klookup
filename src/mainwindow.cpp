@@ -202,8 +202,16 @@ void MainWindow::setupTrayIcon()
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
-            if (isVisible()) hide();
-            else restoreFromTray();
+            if (isVisible()) {
+                KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+                KConfigGroup genGroup(config, QStringLiteral("General"));
+                if (genGroup.readEntry(QStringLiteral("ClearTabsOnClose"), false)) {
+                    clearSearchTabs();
+                }
+                hide();
+            } else {
+                restoreFromTray();
+            }
         }
     });
 }
@@ -437,6 +445,11 @@ bool MainWindow::queryClose()
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
     bool minimizeToTray = genGroup.readEntry(QStringLiteral("MinimizeToTray"), true);
+    bool clearTabsOnClose = genGroup.readEntry(QStringLiteral("ClearTabsOnClose"), false);
+
+    if (clearTabsOnClose) {
+        clearSearchTabs();
+    }
 
     if (minimizeToTray && m_trayIcon->isVisible() && !qApp->isSavingSession()) {
         hide();
@@ -447,6 +460,20 @@ bool MainWindow::queryClose()
     // aboutToQuit provides the same guarantee for explicit Quit actions.
     saveSettings();
     return true;
+}
+
+void MainWindow::clearSearchTabs()
+{
+    while (m_tabWidget->count() > 1) {
+        QWidget *widget = m_tabWidget->widget(1);
+        m_tabWidget->removeTab(1);
+        delete widget;
+    }
+    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+    tabGroup.deleteGroup();
+    tabGroup.writeEntry("Count", 0);
+    config->sync();
 }
 
 void MainWindow::loadSettings()

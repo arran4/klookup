@@ -1,6 +1,7 @@
 #include <QTest>
 #include <QSignalSpy>
 #include <QClipboard>
+#include <QMimeData>
 #include <QGuiApplication>
 #include <QTreeWidget>
 #include <KSharedConfig>
@@ -418,6 +419,53 @@ private slots:
 
         QVERIFY(!mainWindow.m_isOpenCalled);
         QVERIFY(!mainWindow.m_openWalletCalled); // An unlocked wallet can still prompt, so restoration is explicit
+    }
+
+    void testClipboardUrlFilteringAndExplicitSearch()
+    {
+        MainWindow mainWindow;
+        auto *tabs = mainWindow.findChild<QTabWidget *>();
+        auto *dashboard = mainWindow.findChild<SearchDashboard *>();
+        auto *entry = dashboard->findChild<QLineEdit *>();
+        const int count = tabs->count();
+        entry->setText(QStringLiteral("Existing query"));
+        mainWindow.processClipboardText(QStringLiteral("https://example.org/source"), false);
+        QCOMPARE(entry->text(), QStringLiteral("Existing query"));
+        mainWindow.processClipboardText(QStringLiteral("https://example.org/source"), true);
+        QCOMPARE(tabs->count(), count);
+        QVERIFY(dashboard->saveHistory().isEmpty());
+        mainWindow.performSearch(QStringLiteral("https://example.org/source"));
+        QCOMPARE(tabs->count(), count + 1); // deliberate URL lookup bypasses automatic policy
+        mainWindow.processClipboardText(QStringLiteral("  ordinary words  "), false);
+        QCOMPARE(entry->text(), QStringLiteral("ordinary words"));
+        mainWindow.processClipboardText(QStringLiteral("ordinary words"), true);
+        QCOMPARE(tabs->count(), count + 2);
+        mainWindow.processClipboardText(QStringLiteral(" ordinary words "), true);
+        QCOMPARE(tabs->count(), count + 2);
+    }
+
+    void testClipboardMimeChanges()
+    {
+        MainWindow mainWindow;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        group.writeEntry(QStringLiteral("MonitorClipboard"), true);
+        group.writeEntry(QStringLiteral("AutoSearchClipboard"), false);
+        group.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), false);
+        group.sync();
+        auto *dashboard = mainWindow.findChild<SearchDashboard *>();
+        auto *entry = dashboard->findChild<QLineEdit *>();
+        entry->setText(QStringLiteral("Original"));
+        auto *mime = new QMimeData;
+        mime->setHtml(QStringLiteral("<p>HTML-only input</p>"));
+        QGuiApplication::clipboard()->setMimeData(mime);
+        QCOMPARE(entry->text(), QStringLiteral("Original"));
+        QGuiApplication::clipboard()->setText(QStringLiteral("https://example.org/source"));
+        QCOMPARE(entry->text(), QStringLiteral("Original"));
+        QGuiApplication::clipboard()->setText(QStringLiteral("Accepted plain input"));
+        QCOMPARE(entry->text(), QStringLiteral("Accepted plain input"));
+        QVERIFY(dashboard->saveHistory().isEmpty());
+        group.writeEntry(QStringLiteral("MonitorClipboard"), false);
+        group.sync();
     }
 
     void testClipboardDeduplication()

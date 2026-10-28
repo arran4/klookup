@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "appicon.h"
+#include "clipboardinput.h"
 #include "searchtab.h"
 #include "dbusadaptor.h"
 #include "settingsdialog.h"
@@ -189,14 +190,17 @@ void MainWindow::onClipboardChanged()
     if (!monitorClipboard) return;
     if (onlyWhenFocused && !isActiveWindow()) return;
 
-    QString text = QGuiApplication::clipboard()->text().trimmed();
-    if (text.isEmpty()) return;
+    const auto input = ClipboardInput::classifyMimeData(QGuiApplication::clipboard()->mimeData());
+    if (!input.permitsAutomaticCapture()) return;
 
-    processClipboardText(text, autoSearch);
+    processClipboardText(input.text, autoSearch);
 }
 
-void MainWindow::processClipboardText(const QString &text, bool autoSearch)
+void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
 {
+    const auto input = ClipboardInput::classifyText(rawText);
+    if (!input.permitsAutomaticCapture()) return;
+    const QString text = input.text;
     if (autoSearch) {
         if (text == m_lastAutoSearchClipboardText) {
             return;

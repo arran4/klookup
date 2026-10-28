@@ -7,6 +7,7 @@ add_library(klookup_core STATIC
     dbusadaptor.cpp
     settingsdialog.cpp
     appicon.cpp
+    clipboardinput.cpp
     credentialstore.cpp
     providerauthsession.cpp
     oauthreplyhandler.cpp

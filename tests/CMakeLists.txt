@@ -31,6 +31,14 @@ target_link_libraries(test_session_lifecycle_helper klookup_core KF6::WidgetsAdd
 add_executable(test_searchtab test_searchtab.cpp)
 target_link_libraries(test_searchtab Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui)
 add_test(NAME test_searchtab COMMAND test_searchtab)
+
+add_executable(test_resultactions test_resultactions.cpp)
+target_link_libraries(test_resultactions Qt6::Test klookup_core)
+add_test(NAME test_resultactions COMMAND test_resultactions)
+
+add_executable(test_sourcelink test_sourcelink.cpp)
+target_link_libraries(test_sourcelink Qt6::Test klookup_core)
+add_test(NAME test_sourcelink COMMAND test_sourcelink)
 add_executable(test_provider_mangadex test_provider_mangadex.cpp ../providers/mangadex/provider_mangadex.cpp)
 target_link_libraries(test_provider_mangadex Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network)
 add_test(NAME test_provider_mangadex COMMAND test_provider_mangadex)
@@ -89,6 +97,11 @@ add_test(NAME test_providerauthentication COMMAND test_providerauthentication)
 add_executable(test_provider_wikipedia test_provider_wikipedia.cpp ../providers/wikipedia/provider_wikipedia.cpp)
 target_link_libraries(test_provider_wikipedia Qt6::Test klookup_core)
 add_test(NAME test_provider_wikipedia COMMAND test_provider_wikipedia)
+
+add_executable(test_provider_spotify test_provider_spotify.cpp ../providers/spotify/provider_spotify.cpp)
+target_link_libraries(test_provider_spotify Qt6::Test klookup_core KF6::ConfigCore Qt6::Core Qt6::Gui Qt6::Network)
+add_test(NAME test_provider_spotify COMMAND test_provider_spotify)
+
 add_executable(test_globalshortcuts test_globalshortcuts.cpp)
 target_link_libraries(test_globalshortcuts Qt6::Test klookup_core)
 add_test(NAME test_globalshortcuts COMMAND test_globalshortcuts)

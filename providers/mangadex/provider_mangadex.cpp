@@ -1,20 +1,18 @@
 #include "provider_mangadex.h"
-#include <QUrl>
-#include <QUrlQuery>
-#include <QNetworkRequest>
+#include "providerrequest.h"
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
+#include <QNetworkRequest>
+#include <QRegularExpression>
+#include <QUrl>
+#include <QUrlQuery>
 
-ProviderMangaDex::ProviderMangaDex(QObject *parent)
-    : SearchProvider(parent)
-    , m_nam(new QNetworkAccessManager(this))
-    , m_reply(nullptr)
-{
-}
+ProviderMangaDex::ProviderMangaDex(QObject *parent) : SearchProvider(parent), m_nam(new QNetworkAccessManager(this)), m_reply(nullptr) {}
 
 ProviderMangaDex::~ProviderMangaDex()
 {
+    cancelRequests();
 }
 
 QString ProviderMangaDex::name() const
@@ -29,126 +27,120 @@ QString ProviderMangaDex::id() const
 
 void ProviderMangaDex::search(const QString &query)
 {
-    if (m_reply) {
-        QPointer<QNetworkReply> oldReply = m_reply;
-        m_reply = nullptr;
-        oldReply->disconnect(this);
-        if (oldReply->isRunning()) {
-            oldReply->abort();
-        }
-        oldReply->deleteLater();
+    requestPage(query, QString(), 0);
+}
+
+void ProviderMangaDex::cancelRequests()
+{
+    ProviderRequest::cancel(m_reply, this);
+    ProviderRequest::cancel(m_detailReply, this);
+}
+
+SearchResult ProviderMangaDex::parseResult(const QJsonObject &obj) const
+{
+    SearchResult res;
+    QJsonValue idVal = obj.value(QStringLiteral("id"));
+    if (!idVal.isString()) {
+        return {}; // Missing stable identity string
+    }
+    res.id = idVal.toString();
+    if (res.id.isEmpty())
+        return {};
+
+    QJsonObject attributes = obj.value(QStringLiteral("attributes")).toObject();
+    QJsonObject titleObj = attributes.value(QStringLiteral("title")).toObject();
+
+    res.title = titleObj.value(QStringLiteral("en")).toString();
+    if (res.title.isEmpty() && !titleObj.keys().isEmpty()) {
+        res.title = titleObj.value(titleObj.keys().first()).toString();
     }
 
+    QJsonObject descObj = attributes.value(QStringLiteral("description")).toObject();
+    res.description = descObj.value(QStringLiteral("en")).toString();
+    if (res.description.isEmpty() && !descObj.keys().isEmpty()) {
+        res.description = descObj.value(descObj.keys().first()).toString();
+    }
+
+    res.url = QStringLiteral("https://mangadex.org/title/") + res.id;
+    res.type = QStringLiteral("manga");
+
+    QVariantMap additional;
+    if (attributes.contains(QStringLiteral("status")) && attributes.value(QStringLiteral("status")).isString()) {
+        additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
+    }
+    if (attributes.contains(QStringLiteral("year")) && attributes.value(QStringLiteral("year")).isDouble()) {
+        additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
+    }
+    if (!additional.isEmpty()) {
+        res.additionalData = additional;
+    }
+
+    return res;
+}
+
+void ProviderMangaDex::requestPage(const QString &query, const QString &token, quint64 requestId)
+{
+    bool ok = false;
+    const int position = token.toInt(&ok);
+    if (!token.isEmpty() && (!ok || position < 0 || position > 9999)) {
+        ProviderRequest::fail(this, requestId, QStringLiteral("Invalid continuation token"));
+        return;
+    }
     QUrl url(QStringLiteral("https://api.mangadex.org/manga"));
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("title"), query);
     q.addQueryItem(QStringLiteral("limit"), QStringLiteral("10"));
+    if (!token.isEmpty())
+        q.addQueryItem(QStringLiteral("offset"), token);
     url.setQuery(q);
-
-    QNetworkRequest request(url);
-    request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup-App"));
-
-    m_reply = m_nam->get(request);
-
-    connect(m_reply, &QNetworkReply::finished, this, [this, reply = QPointer<QNetworkReply>(m_reply)]() {
-        if (!reply || reply != m_reply) {
+    ProviderRequest::getJson(this, m_nam, m_reply, url, requestId, [this, requestId, token](const QJsonObject &root) {
+        if (!root.value(QStringLiteral("data")).isArray()) {
+            ProviderRequest::fail(this, requestId, QStringLiteral("Malformed response: missing 'data' array"));
             return;
         }
-        this->onReplyFinished(reply);
+        SearchPage page;
+        const auto values = root.value(QStringLiteral("data")).toArray();
+        for (const auto &value : values) {
+            const auto result = parseResult(value.toObject());
+            if (!result.id.isEmpty())
+                page.results.append(result);
+        }
+        const int offset = root.value(QStringLiteral("offset")).toInt();
+        const int limit = root.value(QStringLiteral("limit")).toInt();
+        const int total = root.value(QStringLiteral("total")).toInt();
+        const qint64 nextOffset = qint64(offset) + qint64(limit);
+        const int requestedOffset = token.isEmpty() ? 0 : token.toInt();
+        if (offset == requestedOffset && limit > 0 && limit <= 100 && nextOffset < total && nextOffset < 10000 && !values.isEmpty())
+            page.nextToken = QString::number(nextOffset);
+
+        if (requestId)
+            emit pageCompleted(requestId, page);
+        else
+            emit searchCompleted(id(), page.results);
     });
 }
 
-void ProviderMangaDex::onReplyFinished(QNetworkReply *reply)
+void ProviderMangaDex::requestDetails(const QString &resultId, const QString &token, quint64 requestId)
 {
-    if (m_reply == reply) {
-        m_reply = nullptr;
-    }
-
-    reply->deleteLater();
-
-
-
-    if (reply->error() != QNetworkReply::NoError) {
-        emit searchFailed(id(), reply->errorString());
+    if (!token.isEmpty() || !QRegularExpression(QStringLiteral("^[a-zA-Z0-9-]{1,64}$")).match(resultId).hasMatch()) {
+        ProviderRequest::fail(this, requestId, QStringLiteral("Invalid result identity or detail token"));
         return;
     }
-
-    QVariant statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute);
-    if (statusCode.isValid()) {
-        int status = statusCode.toInt();
-        if (status < 200 || status >= 300) {
-            emit searchFailed(id(), QStringLiteral("HTTP Error: ") + QString::number(status));
+    QUrl url;
+    url.setScheme(QStringLiteral("https"));
+    url.setHost(QStringLiteral("api.mangadex.org"));
+    url.setPath(QStringLiteral("/manga/") + resultId);
+    ProviderRequest::getJson(this, m_nam, m_detailReply, url, requestId, [this, resultId, requestId](const QJsonObject &root) {
+        const auto result = parseResult(root.value(QStringLiteral("data")).toObject());
+        if (result.id != resultId) {
+            ProviderRequest::fail(this, requestId, QStringLiteral("Malformed detail response: result identity mismatch"));
             return;
         }
-    }
-
-    QByteArray data = reply->readAll();
-
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(data, &error);
-
-    if (error.error != QJsonParseError::NoError) {
-        emit searchFailed(id(), QStringLiteral("Failed to parse JSON response"));
-        return;
-    }
-
-    QJsonObject root = doc.object();
-    if (!root.contains(QStringLiteral("data")) || !root.value(QStringLiteral("data")).isArray()) {
-        emit searchFailed(id(), QStringLiteral("Malformed response: missing 'data' array"));
-        return;
-    }
-    QJsonArray resultsArray = root.value(QStringLiteral("data")).toArray();
-
-    QList<SearchResult> results;
-    for (const QJsonValue &val : resultsArray) {
-        QJsonObject obj = val.toObject();
-
-        SearchResult res;
-        QJsonValue idVal = obj.value(QStringLiteral("id"));
-        if (!idVal.isString()) {
-            continue; // Skip malformed individual records without a valid ID string
-        }
-        res.id = idVal.toString();
-
-        QJsonObject attributes = obj.value(QStringLiteral("attributes")).toObject();
-        QJsonObject titleObj = attributes.value(QStringLiteral("title")).toObject();
-
-        res.title = titleObj.value(QStringLiteral("en")).toString();
-        if (res.title.isEmpty() && !titleObj.keys().isEmpty()) {
-            res.title = titleObj.value(titleObj.keys().first()).toString();
-        }
-
-        QJsonObject descObj = attributes.value(QStringLiteral("description")).toObject();
-        res.description = descObj.value(QStringLiteral("en")).toString();
-        if (res.description.isEmpty() && !descObj.keys().isEmpty()) {
-            res.description = descObj.value(descObj.keys().first()).toString();
-        }
-
-        if (res.description.length() > 200) {
-            res.description = res.description.left(200) + QStringLiteral("...");
-        }
-
-        res.url = QStringLiteral("https://mangadex.org/title/") + res.id;
-        res.type = QStringLiteral("manga");
-
-        QVariantMap additional;
-        if (attributes.contains(QStringLiteral("status")) && attributes.value(QStringLiteral("status")).isString()) {
-            additional[QStringLiteral("status")] = attributes.value(QStringLiteral("status")).toString();
-        }
-        if (attributes.contains(QStringLiteral("year")) && attributes.value(QStringLiteral("year")).isDouble()) {
-            additional[QStringLiteral("year")] = attributes.value(QStringLiteral("year")).toInt();
-        }
-        if (!additional.isEmpty()) {
-            res.additionalData = additional;
-        }
-
-        results.append(res);
-    }
-
-    emit searchCompleted(id(), results);
+        emit detailsCompleted(requestId, SearchDetails{result, QString()});
+    });
 }
 
-SearchProvider* ProviderMangaDex::clone(QObject *parent) const
+SearchProvider *ProviderMangaDex::clone(QObject *parent) const
 {
     return new ProviderMangaDex(parent);
 }

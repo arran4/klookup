@@ -1,37 +1,49 @@
-#include <QtTest>
-#include <QUrlQuery>
+#include "../providers/mangadex/provider_mangadex.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
-#include "../providers/mangadex/provider_mangadex.h"
+#include <QUrlQuery>
+#include <QtTest>
 
-class DummyNetworkReplyMangaDex : public QNetworkReply {
+class DummyNetworkReplyMangaDex : public QNetworkReply
+{
     Q_OBJECT
 public:
-    DummyNetworkReplyMangaDex(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError, int httpStatus = 200)
-        : QNetworkReply(parent), m_data(data) {
+    DummyNetworkReplyMangaDex(QObject *parent, const QByteArray &data, QNetworkReply::NetworkError err = QNetworkReply::NoError,
+                              int httpStatus = 200)
+        : QNetworkReply(parent), m_data(data)
+    {
         setOpenMode(QIODevice::ReadOnly);
         setError(err, "");
         setAttribute(QNetworkRequest::HttpStatusCodeAttribute, httpStatus);
     }
 
-    void finish() {
+    void finish()
+    {
         setFinished(true);
         emit finished();
     }
 
-    void abort() override {
+    void abort() override
+    {
         setError(QNetworkReply::OperationCanceledError, "Operation canceled");
         setFinished(true);
         emit finished();
     }
 
-    qint64 bytesAvailable() const override { return m_data.size() + QNetworkReply::bytesAvailable(); }
-    bool isSequential() const override { return true; }
+    qint64 bytesAvailable() const override
+    {
+        return m_data.size() + QNetworkReply::bytesAvailable();
+    }
+    bool isSequential() const override
+    {
+        return true;
+    }
 
 protected:
-    qint64 readData(char *data, qint64 maxlen) override {
+    qint64 readData(char *data, qint64 maxlen) override
+    {
         qint64 len = qMin(maxlen, (qint64)m_data.size());
         memcpy(data, m_data.constData(), len);
         m_data.remove(0, len);
@@ -42,19 +54,21 @@ private:
     QByteArray m_data;
 };
 
-class MockNetworkAccessManagerMangaDex : public QNetworkAccessManager {
+class MockNetworkAccessManagerMangaDex : public QNetworkAccessManager
+{
     Q_OBJECT
 public:
     MockNetworkAccessManagerMangaDex(QObject *parent = nullptr) : QNetworkAccessManager(parent) {}
 
-    QList<DummyNetworkReplyMangaDex*> replies;
+    QList<DummyNetworkReplyMangaDex *> replies;
     QByteArray nextResponse;
     QNetworkReply::NetworkError nextError = QNetworkReply::NoError;
     int nextHttpStatus = 200;
     QUrl lastUrl;
 
 protected:
-    QNetworkReply *createRequest(Operation op, const QNetworkRequest &request, QIODevice *outgoingData) override {
+    QNetworkReply *createRequest(Operation op, const QNetworkRequest &request, QIODevice *outgoingData) override
+    {
         Q_UNUSED(op);
         Q_UNUSED(outgoingData);
         lastUrl = request.url();
@@ -65,10 +79,12 @@ protected:
     }
 };
 
-class TestableProviderMangaDex : public ProviderMangaDex {
+class TestableProviderMangaDex : public ProviderMangaDex
+{
 public:
-    TestableProviderMangaDex(QObject *parent = nullptr) : ProviderMangaDex(parent) {
-        QNetworkAccessManager* existing = findChild<QNetworkAccessManager*>();
+    TestableProviderMangaDex(QObject *parent = nullptr) : ProviderMangaDex(parent)
+    {
+        QNetworkAccessManager *existing = findChild<QNetworkAccessManager *>();
         if (existing) {
             existing->setParent(nullptr);
             existing->deleteLater();
@@ -77,13 +93,18 @@ public:
         m_nam = mockNam;
     }
     MockNetworkAccessManagerMangaDex *mockNam;
-    QNetworkReply* activeReply() const { return m_reply; }
+    QNetworkReply *activeReply() const
+    {
+        return m_reply;
+    }
 };
 
 class TestProviderMangaDex : public QObject
 {
     Q_OBJECT
 private slots:
+    void testHostilePaginationIsTerminal();
+    void testOffsetContinuationAndDetails();
     void testIdentity();
     void testRequestConstructionAndEncoding();
     void testSearchSuccess();
@@ -95,13 +116,15 @@ private slots:
     void testReplaceStale();
 };
 
-void TestProviderMangaDex::testIdentity() {
+void TestProviderMangaDex::testIdentity()
+{
     ProviderMangaDex provider;
     QCOMPARE(provider.id(), QStringLiteral("mangadex"));
     QCOMPARE(provider.name(), QStringLiteral("MangaDex"));
 }
 
-void TestProviderMangaDex::testRequestConstructionAndEncoding() {
+void TestProviderMangaDex::testRequestConstructionAndEncoding()
+{
     TestableProviderMangaDex provider;
     provider.search("naruto & sasuke");
 
@@ -115,7 +138,8 @@ void TestProviderMangaDex::testRequestConstructionAndEncoding() {
     QCOMPARE(query.queryItemValue(QStringLiteral("limit")), QStringLiteral("10"));
 }
 
-void TestProviderMangaDex::testSearchSuccess() {
+void TestProviderMangaDex::testSearchSuccess()
+{
     TestableProviderMangaDex provider;
 
     provider.mockNam->nextResponse = R"({
@@ -170,7 +194,8 @@ void TestProviderMangaDex::testSearchSuccess() {
     QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
 }
 
-void TestProviderMangaDex::testNetworkFailure() {
+void TestProviderMangaDex::testNetworkFailure()
+{
     TestableProviderMangaDex provider;
     provider.mockNam->nextError = QNetworkReply::TimeoutError;
 
@@ -184,7 +209,8 @@ void TestProviderMangaDex::testNetworkFailure() {
     QCOMPARE(failSpy.count(), 1);
 }
 
-void TestProviderMangaDex::testMalformedJsonStructure() {
+void TestProviderMangaDex::testMalformedJsonStructure()
+{
     TestableProviderMangaDex provider;
     provider.mockNam->nextResponse = R"({ "unexpected_field": [] })";
 
@@ -201,7 +227,8 @@ void TestProviderMangaDex::testMalformedJsonStructure() {
     QVERIFY(args.at(1).toString().contains(QStringLiteral("Malformed response: missing 'data' array")));
 }
 
-void TestProviderMangaDex::testMalformedRecordSkip() {
+void TestProviderMangaDex::testMalformedRecordSkip()
+{
     TestableProviderMangaDex provider;
     provider.mockNam->nextResponse = R"({
             "data": [
@@ -242,7 +269,8 @@ void TestProviderMangaDex::testMalformedRecordSkip() {
     QCOMPARE(results[0].title, QStringLiteral("Valid Record"));
 }
 
-void TestProviderMangaDex::testRateLimitFailure() {
+void TestProviderMangaDex::testRateLimitFailure()
+{
     TestableProviderMangaDex provider;
     provider.mockNam->nextResponse = "Rate Limited";
     provider.mockNam->nextError = QNetworkReply::NoError;
@@ -261,7 +289,8 @@ void TestProviderMangaDex::testRateLimitFailure() {
     QVERIFY(args.at(1).toString().contains(QStringLiteral("HTTP Error: 429")));
 }
 
-void TestProviderMangaDex::testParseError() {
+void TestProviderMangaDex::testParseError()
+{
     TestableProviderMangaDex provider;
     provider.mockNam->nextResponse = "Not JSON";
 
@@ -275,7 +304,8 @@ void TestProviderMangaDex::testParseError() {
     QCOMPARE(failSpy.count(), 1);
 }
 
-void TestProviderMangaDex::testReplaceStale() {
+void TestProviderMangaDex::testReplaceStale()
+{
     TestableProviderMangaDex provider;
 
     provider.search("first");
@@ -294,6 +324,53 @@ void TestProviderMangaDex::testReplaceStale() {
 
     QCOMPARE(failSpy.count(), 0);
     QCOMPARE(completeSpy.count(), 0);
+}
+
+void TestProviderMangaDex::testOffsetContinuationAndDetails()
+{
+    TestableProviderMangaDex provider;
+    QSignalSpy pages(&provider, &SearchProvider::pageCompleted);
+    QSignalSpy details(&provider, &SearchProvider::detailsCompleted);
+    QSignalSpy failures(&provider, &SearchProvider::requestFailed);
+    provider.mockNam->nextResponse = R"({"data":[{"id":"one","attributes":{"title":{"en":"One"}}}],"offset":0,"limit":10,"total":30})";
+    provider.requestPage(QStringLiteral("query"), {}, 1);
+    QTRY_COMPARE(pages.count(), 1);
+    QCOMPARE(pages.last().at(1).value<SearchPage>().nextToken, QStringLiteral("10"));
+    provider.mockNam->nextResponse = R"({"data":[{"id":"two","attributes":{"title":{"en":"Two"}}}],"offset":10,"limit":10,"total":30})";
+    provider.requestPage(QStringLiteral("query"), QStringLiteral("10"), 2);
+    QCOMPARE(QUrlQuery(provider.mockNam->lastUrl).queryItemValue(QStringLiteral("offset")), QStringLiteral("10"));
+    QTRY_COMPARE(pages.count(), 2);
+    QCOMPARE(pages.last().at(1).value<SearchPage>().nextToken, QStringLiteral("20"));
+    provider.mockNam->nextResponse = R"({"data":[{"id":"three","attributes":{"title":{"en":"Three"}}}],"offset":20,"limit":10,"total":30})";
+    provider.requestPage(QStringLiteral("query"), QStringLiteral("20"), 3);
+    QTRY_COMPARE(pages.count(), 3);
+    QVERIFY(pages.last().at(1).value<SearchPage>().nextToken.isEmpty());
+    provider.mockNam->nextResponse = R"({"data":{"id":"one","attributes":{"title":{"en":"One"},"description":{"en":"Full synopsis"}}}})";
+    provider.requestDetails(QStringLiteral("one"), {}, 4);
+    QCOMPARE(provider.mockNam->lastUrl.path(), QStringLiteral("/manga/one"));
+    QTRY_COMPARE(details.count(), 1);
+    QCOMPARE(details.last().at(1).value<SearchDetails>().result.description, QStringLiteral("Full synopsis"));
+    provider.requestDetails(QStringLiteral("../invalid"), {}, 5);
+    QCOMPARE(failures.count(), 1);
+    provider.mockNam->nextError = QNetworkReply::TimeoutError;
+    provider.requestPage(QStringLiteral("query"), QStringLiteral("10"), 6);
+    QTRY_COMPARE(failures.count(), 2);
+    QCOMPARE(failures.last().at(0).toULongLong(), 6u);
+    QVERIFY(failures.last().at(1).toString().contains(QStringLiteral("timed out")));
+}
+
+void TestProviderMangaDex::testHostilePaginationIsTerminal()
+{
+    TestableProviderMangaDex provider;
+    QSignalSpy pages(&provider, &SearchProvider::pageCompleted);
+    for (const auto &response : {QByteArray(R"({"data":[{"id":"valid"}],"offset":2147483640,"limit":100,"total":2147483647})"),
+                                 QByteArray(R"({"data":[{"id":"valid"}],"offset":0,"limit":2147483647,"total":2147483647})"),
+                                 QByteArray(R"({"data":[{"id":"valid"}],"offset":20,"limit":10,"total":100})")}) {
+        provider.mockNam->nextResponse = response;
+        provider.requestPage(QStringLiteral("query"), {}, 1);
+        QTRY_VERIFY(!pages.isEmpty());
+        QVERIFY(pages.takeFirst().at(1).value<SearchPage>().nextToken.isEmpty());
+    }
 }
 
 QTEST_MAIN(TestProviderMangaDex)

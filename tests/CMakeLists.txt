@@ -65,3 +65,7 @@ add_executable(test_provider_settings_lifecycle test_provider_settings_lifecycle
 target_link_libraries(test_provider_settings_lifecycle Qt6::Test Qt6::Core)
 target_compile_definitions(test_provider_settings_lifecycle PRIVATE HELPER_PATH="$<TARGET_FILE:test_provider_settings_lifecycle_helper>")
 add_test(NAME test_provider_settings_lifecycle COMMAND test_provider_settings_lifecycle)
+
+add_executable(test_searchcontinuation test_searchcontinuation.cpp)
+target_link_libraries(test_searchcontinuation Qt6::Test klookup_core)
+add_test(NAME test_searchcontinuation COMMAND test_searchcontinuation)

@@ -41,12 +41,10 @@ SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
     SearchResult res;
     // API returns id as number but we store it as string.
     QJsonValue idVal = obj.value(QStringLiteral("id"));
-    if (!idVal.isDouble()) {
-        return {}; // Missing stable identity
-    }
-    res.id = QString::number(idVal.toInt());
-    if (idVal.toInt() <= 0)
-        return {};
+    const int numericId = idVal.toInt(-1);
+    if (!idVal.isDouble() || numericId <= 0 || idVal.toDouble() != numericId)
+        return {}; // Stable IDs must be integral and within the API's int32 range.
+    res.id = QString::number(numericId);
 
     QJsonArray titlesArray = obj.value(QStringLiteral("titles")).toArray();
     for (const QJsonValue &tVal : titlesArray) {

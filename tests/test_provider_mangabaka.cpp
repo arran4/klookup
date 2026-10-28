@@ -108,6 +108,8 @@ class TestProviderMangaBaka : public QObject
 {
     Q_OBJECT
 private slots:
+    void testAbortObserverCanDeleteReply();
+    void testFractionalIdentityIsRejected();
     void testPaginationAndLazyDetails();
     void testContinuationFailureAndCancellation();
     void testUntrustedContinuation();
@@ -478,6 +480,31 @@ void TestProviderMangaBaka::testUntrustedContinuation()
     provider.requestPage(QStringLiteral("query"), {}, 2);
     QTRY_COMPARE(failure.count(), 1);
     QVERIFY(failure.last().at(1).toString().contains(QStringLiteral("8 MiB")));
+}
+
+void TestProviderMangaBaka::testAbortObserverCanDeleteReply()
+{
+    TestableProviderMangaBaka provider;
+    QSignalSpy failed(&provider, &SearchProvider::requestFailed);
+    provider.requestPage(QStringLiteral("query"), {}, 1);
+    QPointer<QNetworkReply> reply = provider.activeReply();
+    connect(reply, &QNetworkReply::finished, reply, [reply] { delete reply; });
+    provider.cancelRequests();
+    QVERIFY(reply.isNull());
+    QVERIFY(!provider.activeReply());
+    QCOMPARE(failed.count(), 0);
+}
+void TestProviderMangaBaka::testFractionalIdentityIsRejected()
+{
+    TestableProviderMangaBaka provider;
+    provider.mockNam->nextResponse =
+        R"({"data":[{"id":1.5,"title":"fraction"},{"id":2147483648,"title":"overflow"},{"id":2,"title":"valid"}]})";
+    QSignalSpy completed(&provider, &SearchProvider::pageCompleted);
+    provider.requestPage(QStringLiteral("query"), {}, 1);
+    QTRY_COMPARE(completed.count(), 1);
+    const auto results = completed.first().at(1).value<SearchPage>().results;
+    QCOMPARE(results.size(), 1);
+    QCOMPARE(results.first().id, QStringLiteral("2"));
 }
 
 QTEST_MAIN(TestProviderMangaBaka)

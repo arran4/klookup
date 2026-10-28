@@ -20,7 +20,9 @@ inline void cancel(QPointer<QNetworkReply> &active, QObject *receiver)
     if (reply) {
         reply->disconnect(receiver);
         reply->abort();
-        reply->deleteLater();
+        // An observer of finished() may synchronously delete an aborted reply.
+        if (reply)
+            reply->deleteLater();
     }
 }
 

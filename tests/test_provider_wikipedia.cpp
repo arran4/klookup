@@ -165,6 +165,16 @@ private slots:
         QCOMPARE(QUrlQuery(provider.network->replies.last()->url()).queryItemValue(QStringLiteral("action")), QStringLiteral("parse"));
         provider.network->replies.last()->finish(articleFixture(123, QStringLiteral("<p>Useful <b>article</b>.</p>")));
         QCOMPARE(details.count(), 1);
+        provider.requestDetails(QStringLiteral("123"), {}, 30);
+        auto reserved = articleFixture(123, QStringLiteral("<p><a href='#section'>Section</a></p>"));
+        auto parsed = reserved.value(QStringLiteral("parse")).toObject();
+        parsed.insert(QStringLiteral("title"), QStringLiteral("A?B#C"));
+        reserved.insert(QStringLiteral("parse"), parsed);
+        provider.network->replies.last()->finish(reserved);
+        const auto reservedDetails = details.last().at(1).value<SearchDetails>();
+        QCOMPARE(reservedDetails.content.baseUrl.path(), QStringLiteral("/wiki/A?B#C"));
+        QVERIFY(Content::render(reservedDetails.content).html.contains(QStringLiteral("A%3FB%23C#section")));
+
         QVERIFY(!details.first().at(1).value<SearchDetails>().metadata.attribution.isEmpty());
         provider.requestDetails(QStringLiteral("456"), {}, 4);
         provider.network->replies.last()->finish(articleFixture(456, QString()));

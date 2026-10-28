@@ -120,8 +120,9 @@ void ProviderWikipedia::requestDetails(const QString &resultId, const QString &t
             details.result.type = QStringLiteral("article");
             details.result.url = sourceUrl(resultId);
             // Relative article links resolve against the wiki origin, not the API.
-            details.content = {article.value(QStringLiteral("text")).toString(), ResultContent::Format::LimitedHtml,
-                               QUrl(QStringLiteral("https://en.wikipedia.org/wiki/") + details.result.title)};
+            QUrl articleBase(QStringLiteral("https://en.wikipedia.org"));
+            articleBase.setPath(QStringLiteral("/wiki/") + details.result.title);
+            details.content = {article.value(QStringLiteral("text")).toString(), ResultContent::Format::LimitedHtml, articleBase};
             const auto rendered = Content::render(details.content);
             details.result.description = rendered.plainText;
             if (rendered.plainText.trimmed().isEmpty()) {

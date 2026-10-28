@@ -215,6 +215,26 @@ private slots:
         empty->finish({});
         QCOMPARE(tree->topLevelItem(1)->child(0)->text(0), QStringLiteral("No results"));
     }
+    void nestedMetadataHasTotalBudget()
+    {
+        QVariantList leaves;
+        for (int i = 0; i < 200; ++i)
+            leaves.append(QStringLiteral("value"));
+        QVariantMap branches;
+        for (int i = 0; i < 200; ++i)
+            branches.insert(QString::number(i), leaves);
+        const auto node = Metadata::fromVariant(QStringLiteral("Large metadata"), branches);
+        int count = 0;
+        std::function<void(const MetadataNode &)> visit = [&](const MetadataNode &entry) {
+            count += 1 + entry.values.size();
+            for (const auto &child : entry.children)
+                visit(child);
+        };
+        visit(node);
+        QVERIFY(count < 4100);
+        QVERIFY(!node.children.isEmpty());
+        QVERIFY(node.children.last().label.contains(QStringLiteral("limit")));
+    }
     void typedMetadataIsCachedAndSafelyRendered()
     {
         SearchTab tab(QStringLiteral("query"));

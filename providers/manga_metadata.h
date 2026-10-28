@@ -8,6 +8,24 @@
 
 namespace MangaMetadata
 {
+// The transport is bounded, but thousands of sibling categories still cause
+// quadratic category scans and excessive model allocation before GUI limits.
+inline QJsonArray boundedArray(const QJsonValue &value)
+{
+    const auto input = value.toArray();
+    QJsonArray output;
+    for (int i = 0; i < input.size() && i < 512; ++i)
+        output.append(input.at(i));
+    return output;
+}
+inline bool hasOversizedList(const QJsonObject &object)
+{
+    for (auto it = object.begin(); it != object.end(); ++it) {
+        if (it.value().isArray() && it.value().toArray().size() > 512)
+            return true;
+    }
+    return false;
+}
 inline QString scalar(const QJsonValue &value)
 {
     if (value.isString())

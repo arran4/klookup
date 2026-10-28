@@ -172,14 +172,14 @@ ResultMetadata ProviderMangaDex::parseMetadata(const QJsonObject &obj) const
     metadata.sections.append(series);
     MetadataNode titles{QStringLiteral("Titles"), {}, {}};
     localized(titles, attributes.value(QStringLiteral("title")).toObject());
-    for (const auto &value : attributes.value(QStringLiteral("altTitles")).toArray())
+    for (const auto &value : boundedArray(attributes.value(QStringLiteral("altTitles"))))
         localized(titles, value.toObject());
     metadata.sections.append(titles);
     MetadataNode descriptions{QStringLiteral("Localized synopses"), {}, {}};
     localized(descriptions, attributes.value(QStringLiteral("description")).toObject());
     metadata.sections.append(descriptions);
     MetadataNode tags{QStringLiteral("Tags"), {}, {}};
-    for (const auto &value : attributes.value(QStringLiteral("tags")).toArray()) {
+    for (const auto &value : boundedArray(attributes.value(QStringLiteral("tags")))) {
         const auto tag = value.toObject();
         const auto data = tag.value(QStringLiteral("attributes")).toObject();
         auto &group = category(tags, data.value(QStringLiteral("group")).toString(QStringLiteral("Other")));
@@ -198,7 +198,7 @@ ResultMetadata ProviderMangaDex::parseMetadata(const QJsonObject &obj) const
     metadata.sections.append(tags);
     MetadataNode creators{QStringLiteral("Creators and related records"), {}, {}};
     MetadataNode references{QStringLiteral("Sources and links"), {}, {}};
-    for (const auto &value : obj.value(QStringLiteral("relationships")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("relationships")))) {
         const auto relation = value.toObject();
         const QString type = relation.value(QStringLiteral("type")).toString();
         const auto data = relation.value(QStringLiteral("attributes")).toObject();
@@ -235,5 +235,7 @@ ResultMetadata ProviderMangaDex::parseMetadata(const QJsonObject &obj) const
     }
     metadata.sections.append(references);
     metadata.attribution = {QStringLiteral("Data provided by MangaDex; source references belong to their respective providers.")};
+    if (hasOversizedList(obj) || hasOversizedList(obj.value(QStringLiteral("attributes")).toObject()))
+        metadata.attribution.append(QStringLiteral("Additional metadata omitted: lists are limited to 512 entries."));
     return metadata;
 }

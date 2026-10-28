@@ -111,6 +111,7 @@ class TestProviderMangaBaka : public QObject
 private slots:
     void testAbortObserverCanDeleteReply();
     void testFractionalIdentityIsRejected();
+    void testOversizedTagListIsBounded();
     void testPaginationAndLazyDetails();
     void testContinuationFailureAndCancellation();
     void testUntrustedContinuation();
@@ -565,6 +566,31 @@ void TestProviderMangaBaka::testStructuredMetadata()
         QVERIFY(url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"));
         QVERIFY(url.userInfo().isEmpty());
     }
+}
+
+void TestProviderMangaBaka::testOversizedTagListIsBounded()
+{
+    TestableProviderMangaBaka provider;
+    QJsonArray tags;
+    for (int i = 0; i < 1000; ++i)
+        tags.append(QJsonObject{{"id", i + 1}, {"name_path", QStringLiteral("Category > Tag %1").arg(i)}});
+    provider.mockNam->nextResponse =
+        QJsonDocument(QJsonObject{{"data", QJsonObject{{"id", 1}, {"title", "Bounded tags"}, {"tags", tags}}}}).toJson();
+    QSignalSpy completed(&provider, &SearchProvider::detailsCompleted);
+    provider.requestDetails(QStringLiteral("1"), {}, 1);
+    QTRY_COMPARE(completed.count(), 1);
+    const auto metadata = completed.first().at(1).value<SearchDetails>().metadata;
+    QVERIFY(metadata.attribution.join(QLatin1Char(' ')).contains(QStringLiteral("512")));
+    int categories = 0;
+    std::function<void(const MetadataNode &)> visit = [&](const MetadataNode &node) {
+        ++categories;
+        QVERIFY(node.label != QStringLiteral("Tag 999"));
+        for (const auto &child : node.children)
+            visit(child);
+    };
+    for (const auto &section : metadata.sections)
+        visit(section);
+    QVERIFY(categories < 2000);
 }
 
 QTEST_MAIN(TestProviderMangaBaka)

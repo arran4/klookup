@@ -53,3 +53,12 @@ Synthetic fixtures reflect these schemas and exercise non-English titles, comple
 synopses, taxonomy paths, missing parents, cycles, unknown groups, relationships,
 unsafe URLs and null/missing fields. UI tests cover lazy selection, caching,
 selection changes, nested legacy fields, plain-text safety and typed links.
+
+Correctness review added a total 4000-item budget for each legacy nested value,
+in addition to depth/per-container limits. Scalar values are limited to 16 Ki
+characters with a visible marker. Provider metadata lists are limited to 512
+entries before category construction; oversized root/attribute lists produce an
+attribution notice. This bounds parsing work before the GUI's existing row limit,
+including the quadratic sibling-category lookup. Full synopses stay in the
+separate description field. Adversarial nested-map and large-tag fixtures cover
+the limits, alongside the existing malformed taxonomy/cycle tests.

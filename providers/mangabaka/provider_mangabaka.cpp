@@ -183,7 +183,7 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
     metadata.sections.append(series);
 
     MetadataNode titles{QStringLiteral("Titles"), {}, {}};
-    for (const auto &value : obj.value(QStringLiteral("titles")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("titles")))) {
         const auto title = value.toObject();
         const QString language = title.value(QStringLiteral("language")).toString(QStringLiteral("Unknown language"));
         auto node = Metadata::text(language, {title.value(QStringLiteral("title")).toString()});
@@ -195,7 +195,7 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
     }
     metadata.sections.append(titles);
     MetadataNode publishers{QStringLiteral("Publishers"), {}, {}};
-    for (const auto &value : obj.value(QStringLiteral("publishers")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("publishers")))) {
         const auto publisher = value.toObject();
         MetadataNode node{publisher.value(QStringLiteral("name")).toString(QStringLiteral("Publisher")), {}, {}};
         field(node, QStringLiteral("Language"), publisher.value(QStringLiteral("language")));
@@ -207,12 +207,12 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
 
     MetadataNode tags{QStringLiteral("Tags"), {}, {}};
     QMap<int, QJsonObject> tagsById;
-    for (const auto &value : obj.value(QStringLiteral("tags")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("tags")))) {
         const auto tag = value.toObject();
         if (tag.value(QStringLiteral("id")).toInt() > 0)
             tagsById.insert(tag.value(QStringLiteral("id")).toInt(), tag);
     }
-    for (const auto &value : obj.value(QStringLiteral("tags")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("tags")))) {
         const auto tag = value.toObject();
         QStringList path = tag.value(QStringLiteral("name_path")).toString().split(QStringLiteral(" > "), Qt::SkipEmptyParts);
         if (path.isEmpty()) {
@@ -250,7 +250,7 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
     metadata.sections.append(tags);
     MetadataNode references{QStringLiteral("Sources and links"), {}, {}};
     field(references, QStringLiteral("Upstream source IDs and ratings"), obj.value(QStringLiteral("source")));
-    for (const auto &value : obj.value(QStringLiteral("links")).toArray()) {
+    for (const auto &value : boundedArray(obj.value(QStringLiteral("links")))) {
         const auto reference = value.toObject();
         auto &group = category(references, reference.value(QStringLiteral("type")).toString(QStringLiteral("Other")));
         link(group, reference.value(QStringLiteral("name_display")).toString(reference.value(QStringLiteral("name")).toString()),
@@ -263,5 +263,7 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
     metadata.sections.append(references);
     metadata.attribution = {QStringLiteral(
         "Data provided by MangaBaka and the upstream providers identified above. Third-party data remains subject to their terms.")};
+    if (hasOversizedList(obj) || hasOversizedList(obj.value(QStringLiteral("attributes")).toObject()))
+        metadata.attribution.append(QStringLiteral("Additional metadata omitted: lists are limited to 512 entries."));
     return metadata;
 }

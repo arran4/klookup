@@ -11,6 +11,7 @@
 #include <QWidget>
 
 class QPushButton;
+class ProviderAuthSession;
 
 class SearchTab : public QWidget
 {
@@ -18,7 +19,7 @@ class SearchTab : public QWidget
 public:
     explicit SearchTab(const QString &query, QWidget *parent = nullptr);
     ~SearchTab() override;
-    void startProvider(SearchProvider *provider);
+    void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
     void addResults(const QString &providerName, const QList<SearchResult> &results);
     void setError(const QString &providerName, const QString &errorMsg);
 
@@ -32,6 +33,7 @@ private slots:
 private:
     struct ProviderState {
         QPointer<SearchProvider> provider;
+        QPointer<ProviderAuthSession> authentication;
         QTreeWidgetItem *group = nullptr;
         QTreeWidgetItem *status = nullptr;
         QMap<QString, QTreeWidgetItem *> items;

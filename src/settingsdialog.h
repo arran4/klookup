@@ -3,8 +3,13 @@
 
 #include <KPageDialog>
 #include <QListWidget>
+#include <QMap>
 
 class SearchProvider;
+class ProviderAuthManager;
+class QLabel;
+class QLineEdit;
+class QPushButton;
 
 namespace KWallet {
     class Wallet;
@@ -18,7 +23,7 @@ class SettingsDialog : public KPageDialog
 public:
     enum class PersistResult { Success, Unavailable, OpenFailed, FolderFailed, WriteFailed };
 
-    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr);
+    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr);
     ~SettingsDialog();
 
 protected:
@@ -40,9 +45,22 @@ protected:
 private slots:
     void saveSettings();
     void showLoginDialog();
+    void updateAuthenticationUi();
 
 private:
     QList<SearchProvider*> m_providers;
+    ProviderAuthManager *m_authentication = nullptr;
+    QMap<QString, QString> m_clientDrafts;
+    QString m_authProviderId;
+    QLineEdit *m_clientId;
+    QLabel *m_authStatus;
+    QLabel *m_authMode;
+    QLabel *m_oauthDetails;
+    QCheckBox *m_rememberAuth;
+    QPushButton *m_loginButton;
+    QPushButton *m_restoreAuth;
+    QPushButton *m_disconnectAuth;
+    QPushButton *m_cancelAuth;
     QListWidget *m_listWidget;
 
     QCheckBox *m_minimizeToTrayCheck;

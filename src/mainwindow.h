@@ -9,6 +9,7 @@
 
 class QSystemTrayIcon;
 class QPluginLoader;
+class ProviderAuthManager;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -47,6 +48,7 @@ private:
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
     bool m_settingsSaved = false;
+    ProviderAuthManager *m_authManager;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

@@ -11,6 +11,7 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QLabel>
 #include <QDialogButtonBox>
 #include "../src/mainwindow.h"
 #include "../src/searchtab.h"
@@ -405,8 +406,8 @@ private slots:
 
         mainWindow.loadWalletCredentials(&authMock);
 
-        QVERIFY(mainWindow.m_isOpenCalled);
-        QVERIFY(!mainWindow.m_openWalletCalled); // Should not attempt to open
+        QVERIFY(!mainWindow.m_isOpenCalled);
+        QVERIFY(!mainWindow.m_openWalletCalled); // Startup never asks for wallet authorization
 
         // Test case 2: Wallet is open (mock returns true)
         mainWindow.m_mockIsOpenValue = true;
@@ -415,8 +416,8 @@ private slots:
 
         mainWindow.loadWalletCredentials(&authMock);
 
-        QVERIFY(mainWindow.m_isOpenCalled);
-        QVERIFY(mainWindow.m_openWalletCalled); // Should attempt to open/read
+        QVERIFY(!mainWindow.m_isOpenCalled);
+        QVERIFY(!mainWindow.m_openWalletCalled); // An unlocked wallet can still prompt, so restoration is explicit
     }
 
     void testClipboardDeduplication()
@@ -541,7 +542,7 @@ private slots:
         // Test Cancel
         SettingsDialog *dialog = new SettingsDialog(providers);
         dialog->show();
-        QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>();
+        QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         QVERIFY(minimizeCheck);
         minimizeCheck->setChecked(false);
         QListWidget* listWidget = dialog->findChild<QListWidget*>();
@@ -558,7 +559,7 @@ private slots:
         // Test Apply
         dialog = new SettingsDialog(providers);
         dialog->show(); // Needs to be shown for isVisible checks
-        minimizeCheck = dialog->findChild<QCheckBox*>();
+        minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         minimizeCheck->setChecked(false);
 
         listWidget = dialog->findChild<QListWidget*>();
@@ -594,7 +595,7 @@ private slots:
         // Test OK
         dialog = new SettingsDialog(providers);
         dialog->show();
-        minimizeCheck = dialog->findChild<QCheckBox*>();
+        minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         minimizeCheck->setChecked(true);
         listWidget = dialog->findChild<QListWidget*>();
         QVERIFY(listWidget);
@@ -648,6 +649,7 @@ private slots:
         QVERIFY(listWidget);
         QVERIFY(listWidget->count() > 0);
         listWidget->setCurrentRow(0);
+        QVERIFY(dialog.findChild<QLabel *>(QStringLiteral("providerAuthMode"))->text().contains(QStringLiteral("Manually supplied")));
 
         // Reset
         auto resetMocks = [&]() {

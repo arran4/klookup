@@ -1,4 +1,5 @@
 #include "searchtab.h"
+#include "providerauthsession.h"
 #include "searchcontinuation.h"
 #include "sourceurl.h"
 #include <QDesktopServices>
@@ -75,7 +76,7 @@ SearchTab::~SearchTab()
     }
 }
 
-void SearchTab::startProvider(SearchProvider *provider)
+void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *authentication)
 {
     if (!provider || m_states.contains(provider->id())) {
         return;
@@ -83,6 +84,14 @@ void SearchTab::startProvider(SearchProvider *provider)
     provider->setParent(this);
     ProviderState state;
     state.provider = provider;
+    state.authentication = authentication;
+    if (authentication) {
+        connect(provider, &SearchProvider::authenticationRejected, authentication, &ProviderAuthSession::invalidateAccessToken);
+        connect(authentication, &ProviderAuthSession::credentialsChanged, provider,
+                [provider](const QString &token) { provider->setCredentials({}, token); });
+        if (authentication->hasUsableToken())
+            provider->setCredentials({}, authentication->accessToken());
+    }
     state.group = new QTreeWidgetItem(m_resultsTree);
     state.group->setText(0, provider->name());
     state.group->setFlags(state.group->flags() & ~Qt::ItemIsSelectable);
@@ -180,11 +189,25 @@ void SearchTab::loadMore(const QString &providerId)
         return;
     state.pending = ++m_nextRequest;
     pageStatus(state, QStringLiteral("Loading…"), false);
-    if (auto *continuation = qobject_cast<SearchProviderContinuation *>(state.provider)) {
-        continuation->requestPage(m_query, state.nextToken, state.pending);
-    } else {
-        state.provider->search(m_query);
-    }
+    const quint64 requestId = state.pending;
+    auto start = [this, providerId, requestId](bool ready, const QString &error) {
+        auto &current = m_states[providerId];
+        if (!current.provider || current.pending != requestId)
+            return;
+        if (!ready) {
+            current.pending = 0;
+            pageStatus(current, QStringLiteral("Authentication: %1 — Retry").arg(error), true);
+            return;
+        }
+        if (auto *continuation = qobject_cast<SearchProviderContinuation *>(current.provider))
+            continuation->requestPage(m_query, current.nextToken, requestId);
+        else
+            current.provider->search(m_query);
+    };
+    if (state.authentication)
+        state.authentication->ensureReady(this, start);
+    else
+        start(true, {});
 }
 
 void SearchTab::pageStatus(ProviderState &state, const QString &text, bool actionable)
@@ -300,7 +323,22 @@ void SearchTab::loadDetails(bool refresh)
     m_detailRequest = ++m_nextRequest;
     const QString token = refresh ? QString() : m_selected->data(0, DetailTokenRole).toString();
     updateDetailsControl();
-    continuation->requestDetails(result.id, token, m_detailRequest);
+    const quint64 requestId = m_detailRequest;
+    auto start = [this, id, resultId = result.id, token, requestId](bool ready, const QString &error) {
+        if (m_detailRequest != requestId || !m_states.value(id).provider)
+            return;
+        auto *provider = m_states.value(id).provider.data();
+        if (!ready) {
+            emit provider->requestFailed(requestId, error);
+            return;
+        }
+        if (auto *capability = qobject_cast<SearchProviderContinuation *>(provider))
+            capability->requestDetails(resultId, token, requestId);
+    };
+    if (it->authentication)
+        it->authentication->ensureReady(this, start);
+    else
+        start(true, {});
 }
 
 void SearchTab::updateDetailsControl()

@@ -1,0 +1,66 @@
+# KLookup licensing metadata (REUSE Specification 3.3)
+# Existing SPDX information in the icon SVGs is preserved; these annotations
+# supply consistent project-wide copyright and licensing metadata.
+# Inspect provenance and rights before making this repository public.
+version = 1
+
+# Application source and test fixtures
+[[annotations]]
+path = [
+  "src/*.cpp",
+  "src/*.h",
+  "src/*.rc",
+  "src/*.desktop",
+  "src/*.notifyrc",
+  "src/*.in",
+  "providers/*.h",
+  "providers/*/*.cpp",
+  "providers/*/*.h",
+  "runner/*.cpp",
+  "runner/*.h",
+  "runner/*.json",
+  "tests/*.cpp",
+  "tests/fixtures/*.json",
+  ".geminiignore",
+  ".gitignore",
+  ".jules/*.sh",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 KLookup contributors"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# KDE-compatible CMake and CI build definitions
+[[annotations]]
+path = [
+  "CMakeLists.txt",
+  "*/CMakeLists.txt",
+  "providers/*/CMakeLists.txt",
+  ".github/workflows/*.yml",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 KLookup contributors"
+SPDX-License-Identifier = "BSD-2-Clause"
+
+# Project documentation
+[[annotations]]
+path = [
+  "README.md",
+  "AGENTS.md",
+  "docs/*.md",
+  "icons/README.md",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 KLookup contributors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Original CC0 KLookup icons
+[[annotations]]
+path = [
+  "icons/*/apps/*.png",
+  "icons/scalable/apps/*.svg",
+  "icons/symbolic/apps/*.svg",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 KLookup contributors"
+SPDX-License-Identifier = "CC0-1.0"
+

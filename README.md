@@ -65,3 +65,11 @@ successful loads and safe loader errors. These diagnostics do not log credential
 
 Provider authentication capabilities, native PKCE flow setup and credential
 privacy are documented in [the developer authentication guide](docs/provider-authentication.md).
+
+## License
+
+KLookup's application, provider and test code is licensed under the **GNU General Public License, version 3 or later** (`GPL-3.0-or-later`); see [LICENSE](LICENSE).
+
+To follow KDE's file-type licensing conventions, the CMake build files and CI build definitions use **BSD-2-Clause**, the project documentation uses **CC-BY-SA-4.0**, and the original KLookup icons remain dedicated to the public domain under **CC0-1.0**. The canonical texts are in [LICENSES/](LICENSES/), with per-file declarations in [REUSE.toml](REUSE.toml). Run `reuse lint` to check the metadata.
+
+Upstream API responses, third-party code and external services remain subject to their own rights, licences and terms; the repository licence does not relicense third-party material. Before public release, verify copyright provenance and perform the planned secrets/history and dependency audit.

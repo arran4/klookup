@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 KLookup contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "mainwindow.h"
 #include <KAboutData>
 #include <KDBusService>
@@ -12,8 +15,9 @@ int main(int argc, char *argv[])
     KLocalizedString::setApplicationDomain("klookup");
 
     KAboutData aboutData(QStringLiteral("klookup"), i18n("KLookup"), QStringLiteral("0.1"),
-                         i18n("Dictionary-style multi-provider search tool"), KAboutLicense::GPL, i18n("(c) 2026"), QString(),
+                         i18n("Dictionary-style multi-provider search tool"), KAboutLicense::GPL_V3, i18n("(c) 2026"), QString(),
                          QStringLiteral("https://github.com/arran4/klookup"));
+    aboutData.setLicense(KAboutLicense::GPL_V3, KAboutLicense::OrLaterVersions);
     aboutData.addAuthor(i18n("Arran"), i18n("Maintainer"), QStringLiteral("arran4@users.noreply.github.com"));
     KAboutData::setApplicationData(aboutData);
 

@@ -108,8 +108,10 @@ void ProviderMangaDex::requestPage(const QString &query, const QString &token, q
         const int offset = root.value(QStringLiteral("offset")).toInt();
         const int limit = root.value(QStringLiteral("limit")).toInt();
         const int total = root.value(QStringLiteral("total")).toInt();
-        if (offset >= 0 && limit > 0 && offset + limit < total && offset + limit < 10000 && !values.isEmpty())
-            page.nextToken = QString::number(offset + limit);
+        const qint64 nextOffset = qint64(offset) + qint64(limit);
+        const int requestedOffset = token.isEmpty() ? 0 : token.toInt();
+        if (offset == requestedOffset && limit > 0 && limit <= 100 && nextOffset < total && nextOffset < 10000 && !values.isEmpty())
+            page.nextToken = QString::number(nextOffset);
 
         if (requestId)
             emit pageCompleted(requestId, page);

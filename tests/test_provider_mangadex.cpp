@@ -103,6 +103,7 @@ class TestProviderMangaDex : public QObject
 {
     Q_OBJECT
 private slots:
+    void testHostilePaginationIsTerminal();
     void testOffsetContinuationAndDetails();
     void testIdentity();
     void testRequestConstructionAndEncoding();
@@ -356,6 +357,20 @@ void TestProviderMangaDex::testOffsetContinuationAndDetails()
     QTRY_COMPARE(failures.count(), 2);
     QCOMPARE(failures.last().at(0).toULongLong(), 6u);
     QVERIFY(failures.last().at(1).toString().contains(QStringLiteral("timed out")));
+}
+
+void TestProviderMangaDex::testHostilePaginationIsTerminal()
+{
+    TestableProviderMangaDex provider;
+    QSignalSpy pages(&provider, &SearchProvider::pageCompleted);
+    for (const auto &response : {QByteArray(R"({"data":[{"id":"valid"}],"offset":2147483640,"limit":100,"total":2147483647})"),
+                                 QByteArray(R"({"data":[{"id":"valid"}],"offset":0,"limit":2147483647,"total":2147483647})"),
+                                 QByteArray(R"({"data":[{"id":"valid"}],"offset":20,"limit":10,"total":100})")}) {
+        provider.mockNam->nextResponse = response;
+        provider.requestPage(QStringLiteral("query"), {}, 1);
+        QTRY_VERIFY(!pages.isEmpty());
+        QVERIFY(pages.takeFirst().at(1).value<SearchPage>().nextToken.isEmpty());
+    }
 }
 
 QTEST_MAIN(TestProviderMangaDex)

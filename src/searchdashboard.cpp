@@ -1,6 +1,7 @@
 #include "searchdashboard.h"
 #include <QVBoxLayout>
 #include <QPushButton>
+#include <QIcon>
 #include <QStringListModel>
 
 SearchDashboard::SearchDashboard(QWidget *parent)
@@ -15,6 +16,7 @@ SearchDashboard::SearchDashboard(QWidget *parent)
     layout->addWidget(m_searchBar);
 
     QPushButton *searchButton = new QPushButton(QStringLiteral("Search"), this);
+    searchButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-find")));
     layout->addWidget(searchButton);
 
     layout->addStretch();

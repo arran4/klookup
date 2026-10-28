@@ -38,7 +38,7 @@ void KLookupRunner::match(KRunner::RunnerContext &context)
 #ifndef Q_OS_WASM
     KRunner::QueryMatch match(this);
     match.setText(i18n("Lookup in KLookup: %1", query));
-    match.setIconName(QStringLiteral("dictionary"));
+    match.setIconName(QStringLiteral("org.kde.klookup"));
     match.setData(query);
     match.setRelevance(0.8);
     context.addMatch(match);

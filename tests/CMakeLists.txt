@@ -110,6 +110,10 @@ add_executable(test_globalshortcuts test_globalshortcuts.cpp)
 target_link_libraries(test_globalshortcuts Qt6::Test klookup_core)
 add_test(NAME test_globalshortcuts COMMAND test_globalshortcuts)
 
+add_executable(test_autostart test_autostart.cpp)
+target_link_libraries(test_autostart Qt6::Test klookup_core KF6::ConfigCore)
+add_test(NAME test_autostart COMMAND test_autostart)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)

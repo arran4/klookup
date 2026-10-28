@@ -2,6 +2,7 @@
 #include <QSignalSpy>
 #include <QClipboard>
 #include <QMimeData>
+#include <QComboBox>
 #include <QGuiApplication>
 #include <QTreeWidget>
 #include <KSharedConfig>
@@ -451,6 +452,8 @@ private slots:
         group.writeEntry(QStringLiteral("MonitorClipboard"), true);
         group.writeEntry(QStringLiteral("AutoSearchClipboard"), false);
         group.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), false);
+        group.writeEntry(QStringLiteral("ClipboardCaptureMode"), int(ClipboardPolicy::Capture::Running));
+        group.writeEntry(QStringLiteral("ClipboardSearchTrigger"), int(ClipboardPolicy::Trigger::Never));
         group.sync();
         auto *dashboard = mainWindow.findChild<SearchDashboard *>();
         auto *entry = dashboard->findChild<QLineEdit *>();
@@ -466,6 +469,92 @@ private slots:
         QVERIFY(dashboard->saveHistory().isEmpty());
         group.writeEntry(QStringLiteral("MonitorClipboard"), false);
         group.sync();
+    }
+
+    void testVisibilityAndTriggerEvents()
+    {
+        using namespace ClipboardPolicy;
+        MainWindow window;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        auto *tabs = window.findChild<QTabWidget *>();
+        auto *dashboard = window.findChild<SearchDashboard *>();
+        auto *entry = dashboard->findChild<QLineEdit *>();
+        const int initial = tabs->count();
+        write(group, {Capture::Visible, Trigger::ClipboardChanged});
+        QGuiApplication::clipboard()->setText(QStringLiteral("hidden clipboard"));
+        QCOMPARE(tabs->count(), initial); // tray-hidden process is not a visible window
+        window.show();
+        QCoreApplication::processEvents();
+        QWidget other;
+        other.show();
+        other.activateWindow();
+        QTRY_VERIFY(!window.isActiveWindow());
+        QGuiApplication::clipboard()->setText(QStringLiteral("visible clipboard"));
+        QCOMPARE(tabs->count(), initial + 1);
+        QVERIFY(!window.isActiveWindow()); // visible capture never steals focus
+        window.handleClipboardEvent(Event::ClipboardChanged);
+        QCOMPARE(tabs->count(), initial + 1);
+        write(group, {Capture::Running, Trigger::TrayOpened});
+        window.hide();
+        QGuiApplication::clipboard()->setText(QStringLiteral("quiet background capture"));
+        QCOMPARE(tabs->count(), initial + 1);
+        QCOMPARE(entry->text(), QStringLiteral("quiet background capture"));
+        QCOMPARE(tabs->currentIndex(), initial); // capture does not switch away from results
+        QVERIFY(!window.isVisible());
+        window.restoreFromTray();
+        QCOMPARE(tabs->count(), initial + 2);
+        window.restoreFromTray();
+        QCOMPARE(tabs->count(), initial + 2); // already shown is not a tray-open transition
+        window.hide();
+        window.restoreFromTray();
+        QCOMPARE(tabs->count(), initial + 2); // same approved text deduplicates
+        write(group, {Capture::Running, Trigger::GlobalShortcut});
+        QGuiApplication::clipboard()->setText(QStringLiteral("shortcut trigger"));
+        QCOMPARE(tabs->count(), initial + 2);
+        window.notifyClipboardShortcutUsed();
+        QCOMPARE(tabs->count(), initial + 3);
+        window.notifyClipboardShortcutUsed();
+        QCOMPARE(tabs->count(), initial + 3);
+        write(group, {Capture::Never, Trigger::GlobalShortcut});
+        QGuiApplication::clipboard()->setText(QStringLiteral("unapproved clipboard"));
+        window.notifyClipboardShortcutUsed();
+        QCOMPARE(tabs->count(), initial + 3);
+        write(group, {Capture::Running, Trigger::FocusGained});
+        QGuiApplication::clipboard()->setText(QStringLiteral("focus trigger"));
+        window.handleClipboardEvent(Event::FocusGained);
+        QCOMPARE(tabs->count(), initial + 4);
+        window.handleClipboardEvent(Event::FocusGained);
+        QCOMPARE(tabs->count(), initial + 4);
+        write(group, {Capture::Never, Trigger::Never});
+    }
+
+    void testClipboardSettingsApplyCancel()
+    {
+        using namespace ClipboardPolicy;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        write(group, {Capture::Never, Trigger::Never});
+        group.sync();
+        SettingsDialog cancelled({});
+        auto *capture = cancelled.findChild<QComboBox *>(QStringLiteral("clipboardCaptureMode"));
+        auto *trigger = cancelled.findChild<QComboBox *>(QStringLiteral("clipboardSearchTrigger"));
+        QVERIFY(capture && trigger);
+        capture->setCurrentIndex(int(Capture::Running));
+        trigger->setCurrentIndex(int(Trigger::ClipboardChanged));
+        cancelled.reject();
+        QCOMPARE(read(group).capture, Capture::Never);
+        QCOMPARE(read(group).trigger, Trigger::Never);
+        SettingsDialog applied({});
+        capture = applied.findChild<QComboBox *>(QStringLiteral("clipboardCaptureMode"));
+        trigger = applied.findChild<QComboBox *>(QStringLiteral("clipboardSearchTrigger"));
+        capture->setCurrentIndex(int(Capture::Visible));
+        trigger->setCurrentIndex(int(Trigger::TrayOpened));
+        applied.button(QDialogButtonBox::Apply)->click();
+        QCOMPARE(read(group).capture, Capture::Visible);
+        QCOMPARE(read(group).trigger, Trigger::TrayOpened);
+        SettingsDialog reopened({});
+        QCOMPARE(reopened.findChild<QComboBox *>(QStringLiteral("clipboardCaptureMode"))->currentIndex(), int(Capture::Visible));
+        QCOMPARE(reopened.findChild<QComboBox *>(QStringLiteral("clipboardSearchTrigger"))->currentIndex(), int(Trigger::TrayOpened));
+        write(group, {Capture::Never, Trigger::Never});
     }
 
     void testClipboardDeduplication()

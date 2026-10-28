@@ -8,6 +8,7 @@ add_library(klookup_core STATIC
     settingsdialog.cpp
     appicon.cpp
     clipboardinput.cpp
+    clipboardpolicy.cpp
     credentialstore.cpp
     providerauthsession.cpp
     oauthreplyhandler.cpp

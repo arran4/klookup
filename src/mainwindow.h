@@ -5,6 +5,7 @@
 #include <QTabWidget>
 #include <functional>
 #include "searchprovider.h"
+#include "clipboardpolicy.h"
 #include "searchdashboard.h"
 
 class QSystemTrayIcon;
@@ -23,10 +24,14 @@ public slots:
     void performSearch(const QString &query);
     void processClipboardText(const QString &text, bool autoSearch);
 
+    void notifyClipboardShortcutUsed();
+    void restoreFromTray();
+
     void restoreProviderState(SearchProvider* provider);
 
 protected:
     bool queryClose() override;
+    void changeEvent(QEvent *event) override;
 
 private slots:
     void onClipboardChanged();
@@ -38,6 +43,7 @@ private:
     void saveSettings();
     void setupActions();
     void setupTrayIcon();
+    void handleClipboardEvent(ClipboardPolicy::Event event);
 
     QTabWidget *m_tabWidget;
     SearchDashboard *m_dashboard;
@@ -47,6 +53,9 @@ private:
     QList<SearchProvider*> m_providers;
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
+    QString m_lastCapturedClipboardText;
+    bool m_clipboardReady = false;
+    bool m_hadFocus = false;
     bool m_settingsSaved = false;
     ProviderAuthManager *m_authManager;
 

@@ -15,6 +15,7 @@ namespace KWallet {
     class Wallet;
 }
 class QCheckBox;
+class QComboBox;
 
 class SettingsDialog : public KPageDialog
 {
@@ -64,9 +65,8 @@ private:
     QListWidget *m_listWidget;
 
     QCheckBox *m_minimizeToTrayCheck;
-    QCheckBox *m_monitorClipboardCheck;
-    QCheckBox *m_autoSearchClipboardCheck;
-    QCheckBox *m_onlyFocusedClipboardCheck;
+    QComboBox *m_captureMode;
+    QComboBox *m_searchTrigger;
     KWallet::Wallet *m_wallet = nullptr;
 };
 

@@ -19,6 +19,7 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QCloseEvent>
+#include <QEvent>
 #include <QClipboard>
 #include <QApplication>
 #include <QGuiApplication>
@@ -118,6 +119,9 @@ MainWindow::MainWindow(QWidget *parent)
         config->sync();
     }
 
+    ClipboardPolicy::migrate(genGroup);
+    config->sync();
+
     m_authManager = new ProviderAuthManager(this, this);
     loadPlugins();
 
@@ -132,6 +136,7 @@ MainWindow::MainWindow(QWidget *parent)
     setXMLFile(QStringLiteral("klookupui.rc"));
     setupGUI();
     loadSettings();
+    m_clipboardReady = true;
 }
 
 MainWindow::~MainWindow()
@@ -153,7 +158,7 @@ void MainWindow::setupTrayIcon()
     QMenu *trayMenu = new QMenu(this);
 
     QAction *restoreAction = trayMenu->addAction(QIcon::fromTheme(QStringLiteral("window-restore")), QStringLiteral("Restore"));
-    connect(restoreAction, &QAction::triggered, this, &MainWindow::showNormal);
+    connect(restoreAction, &QAction::triggered, this, &MainWindow::restoreFromTray);
 
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Preferences)));
     // Removed locally to use KF6
@@ -166,7 +171,8 @@ void MainWindow::setupTrayIcon()
 
     connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
         if (reason == QSystemTrayIcon::Trigger) {
-            setVisible(!isVisible());
+            if (isVisible()) hide();
+            else restoreFromTray();
         }
     });
 }
@@ -181,19 +187,46 @@ void MainWindow::showSettingsDialog()
 
 void MainWindow::onClipboardChanged()
 {
-    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
-    KConfigGroup genGroup(config, QStringLiteral("General"));
-    bool monitorClipboard = genGroup.readEntry(QStringLiteral("MonitorClipboard"), false);
-    bool autoSearch = genGroup.readEntry(QStringLiteral("AutoSearchClipboard"), false);
-    bool onlyWhenFocused = genGroup.readEntry(QStringLiteral("ClipboardOnlyWhenFocused"), true);
+    handleClipboardEvent(ClipboardPolicy::Event::ClipboardChanged);
+}
 
-    if (!monitorClipboard) return;
-    if (onlyWhenFocused && !isActiveWindow()) return;
-
+void MainWindow::handleClipboardEvent(ClipboardPolicy::Event event)
+{
+    if (!m_clipboardReady) return;
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
+    if (!policy.permitsCapture(isVisible() && !isMinimized(), isActiveWindow())) return;
     const auto input = ClipboardInput::classifyMimeData(QGuiApplication::clipboard()->mimeData());
     if (!input.permitsAutomaticCapture()) return;
+    const bool changed = input.text != m_lastCapturedClipboardText;
+    m_lastCapturedClipboardText = input.text;
+    if (policy.searchesOn(event)) processClipboardText(input.text, true);
+    else if (changed) processClipboardText(input.text, false);
+}
 
-    processClipboardText(input.text, autoSearch);
+void MainWindow::restoreFromTray()
+{
+    const bool opening = !isVisible();
+    showNormal();
+    raise();
+    activateWindow();
+    if (opening) handleClipboardEvent(ClipboardPolicy::Event::TrayOpened);
+}
+
+void MainWindow::notifyClipboardShortcutUsed()
+{
+    handleClipboardEvent(ClipboardPolicy::Event::GlobalShortcut);
+}
+
+void MainWindow::changeEvent(QEvent *event)
+{
+    KXmlGuiWindow::changeEvent(event);
+    if (event->type() == QEvent::ActivationChange) {
+        const bool focused = isActiveWindow();
+        const bool gained = focused && !m_hadFocus;
+        m_hadFocus = focused;
+        if (gained) handleClipboardEvent(ClipboardPolicy::Event::FocusGained);
+    }
 }
 
 void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
@@ -215,8 +248,8 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
     } else {
         // Just prepopulate
         m_lastAutoSearchClipboardText.clear();
-        m_tabWidget->setCurrentIndex(0); // Switch to dashboard
-        m_dashboard->prepareQuery(text);
+        // Passive capture updates the entry without switching tabs or focus.
+        m_dashboard->prepareQuery(text, false);
     }
 }
 

@@ -15,7 +15,7 @@ public:
 
     void loadHistory(const QStringList &history);
     QStringList saveHistory() const;
-    void prepareQuery(const QString &query);
+    void prepareQuery(const QString &query, bool focus = true);
 
 signals:
     void searchRequested(const QString &query);

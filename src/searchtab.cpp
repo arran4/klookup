@@ -2,6 +2,7 @@
 #include "providerauthsession.h"
 #include "resultactions.h"
 #include "searchcontinuation.h"
+#include "sourcelink.h"
 #include "sourceurl.h"
 #include <QContextMenuEvent>
 #include <QDesktopServices>
@@ -26,7 +27,8 @@ constexpr int MetadataRole = Qt::UserRole + 4;
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
     : QWidget(parent), m_query(query), m_resultsTree(new QTreeWidget(this)), m_detailsView(new QTextBrowser(this)),
-      m_metadataView(new QTreeWidget(this)), m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
+      m_metadataView(new QTreeWidget(this)), m_sourceLink(new SourceLink(this)),
+      m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
 {
     auto *layout = new QHBoxLayout(this);
     auto *left = new QVBoxLayout;
@@ -59,6 +61,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         if (!url.isEmpty())
             QDesktopServices::openUrl(url);
     });
+    right->addWidget(m_sourceLink);
     right->addWidget(m_detailsButton);
     layout->addLayout(left, 1);
     layout->addLayout(right, 2);
@@ -386,9 +389,11 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
         m_detailsView->clear();
         m_metadataView->clear();
         m_metadataView->hide();
+        m_sourceLink->setResult({});
         return;
     }
     const auto res = item->data(0, Qt::UserRole).value<SearchResult>();
+    m_sourceLink->setResult(res);
     QString html = QStringLiteral("<h2>%1</h2>").arg(res.title.toHtmlEscaped());
     if (!res.type.isEmpty()) {
         html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
@@ -400,7 +405,8 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
     if (!res.url.isEmpty()) {
         const QUrl qurl = validatedSourceUrl(res.url);
         if (!qurl.isEmpty()) {
-            html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped());
+            html += QStringLiteral("<p>Source: <a href=\"%1\">%2</a></p>")
+                        .arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped(), qurl.toDisplayString().toHtmlEscaped());
         } else {
             html += QStringLiteral("<p>Invalid or unsupported URL: %1</p>").arg(res.url.toHtmlEscaped());
         }

@@ -24,15 +24,24 @@ ResultActions::ResultActions(const SearchResult &result, bool canRefresh, QObjec
     connect(copyUrl, &QAction::triggered, this, [url] {
         if (url.isEmpty())
             return;
-        auto *mime = new QMimeData;
-        mime->setText(url.toString(QUrl::FullyEncoded));
-        mime->setUrls({url});
-        mime->setData(QString::fromLatin1(SourceUrlClipboardMime), "1");
-        QGuiApplication::clipboard()->setMimeData(mime);
+        if (auto *mime = urlMimeData(url))
+            QGuiApplication::clipboard()->setMimeData(mime);
     });
     connect(openUrl, &QAction::triggered, this, [url] {
         if (!url.isEmpty())
             QDesktopServices::openUrl(url);
     });
     connect(copyTitle, &QAction::triggered, this, [title = result.title] { QGuiApplication::clipboard()->setText(title); });
+}
+
+QMimeData *ResultActions::urlMimeData(const QUrl &source)
+{
+    const auto url = validatedSourceUrl(source.toString(QUrl::FullyEncoded));
+    if (url.isEmpty())
+        return nullptr;
+    auto *mime = new QMimeData;
+    mime->setText(url.toString(QUrl::FullyEncoded));
+    mime->setUrls({url});
+    mime->setData(QString::fromLatin1(SourceUrlClipboardMime), "1");
+    return mime;
 }

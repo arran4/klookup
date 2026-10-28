@@ -12,6 +12,7 @@
 
 class QPushButton;
 class ProviderAuthSession;
+class SourceLink;
 class QMenu;
 
 class SearchTab : public QWidget
@@ -61,6 +62,7 @@ private:
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;
     QTreeWidget *m_metadataView;
+    SourceLink *m_sourceLink;
     QPushButton *m_detailsButton;
     QMap<QString, ProviderState> m_states;
     quint64 m_nextRequest = 0;

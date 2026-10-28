@@ -9,6 +9,11 @@ add_library(klookup_core STATIC
     appicon.cpp
     clipboardinput.cpp
     clipboardpolicy.cpp
+    credentialstore.cpp
+    providerauthsession.cpp
+    oauthreplyhandler.cpp
+    oauthcodeflow.cpp
+    providerauthmanager.cpp
 )
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)

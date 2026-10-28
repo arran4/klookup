@@ -4,6 +4,7 @@
 #include "searchtab.h"
 #include "dbusadaptor.h"
 #include "settingsdialog.h"
+#include "providerauthmanager.h"
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QDBusConnection>
@@ -121,6 +122,7 @@ MainWindow::MainWindow(QWidget *parent)
     ClipboardPolicy::migrate(genGroup);
     config->sync();
 
+    m_authManager = new ProviderAuthManager(this, this);
     loadPlugins();
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
@@ -177,7 +179,7 @@ void MainWindow::setupTrayIcon()
 
 void MainWindow::showSettingsDialog()
 {
-    SettingsDialog dialog(m_providers, this);
+    SettingsDialog dialog(m_providers, this, m_authManager);
     dialog.exec();
 
     // We re-check clipboard monitoring if settings change
@@ -337,7 +339,7 @@ void MainWindow::performSearch(const QString &query)
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
 
-        tab->startProvider(providerTemplate->clone(tab));
+        tab->startProvider(providerTemplate->clone(tab), m_authManager->sessionFor(providerTemplate));
     }
 }
 
@@ -417,11 +419,9 @@ void MainWindow::emitClipboardNotification(const QString &text)
 
 void MainWindow::loadWalletCredentials(SearchProvider *provider)
 {
-    if (!provider->supportsAuthentication()) return;
-
-    if (isWalletOpen()) {
-        readWalletPasswordAndSet(provider);
-    }
+    // Register authentication state only. Opening even an unlocked KWallet can
+    // ask for permission; restoring secrets is an explicit Settings action.
+    m_authManager->sessionFor(provider);
 }
 
 bool MainWindow::isWalletOpen() const
@@ -435,19 +435,6 @@ bool MainWindow::isWalletOpen() const
 
 void MainWindow::readWalletPasswordAndSet(SearchProvider *provider)
 {
-#ifndef Q_OS_WASM
-    KWallet::Wallet *wallet = KWallet::Wallet::openWallet(KWallet::Wallet::LocalWallet(), winId(), KWallet::Wallet::Synchronous);
-    if (wallet) {
-        if (wallet->hasFolder(QStringLiteral("KLookup"))) {
-            wallet->setFolder(QStringLiteral("KLookup"));
-            QString token;
-            if (wallet->readPassword(provider->id(), token) == 0 && !token.isEmpty()) {
-                provider->setCredentials(QString(), token);
-            }
-        }
-        delete wallet;
-    }
-#else
     Q_UNUSED(provider);
-#endif
+    // Kept as a compatibility/testing seam. Never open wallets during lookup.
 }

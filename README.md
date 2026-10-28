@@ -62,3 +62,6 @@ for the runner host and inspect the reported D-Bus error. The installed service 
 Provider discovery diagnostics are opt-in: start KLookup with
 `QT_LOGGING_RULES="klookup.plugins.debug=true"` to log search paths, candidates,
 successful loads and safe loader errors. These diagnostics do not log credentials.
+
+Provider authentication capabilities, native PKCE flow setup and credential
+privacy are documented in [the developer authentication guide](docs/provider-authentication.md).

@@ -10,6 +10,7 @@
 
 class QSystemTrayIcon;
 class QPluginLoader;
+class ProviderAuthManager;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -56,6 +57,7 @@ private:
     bool m_clipboardReady = false;
     bool m_hadFocus = false;
     bool m_settingsSaved = false;
+    ProviderAuthManager *m_authManager;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

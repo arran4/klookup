@@ -81,3 +81,7 @@ add_test(NAME test_searchcontinuation COMMAND test_searchcontinuation)
 foreach(target test_provider_mangabaka test_provider_mangadex)
     target_compile_definitions(${target} PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 endforeach()
+
+add_executable(test_providerauthentication test_providerauthentication.cpp)
+target_link_libraries(test_providerauthentication Qt6::Test klookup_core)
+add_test(NAME test_providerauthentication COMMAND test_providerauthentication)

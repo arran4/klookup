@@ -64,6 +64,7 @@ signals:
     void pageCompleted(quint64 requestId, const SearchPage &page);
     void detailsCompleted(quint64 requestId, const SearchDetails &details);
     void requestFailed(quint64 requestId, const QString &error, int retryAfterMs = 0);
+    void authenticationRejected();
 
 private:
     bool m_enabled = true;

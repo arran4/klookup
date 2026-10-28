@@ -130,6 +130,20 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     auto *hint = new QLabel(QStringLiteral("Capture permission is checked first. Capture alone quietly prepares the search field. Automatic searches never raise a window."), this);
     hint->setWordWrap(true);
     generalLayout->addWidget(hint);
+    m_showRecent = new QCheckBox(QStringLiteral("Show recent activity"), this);
+    m_showRecent->setObjectName(QStringLiteral("showRecentActivity"));
+    m_recordClipboardRecent = new QCheckBox(QStringLiteral("Record clipboard activity (turn off to remove clipboard entries)"), this);
+    m_recordClipboardRecent->setObjectName(QStringLiteral("recordClipboardActivity"));
+    m_persistClipboardRecent = new QCheckBox(QStringLiteral("Save recorded clipboard activity between sessions (24 hours)"), this);
+    m_persistClipboardRecent->setObjectName(QStringLiteral("persistClipboardActivity"));
+    generalLayout->addWidget(m_showRecent);
+    generalLayout->addWidget(m_recordClipboardRecent);
+    generalLayout->addWidget(m_persistClipboardRecent);
+    auto *recentHint = new QLabel(QStringLiteral("Hiding recent activity keeps saved history. Clipboard recording defaults off; enabling "
+                                                 "it alone keeps items in memory. Automatic clipboard search tabs are session-only."),
+                                  this);
+    recentHint->setWordWrap(true);
+    generalLayout->addWidget(recentHint);
     generalLayout->addStretch();
 
     addPage(generalWidget, QStringLiteral("General"));
@@ -141,6 +155,11 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     const auto policy = ClipboardPolicy::read(genGroup);
     m_captureMode->setCurrentIndex(int(policy.capture));
     m_searchTrigger->setCurrentIndex(int(policy.trigger));
+    m_showRecent->setChecked(genGroup.readEntry(QStringLiteral("ShowRecentActivity"), true));
+    m_recordClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("RecordClipboardActivity"), false));
+    m_persistClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("PersistClipboardActivity"), false));
+    m_persistClipboardRecent->setEnabled(m_recordClipboardRecent->isChecked());
+    connect(m_recordClipboardRecent, &QCheckBox::toggled, m_persistClipboardRecent, &QWidget::setEnabled);
 
     connect(m_loginButton, &QPushButton::clicked, this, &SettingsDialog::showLoginDialog);
 
@@ -250,8 +269,13 @@ void SettingsDialog::saveSettings()
     }
     KConfigGroup genGroup(config, QStringLiteral("General"));
     genGroup.writeEntry(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("ShowRecentActivity"), m_showRecent->isChecked());
+    genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
+    genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
+                        m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
     ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
     config->sync();
+    emit settingsApplied();
 }
 
 SettingsDialog::PersistResult SettingsDialog::performPersistence(const QString &providerId, const QString &token)

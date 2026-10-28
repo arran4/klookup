@@ -20,12 +20,15 @@ public:
     explicit SearchTab(const QString &query, QWidget *parent = nullptr);
     ~SearchTab() override;
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
-    void addResults(const QString &providerName, const QList<SearchResult> &results);
+    void addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId = {});
     void setError(const QString &providerName, const QString &errorMsg);
 
 public slots:
     void loadMore(const QString &providerId);
     void loadDetails(bool refresh = false);
+
+signals:
+    void resultViewed(const QString &providerId, const SearchResult &result);
 
 private slots:
     void onResultClicked(QTreeWidgetItem *item, int column);

@@ -276,9 +276,16 @@ void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> 
     }
 }
 
-void SearchTab::addResults(const QString &providerName, const QList<SearchResult> &results)
+void SearchTab::addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId)
 {
-    appendResults(groupForName(providerName), results);
+    auto *group = groupForName(providerName);
+    const int first = group->childCount();
+    appendResults(group, results);
+    for (int index = first; index < group->childCount(); ++index) {
+        auto *item = group->child(index);
+        if (item->data(0, Qt::UserRole).canConvert<SearchResult>())
+            item->setData(0, ProviderRole, providerId.isEmpty() ? providerName : providerId);
+    }
 }
 
 void SearchTab::setError(const QString &providerName, const QString &errorMsg)
@@ -296,6 +303,7 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
     renderResult(m_selected);
     updateDetailsControl();
     loadInitialDetails();
+    if (m_selected) emit resultViewed(m_selected->data(0, ProviderRole).toString(), m_selected->data(0, Qt::UserRole).value<SearchResult>());
 }
 
 void SearchTab::loadInitialDetails()

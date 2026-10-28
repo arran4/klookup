@@ -1,18 +1,20 @@
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
-#include "searchtab.h"
 #include "dbusadaptor.h"
+#include "searchtab.h"
 #include "settingsdialog.h"
 #include "providerauthmanager.h"
+#include "sourceurl.h"
+#include <KActionCollection>
+#include <QCoreApplication>
+#include <QDBusConnection>
+#include <QDesktopServices>
+#include <QDir>
+#include <QLoggingCategory>
+#include <QPluginLoader>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QDBusConnection>
-#include <QPluginLoader>
-#include <QDir>
-#include <QCoreApplication>
-#include <KActionCollection>
-#include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KStandardAction>
@@ -123,6 +125,15 @@ MainWindow::MainWindow(QWidget *parent)
     config->sync();
 
     m_authManager = new ProviderAuthManager(this, this);
+    m_recent = new RecentActivity(config, this);
+    m_dashboard->setRecentActivity(m_recent);
+    connect(m_dashboard, &SearchDashboard::recentActivated, this, [this](const RecentItem &item) {
+        const auto url = validatedSourceUrl(item.url.toString(QUrl::FullyEncoded));
+        if (item.kind == RecentItem::Kind::Viewed && !url.isEmpty())
+            QDesktopServices::openUrl(url);
+        else
+            performSearch(item.query.isEmpty() ? item.title : item.query);
+    });
     loadPlugins();
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
@@ -180,8 +191,10 @@ void MainWindow::setupTrayIcon()
 void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_providers, this, m_authManager);
+    connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
     dialog.exec();
 
+    m_recent->reloadPolicy();
     // We re-check clipboard monitoring if settings change
 }
 
@@ -244,8 +257,10 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
             emitClipboardNotification(text);
         }
 
-        performSearch(text);
+        m_recent->recordCapture(text);
+        performSearchInternal(text, true, true);
     } else {
+        m_recent->recordCapture(text);
         // Just prepopulate
         m_lastAutoSearchClipboardText.clear();
         // Passive capture updates the entry without switching tabs or focus.
@@ -332,7 +347,15 @@ void MainWindow::restoreProviderState(SearchProvider* provider)
 }
 void MainWindow::performSearch(const QString &query)
 {
+    performSearchInternal(query, false, true);
+}
+void MainWindow::performSearchInternal(const QString &query, bool clipboard, bool recordActivity)
+{
+    if (recordActivity)
+        m_recent->recordSearch(query, clipboard);
     SearchTab *tab = new SearchTab(query, this);
+    tab->setProperty("automaticClipboardQuery", clipboard);
+    connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
@@ -369,7 +392,7 @@ void MainWindow::loadSettings()
     for (int i = 0; i < size; ++i) {
         QString query = tabGroup.readEntry(QStringLiteral("Tab%1").arg(i), QString());
         if (!query.isEmpty()) {
-            performSearch(query);
+            performSearchInternal(query, false, false);
         }
     }
 
@@ -390,6 +413,10 @@ void MainWindow::saveSettings()
 
     int writeIndex = 0;
     for (int i = 1; i < m_tabWidget->count(); ++i) {
+        // Automatic clipboard queries are session-only. Otherwise the tab session
+        // would persist captured text even with recent-clipboard storage disabled.
+        if (m_tabWidget->widget(i)->property("automaticClipboardQuery").toBool())
+            continue;
         QString query = m_tabWidget->tabText(i);
         tabGroup.writeEntry(QStringLiteral("Tab%1").arg(writeIndex++), query);
     }

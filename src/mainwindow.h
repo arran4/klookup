@@ -38,6 +38,7 @@ private slots:
     void showSettingsDialog();
 
 private:
+    void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
     void loadPlugins();
     void loadSettings();
     void saveSettings();
@@ -47,6 +48,7 @@ private:
 
     QTabWidget *m_tabWidget;
     SearchDashboard *m_dashboard;
+    RecentActivity *m_recent = nullptr;
     // Plugin root objects are owned by their QPluginLoader instances.  Keep each
     // accepted loader alive for as long as its provider is used.
     QList<QPluginLoader *> m_providerLoaders;

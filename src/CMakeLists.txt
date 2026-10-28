@@ -2,6 +2,7 @@ add_library(klookup_core STATIC
     resultmetadata.cpp
     searchprovider.cpp
     searchdashboard.cpp
+    recentactivity.cpp
     mainwindow.cpp
     searchtab.cpp
     dbusadaptor.cpp

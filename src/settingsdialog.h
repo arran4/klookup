@@ -27,6 +27,9 @@ public:
     explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr);
     ~SettingsDialog();
 
+signals:
+    void settingsApplied();
+
 protected:
     virtual bool isWalletAvailable() const;
     virtual bool openWallet();
@@ -67,6 +70,9 @@ private:
     QCheckBox *m_minimizeToTrayCheck;
     QComboBox *m_captureMode;
     QComboBox *m_searchTrigger;
+    QCheckBox *m_showRecent;
+    QCheckBox *m_recordClipboardRecent;
+    QCheckBox *m_persistClipboardRecent;
     KWallet::Wallet *m_wallet = nullptr;
 };
 

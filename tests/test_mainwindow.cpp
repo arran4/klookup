@@ -3,6 +3,8 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QComboBox>
+#include <KActionCollection>
+#include "../src/globalshortcuts.h"
 #include "../src/resultactions.h"
 #include <QGuiApplication>
 #include <QTreeWidget>
@@ -568,6 +570,46 @@ private slots:
         QVERIFY(QMetaObject::invokeMethod(&window, "onClipboardChanged", Qt::DirectConnection));
         QCOMPARE(tabs->count(), count);
     }
+
+    void testGlobalShortcutCommands()
+    {
+        using namespace ClipboardPolicy;
+        MainWindow window;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        write(group, {Capture::Never, Trigger::Never});
+        auto *tabs = window.findChild<QTabWidget *>();
+        const int initial = tabs->count();
+        auto *show = window.actionCollection()->action(QStringLiteral("show_search"));
+        auto *clipboard = window.actionCollection()->action(QStringLiteral("search_clipboard"));
+        QVERIFY(show && clipboard);
+        QCOMPARE(show->property("componentName").toString(), QStringLiteral("org.kde.klookup"));
+        window.hide();
+        QGuiApplication::clipboard()->setText(QStringLiteral("https://example.org/explicit"));
+        clipboard->trigger();
+        QCOMPARE(tabs->count(), initial + 1);
+        QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("https://example.org/explicit"));
+        QVERIFY(window.isVisible());
+        show->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->currentIndex(), 0);
+        QCOMPARE(tabs->count(), initial + 1);
+        write(group, {Capture::Running, Trigger::GlobalShortcut});
+        QGuiApplication::clipboard()->setText(QStringLiteral("automatic shortcut query"));
+        show->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->count(), initial + 2);
+        show->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->count(), initial + 2);
+        write(group, {Capture::Running, Trigger::FocusGained});
+        window.hide();
+        QGuiApplication::clipboard()->setText(QStringLiteral("one explicit activation"));
+        clipboard->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->count(), initial + 3); // explicit activation cannot race focus policy
+        write(group, {Capture::Never, Trigger::Never});
+    }
+
 
     void testClipboardDeduplication()
     {

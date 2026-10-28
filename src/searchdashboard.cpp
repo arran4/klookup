@@ -61,3 +61,9 @@ void SearchDashboard::onSearchTriggered()
         emit searchRequested(query);
     }
 }
+
+void SearchDashboard::focusQuery()
+{
+    m_searchBar->selectAll();
+    m_searchBar->setFocus();
+}

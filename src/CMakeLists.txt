@@ -17,6 +17,7 @@ add_library(klookup_core STATIC
     oauthreplyhandler.cpp
     oauthcodeflow.cpp
     providerauthmanager.cpp
+    globalshortcuts.cpp
 )
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)
@@ -40,6 +41,7 @@ target_link_libraries(klookup_core PUBLIC
     Qt6::Widgets
     Qt6::Network
     Qt6::DBus
+    KF6::GlobalAccel
     KF6::CoreAddons
     KF6::ConfigCore
     KF6::ConfigGui
@@ -64,6 +66,7 @@ target_link_libraries(klookup
     Qt6::Widgets
     Qt6::Network
     Qt6::DBus
+    KF6::GlobalAccel
     KF6::CoreAddons
     KF6::ConfigCore
     KF6::ConfigGui

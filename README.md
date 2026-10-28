@@ -22,7 +22,7 @@ Data provided by MangaBaka is available under the terms required by MangaBaka an
 - CMake 3.16+
 - C++17 Compiler
 - Qt 6 (Core, Gui, Widgets, Network, DBus, Qml)
-- KDE Frameworks 6 (CoreAddons, Config, I18n, Runner, DBusAddons, WidgetsAddons, XmlGui, Wallet, Notifications)
+- KDE Frameworks 6 (CoreAddons, Config, GlobalAccel, I18n, Runner, DBusAddons, WidgetsAddons, XmlGui, Wallet, Notifications)
 
 ## Building
 

@@ -1,5 +1,8 @@
 #include "settingsdialog.h"
 #include "searchprovider.h"
+#include "clipboardpolicy.h"
+#include <QComboBox>
+#include <QFormLayout>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -47,15 +50,20 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     QVBoxLayout *generalLayout = new QVBoxLayout(generalWidget);
 
     m_minimizeToTrayCheck = new QCheckBox(QStringLiteral("Minimize to System Tray on Close"), this);
-    m_monitorClipboardCheck = new QCheckBox(QStringLiteral("Monitor Clipboard for Queries"), this);
-    m_autoSearchClipboardCheck = new QCheckBox(QStringLiteral("Automatically Search Clipboard Text"), this);
-    m_onlyFocusedClipboardCheck = new QCheckBox(QStringLiteral("Only Capture Clipboard When App is Focused"), this);
-
+    m_captureMode = new QComboBox(this);
+    m_captureMode->setObjectName(QStringLiteral("clipboardCaptureMode"));
+    m_captureMode->addItems({QStringLiteral("Never"), QStringLiteral("KLookup window is visible"), QStringLiteral("KLookup window has focus"), QStringLiteral("While KLookup is running (including background)")});
+    m_searchTrigger = new QComboBox(this);
+    m_searchTrigger->setObjectName(QStringLiteral("clipboardSearchTrigger"));
+    m_searchTrigger->addItems({QStringLiteral("Never"), QStringLiteral("When opened from tray"), QStringLiteral("When clipboard changes"), QStringLiteral("When window gains focus"), QStringLiteral("When global shortcut is used")});
     generalLayout->addWidget(m_minimizeToTrayCheck);
-    generalLayout->addWidget(new QLabel(QStringLiteral("<b>Clipboard Integration</b>"), this));
-    generalLayout->addWidget(m_monitorClipboardCheck);
-    generalLayout->addWidget(m_autoSearchClipboardCheck);
-    generalLayout->addWidget(m_onlyFocusedClipboardCheck);
+    auto *clipboardForm = new QFormLayout;
+    clipboardForm->addRow(QStringLiteral("Capture clipboard while:"), m_captureMode);
+    clipboardForm->addRow(QStringLiteral("Automatically search clipboard:"), m_searchTrigger);
+    generalLayout->addLayout(clipboardForm);
+    auto *hint = new QLabel(QStringLiteral("Capture permission is checked first. Capture alone quietly prepares the search field. Automatic searches never raise a window."), this);
+    hint->setWordWrap(true);
+    generalLayout->addWidget(hint);
     generalLayout->addStretch();
 
     addPage(generalWidget, QStringLiteral("General"));
@@ -64,16 +72,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
     m_minimizeToTrayCheck->setChecked(genGroup.readEntry(QStringLiteral("MinimizeToTray"), true));
-    m_monitorClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("MonitorClipboard"), false));
-    m_autoSearchClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("AutoSearchClipboard"), false));
-    m_onlyFocusedClipboardCheck->setChecked(genGroup.readEntry(QStringLiteral("ClipboardOnlyWhenFocused"), true));
-
-    connect(m_monitorClipboardCheck, &QCheckBox::toggled, this, [this](bool checked) {
-        m_autoSearchClipboardCheck->setEnabled(checked);
-        m_onlyFocusedClipboardCheck->setEnabled(checked);
-    });
-    m_autoSearchClipboardCheck->setEnabled(m_monitorClipboardCheck->isChecked());
-    m_onlyFocusedClipboardCheck->setEnabled(m_monitorClipboardCheck->isChecked());
+    const auto policy = ClipboardPolicy::read(genGroup);
+    m_captureMode->setCurrentIndex(int(policy.capture));
+    m_searchTrigger->setCurrentIndex(int(policy.trigger));
 
     connect(loginButton, &QPushButton::clicked, this, &SettingsDialog::showLoginDialog);
 
@@ -128,9 +129,7 @@ void SettingsDialog::saveSettings()
 
     KConfigGroup genGroup(config, QStringLiteral("General"));
     genGroup.writeEntry(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
-    genGroup.writeEntry(QStringLiteral("MonitorClipboard"), m_monitorClipboardCheck->isChecked());
-    genGroup.writeEntry(QStringLiteral("AutoSearchClipboard"), m_autoSearchClipboardCheck->isChecked());
-    genGroup.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), m_onlyFocusedClipboardCheck->isChecked());
+    ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
     config->sync();
 }
 

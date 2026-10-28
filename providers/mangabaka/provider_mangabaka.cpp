@@ -1,15 +1,28 @@
 #include "provider_mangabaka.h"
 #include "../manga_metadata.h"
 #include "providerrequest.h"
+#include <KConfigGroup>
+#include <KSharedConfig>
+#include <QCheckBox>
+#include <QGroupBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QUrl>
 #include <QUrlQuery>
+#include <QVBoxLayout>
 
-ProviderMangaBaka::ProviderMangaBaka(QObject *parent) : SearchProvider(parent), m_nam(new QNetworkAccessManager(this)), m_reply(nullptr) {}
+ProviderMangaBaka::ProviderMangaBaka(QObject *parent) : SearchProvider(parent), m_nam(new QNetworkAccessManager(this)), m_reply(nullptr)
+{
+    const KConfigGroup config(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Provider-mangabaka"));
+    const auto saved = config.readEntry(QStringLiteral("Formats"), QStringList());
+    for (const auto &type : supportedFormats())
+        if (saved.contains(type))
+            m_formats.append(type);
+}
 
 ProviderMangaBaka::~ProviderMangaBaka()
 {
@@ -65,9 +78,12 @@ SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
     res.description = obj.value(QStringLiteral("description")).toString();
 
     res.url = obj.value(QStringLiteral("canonical_url")).toString();
-    res.type = obj.value(QStringLiteral("type")).toString();
+    const QString upstreamType = obj.value(QStringLiteral("type")).toString();
+    res.type = formatLabel(upstreamType);
 
     QVariantMap additional;
+    if (!upstreamType.isEmpty())
+        additional[QStringLiteral("Upstream format")] = upstreamType;
     if (obj.contains(QStringLiteral("status")) && obj.value(QStringLiteral("status")).isString()) {
         additional[QStringLiteral("status")] = obj.value(QStringLiteral("status")).toString();
     }
@@ -93,6 +109,8 @@ void ProviderMangaBaka::requestPage(const QString &query, const QString &token, 
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("q"), query);
     q.addQueryItem(QStringLiteral("limit"), QStringLiteral("10"));
+    for (const auto &type : m_formats)
+        q.addQueryItem(QStringLiteral("type"), type);
     if (!token.isEmpty())
         q.addQueryItem(QStringLiteral("page"), token);
     url.setQuery(q);
@@ -152,7 +170,9 @@ void ProviderMangaBaka::requestDetails(const QString &resultId, const QString &t
 
 SearchProvider *ProviderMangaBaka::clone(QObject *parent) const
 {
-    return new ProviderMangaBaka(parent);
+    auto *provider = new ProviderMangaBaka(parent);
+    provider->m_formats = m_formats;
+    return provider;
 }
 
 ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
@@ -266,4 +286,55 @@ ResultMetadata ProviderMangaBaka::parseMetadata(const QJsonObject &obj) const
     if (hasOversizedList(obj) || hasOversizedList(obj.value(QStringLiteral("attributes")).toObject()))
         metadata.attribution.append(QStringLiteral("Additional metadata omitted: lists are limited to 512 entries."));
     return metadata;
+}
+
+QStringList ProviderMangaBaka::supportedFormats()
+{
+    return {QStringLiteral("manga"),  QStringLiteral("novel"), QStringLiteral("manhwa"),
+            QStringLiteral("manhua"), QStringLiteral("oel"),   QStringLiteral("other")};
+}
+QString ProviderMangaBaka::formatLabel(const QString &type)
+{
+    const QStringList labels = {QStringLiteral("Manga"),  QStringLiteral("Novel"), QStringLiteral("Manhwa"),
+                                QStringLiteral("Manhua"), QStringLiteral("OEL"),   QStringLiteral("Other")};
+    const int index = supportedFormats().indexOf(type);
+    return index < 0 ? type : labels.at(index);
+}
+QWidget *ProviderMangaBaka::createOptionsWidget(QWidget *parent) const
+{
+    auto *widget = new QGroupBox(QStringLiteral("MangaBaka formats"), parent);
+    auto *layout = new QVBoxLayout(widget);
+    auto *all = new QCheckBox(QStringLiteral("All formats"), widget);
+    all->setObjectName(QStringLiteral("allFormats"));
+    all->setChecked(m_formats.isEmpty());
+    layout->addWidget(all);
+    for (const auto &type : supportedFormats()) {
+        auto *check = new QCheckBox(formatLabel(type), widget);
+        check->setObjectName(QStringLiteral("format_") + type);
+        check->setChecked(m_formats.contains(type));
+        check->setEnabled(!all->isChecked());
+        connect(all, &QCheckBox::toggled, check, [check](bool checked) { check->setEnabled(!checked); });
+        layout->addWidget(check);
+    }
+    auto *hint =
+        new QLabel(QStringLiteral("Applies to new MangaBaka searches only. Selecting no specific formats also means All formats."), widget);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+    return widget;
+}
+void ProviderMangaBaka::saveOptions(QWidget *widget)
+{
+    auto *all = widget ? widget->findChild<QCheckBox *>(QStringLiteral("allFormats")) : nullptr;
+    if (!all)
+        return;
+    m_formats.clear();
+    if (!all->isChecked())
+        for (const auto &type : supportedFormats()) {
+            auto *check = widget->findChild<QCheckBox *>(QStringLiteral("format_") + type);
+            if (check && check->isChecked())
+                m_formats.append(type);
+        }
+    KConfigGroup config(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Provider-mangabaka"));
+    config.writeEntry(QStringLiteral("Formats"), m_formats);
+    config.sync();
 }

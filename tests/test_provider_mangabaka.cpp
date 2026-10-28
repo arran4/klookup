@@ -1,16 +1,24 @@
 #include "../providers/mangabaka/provider_mangabaka.h"
 #include "../src/searchtab.h"
+#include "../src/settingsdialog.h"
+#include <KConfigGroup>
+#include <KSharedConfig>
+#include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QListWidget>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPointer>
 #include <QPushButton>
+#include <QStandardPaths>
 #include <QUrlQuery>
 #include <QtTest>
 #include <functional>
+#include <memory>
 
 class DummyNetworkReplyMangaBaka : public QNetworkReply
 {
@@ -112,6 +120,13 @@ private slots:
     void testAbortObserverCanDeleteReply();
     void testFractionalIdentityIsRejected();
     void testOversizedTagListIsBounded();
+    void init()
+    {
+        QStandardPaths::setTestModeEnabled(true);
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("Provider-mangabaka"));
+    }
+    void testFormatSettings();
+    void testFormatLabelsAndUnknownTypes();
     void testPaginationAndLazyDetails();
     void testContinuationFailureAndCancellation();
     void testUntrustedContinuation();
@@ -216,7 +231,7 @@ void TestProviderMangaBaka::testSearchSuccess()
     QCOMPARE(results[0].title, QStringLiteral("Naruto English"));
     QCOMPARE(results[0].description, QStringLiteral("Ninja adventure."));
     QCOMPARE(results[0].url, QStringLiteral("https://mangabaka.org/manga/270/naruto"));
-    QCOMPARE(results[0].type, QStringLiteral("manga"));
+    QCOMPARE(results[0].type, QStringLiteral("Manga"));
     QCOMPARE(results[0].additionalData.value("status").toString(), QStringLiteral("completed"));
     QCOMPARE(results[0].additionalData.value("year").toInt(), 1999);
 
@@ -224,7 +239,7 @@ void TestProviderMangaBaka::testSearchSuccess()
     QCOMPARE(results[1].title, QStringLiteral("Missing English Title"));
     QCOMPARE(results[1].description, QStringLiteral(""));
     QCOMPARE(results[1].url, QStringLiteral("https://mangabaka.org/manga/271/no-desc"));
-    QCOMPARE(results[1].type, QStringLiteral("manga"));
+    QCOMPARE(results[1].type, QStringLiteral("Manga"));
     QVERIFY(!results[1].additionalData.contains(QStringLiteral("status")));
     QVERIFY(!results[1].additionalData.contains(QStringLiteral("year")));
 }
@@ -560,7 +575,7 @@ void TestProviderMangaBaka::testStructuredMetadata()
     QVERIFY(values.contains(QStringLiteral("Author Two")));
     QVERIFY(values.contains(QStringLiteral("異世界の物語")));
     QVERIFY(values.contains(QStringLiteral("defining")));
-    QCOMPARE(result.result.type, QStringLiteral("novel"));
+    QCOMPARE(result.result.type, QStringLiteral("Novel"));
     QVERIFY(result.result.description.contains(QStringLiteral("<script>")));
     for (const auto &url : links) {
         QVERIFY(url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"));
@@ -591,6 +606,72 @@ void TestProviderMangaBaka::testOversizedTagListIsBounded()
     for (const auto &section : metadata.sections)
         visit(section);
     QVERIFY(categories < 2000);
+}
+
+void TestProviderMangaBaka::testFormatSettings()
+{
+    TestableProviderMangaBaka provider;
+    auto *capability = qobject_cast<SearchProviderOptions *>(&provider);
+    QVERIFY(capability);
+    provider.requestPage(QStringLiteral("novel query"), {}, 1);
+    QVERIFY(!QUrlQuery(provider.mockNam->lastUrl).hasQueryItem(QStringLiteral("type")));
+    auto oldClone = std::unique_ptr<ProviderMangaBaka>(qobject_cast<ProviderMangaBaka *>(provider.clone()));
+    {
+        SettingsDialog cancelled({&provider});
+        cancelled.findChild<QCheckBox *>(QStringLiteral("allFormats"))->setChecked(false);
+        cancelled.findChild<QCheckBox *>(QStringLiteral("format_novel"))->setChecked(true);
+        cancelled.reject();
+    }
+    QVERIFY(provider.formats().isEmpty());
+    SettingsDialog dialog({&provider});
+    dialog.findChild<QListWidget *>()->setCurrentRow(0);
+    auto *all = dialog.findChild<QCheckBox *>(QStringLiteral("allFormats"));
+    QVERIFY(all->isChecked());
+    all->setChecked(false);
+    dialog.findChild<QCheckBox *>(QStringLiteral("format_novel"))->setChecked(true);
+    dialog.findChild<QCheckBox *>(QStringLiteral("format_manhwa"))->setChecked(true);
+    dialog.button(QDialogButtonBox::Apply)->click();
+    QCOMPARE(provider.formats(), QStringList({QStringLiteral("novel"), QStringLiteral("manhwa")}));
+    QVERIFY(oldClone->formats().isEmpty()); // existing tab remains unrestricted
+    auto newClone = std::unique_ptr<ProviderMangaBaka>(qobject_cast<ProviderMangaBaka *>(provider.clone()));
+    QCOMPARE(newClone->formats(), provider.formats());
+    ProviderMangaBaka restored;
+    QCOMPARE(restored.formats(), provider.formats());
+    provider.requestPage(QStringLiteral("novel query"), QStringLiteral("2"), 2);
+    auto query = QUrlQuery(provider.mockNam->lastUrl);
+    QCOMPARE(query.allQueryItemValues(QStringLiteral("type")), provider.formats());
+    QVERIFY(!query.hasQueryItem(QStringLiteral("type[]")));
+    QCOMPARE(query.queryItemValue(QStringLiteral("page")), QStringLiteral("2"));
+    all->setChecked(true);
+    dialog.button(QDialogButtonBox::Apply)->click();
+    QVERIFY(provider.formats().isEmpty());
+    provider.requestPage(QStringLiteral("query"), {}, 3);
+    QVERIFY(!QUrlQuery(provider.mockNam->lastUrl).hasQueryItem(QStringLiteral("type")));
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Provider-mangabaka"));
+    group.writeEntry(QStringLiteral("Formats"), QStringList{QStringLiteral("unknown-future")});
+    ProviderMangaBaka staleConfig;
+    QVERIFY(staleConfig.formats().isEmpty()); // unknown options cannot silently hide results
+}
+void TestProviderMangaBaka::testFormatLabelsAndUnknownTypes()
+{
+    TestableProviderMangaBaka provider;
+    QSignalSpy completed(&provider, &SearchProvider::searchCompleted);
+    auto formats = ProviderMangaBaka::supportedFormats();
+    formats.append(QStringLiteral("future_format"));
+    QJsonArray records;
+    for (int i = 0; i < formats.size(); ++i)
+        records.append(QJsonObject{{"id", i + 1}, {"title", formats.at(i)}, {"type", formats.at(i)}});
+    provider.mockNam->nextResponse = QJsonDocument(QJsonObject{{"data", records}}).toJson();
+    provider.search(QStringLiteral("formats"));
+    QTRY_COMPARE(completed.count(), 1);
+    const auto results = completed.first().at(1).value<QList<SearchResult>>();
+    QCOMPARE(results.size(), formats.size());
+    for (int i = 0; i < formats.size(); ++i) {
+        QCOMPARE(results.at(i).type, ProviderMangaBaka::formatLabel(formats.at(i)));
+        QCOMPARE(results.at(i).additionalData.value(QStringLiteral("Upstream format")).toString(), formats.at(i));
+    }
+    QCOMPARE(results.at(1).type, QStringLiteral("Novel"));
+    QCOMPARE(results.last().type, QStringLiteral("future_format"));
 }
 
 QTEST_MAIN(TestProviderMangaBaka)

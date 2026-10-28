@@ -5,6 +5,8 @@
 #include "clipboardpolicy.h"
 #include <QComboBox>
 #include <QFormLayout>
+#include "provideroptions.h"
+#include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QPushButton>
@@ -47,6 +49,20 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         item->setData(Qt::UserRole, QVariant::fromValue(provider));
     }
     providersLayout->addWidget(m_listWidget);
+    auto *options = new QStackedWidget(providersWidget);
+    options->addWidget(new QWidget(options)); // no options for unrelated providers
+    for (auto *provider : m_providers) {
+        if (auto *capability = qobject_cast<SearchProviderOptions *>(provider)) {
+            auto *widget = capability->createOptionsWidget(options);
+            if (widget) { m_providerOptions.insert(provider, widget); options->addWidget(widget); }
+        }
+    }
+    providersLayout->addWidget(options);
+    connect(m_listWidget, &QListWidget::currentRowChanged, options, [this, options](int row) {
+        auto *item = m_listWidget->item(row);
+        auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
+        options->setCurrentWidget(m_providerOptions.value(provider, options->widget(0)));
+    });
 
     m_authMode = new QLabel(this);
     m_authMode->setObjectName(QStringLiteral("providerAuthMode"));
@@ -239,6 +255,8 @@ void SettingsDialog::saveSettings()
         if (provider) {
             bool isEnabled = (item->checkState() == Qt::Checked);
             provider->setEnabled(isEnabled);
+            if (auto *capability = qobject_cast<SearchProviderOptions *>(provider); capability && m_providerOptions.contains(provider))
+                capability->saveOptions(m_providerOptions.value(provider));
             providersGroup.writeEntry(provider->id() + QStringLiteral("_Enabled"), isEnabled);
         }
     }

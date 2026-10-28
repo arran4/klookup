@@ -35,3 +35,7 @@ bundling replacement system artwork. No AppStream file currently exists.
 Automated verification checks installed paths/dimensions and embedded-icon
 rendering at small/HiDPI sizes. Final light/dark tray/taskbar appearance and
 Wayland desktop identity should also be inspected in a Plasma session.
+
+The generated Qt resource object targets explicitly enable position-independent
+code because the static core and its resources are linked into provider modules.
+This also supports address/undefined sanitizer builds without relocation errors.

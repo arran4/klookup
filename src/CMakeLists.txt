@@ -10,10 +10,16 @@ add_library(klookup_core STATIC
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)
 set_source_files_properties(../icons/256x256/apps/org.kde.klookup.png PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.png)
-qt_add_resources(klookup_core "klookup_icons" PREFIX "/icons" FILES
+qt_add_resources(klookup_core "klookup_icons" PREFIX "/icons" OUTPUT_TARGETS klookup_icon_resource_targets FILES
     ../icons/scalable/apps/org.kde.klookup.svg
     ../icons/256x256/apps/org.kde.klookup.png
 )
+
+# Qt puts static-library resources in separate object targets. They also reach
+# provider modules and must be PIC, including under address/undefined sanitizers.
+foreach(resource_target IN LISTS klookup_icon_resource_targets)
+    set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endforeach()
 
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

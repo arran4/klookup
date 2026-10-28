@@ -52,6 +52,7 @@ add_subdirectory(providers/omdb)
 add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangadex)
 add_subdirectory(providers/mangabaka)
+add_subdirectory(providers/spotify)
 add_subdirectory(runner)
 
 if(BUILD_TESTING)
@@ -73,6 +74,7 @@ set(KLOOKUP_PROVIDERS
     provider_myanimelist
     provider_mangadex
     provider_mangabaka
+    provider_spotify
 )
 
 foreach(provider ${KLOOKUP_PROVIDERS})
@@ -90,7 +92,7 @@ add_custom_target(klookup_with_plugins ALL
 )
 
 if(BUILD_TESTING)
-    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_provider_wikipedia)
+    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_provider_spotify test_provider_wikipedia)
     add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
 endif()
 

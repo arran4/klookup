@@ -1,11 +1,16 @@
 #include "searchtab.h"
 #include "providerauthsession.h"
+#include "resultactions.h"
 #include "searchcontinuation.h"
+#include "sourcelink.h"
 #include "sourceurl.h"
+#include <QContextMenuEvent>
 #include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
+#include <QShortcut>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -23,7 +28,8 @@ constexpr int ContentRole = Qt::UserRole + 5;
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
     : QWidget(parent), m_query(query), m_resultsTree(new QTreeWidget(this)), m_detailsView(new QTextBrowser(this)),
-      m_metadataView(new QTreeWidget(this)), m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
+      m_metadataView(new QTreeWidget(this)), m_sourceLink(new SourceLink(this)),
+      m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
 {
     auto *layout = new QHBoxLayout(this);
     auto *left = new QVBoxLayout;
@@ -31,6 +37,17 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     label->setTextFormat(Qt::PlainText);
     left->addWidget(label);
     m_resultsTree->setHeaderHidden(true);
+    m_resultsTree->installEventFilter(this);
+    m_resultsTree->viewport()->installEventFilter(this);
+    for (const auto &key : {QKeySequence(Qt::SHIFT | Qt::Key_F10), QKeySequence(Qt::Key_Menu)}) {
+        auto *shortcut = new QShortcut(key, m_resultsTree);
+        shortcut->setContext(Qt::WidgetWithChildrenShortcut);
+        connect(shortcut, &QShortcut::activated, this, [this] {
+            auto *item = m_resultsTree->currentItem();
+            if (item)
+                showResultMenu(item, m_resultsTree->viewport()->mapToGlobal(m_resultsTree->visualItemRect(item).center()));
+        });
+    }
     left->addWidget(m_resultsTree);
     auto *right = new QVBoxLayout;
     right->addWidget(m_detailsView);
@@ -45,6 +62,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         if (!url.isEmpty())
             QDesktopServices::openUrl(url);
     });
+    right->addWidget(m_sourceLink);
     right->addWidget(m_detailsButton);
     layout->addLayout(left, 1);
     layout->addLayout(right, 2);
@@ -386,9 +404,11 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
         m_detailsView->clear();
         m_metadataView->clear();
         m_metadataView->hide();
+        m_sourceLink->setResult({});
         return;
     }
     const auto res = item->data(0, Qt::UserRole).value<SearchResult>();
+    m_sourceLink->setResult(res);
     QString html = QStringLiteral("<h2>%1</h2>").arg(res.title.toHtmlEscaped());
     if (!res.type.isEmpty()) {
         html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
@@ -402,7 +422,8 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
     if (!res.url.isEmpty()) {
         const QUrl qurl = validatedSourceUrl(res.url);
         if (!qurl.isEmpty()) {
-            html += QStringLiteral("<p><a href=\"%1\">Open in Browser</a></p>").arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped());
+            html += QStringLiteral("<p>Source: <a href=\"%1\">%2</a></p>")
+                        .arg(QString::fromUtf8(qurl.toEncoded()).toHtmlEscaped(), qurl.toDisplayString().toHtmlEscaped());
         } else {
             html += QStringLiteral("<p>Invalid or unsupported URL: %1</p>").arg(res.url.toHtmlEscaped());
         }
@@ -481,4 +502,61 @@ void SearchTab::renderMetadata(const ResultMetadata &metadata)
     if (!metadata.attribution.isEmpty())
         append(nullptr, Metadata::text(QStringLiteral("Attribution"), metadata.attribution), 0);
     m_metadataView->setVisible(m_metadataView->topLevelItemCount() > 0);
+}
+
+QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
+{
+    if (!item || !item->data(0, Qt::UserRole).canConvert<SearchResult>())
+        return nullptr;
+    m_resultsTree->setCurrentItem(item);
+    onResultClicked(item, 0);
+    const SearchResult result = item->data(0, Qt::UserRole).value<SearchResult>();
+    const QString providerId = item->data(0, ProviderRole).toString();
+    const auto state = m_states.value(providerId);
+    auto *continuation = state.provider ? qobject_cast<SearchProviderContinuation *>(state.provider) : nullptr;
+    const bool canRefresh = continuation && continuation->supportsDetails() && !m_detailRequest && m_detailsButton->isEnabled();
+    auto *menu = new QMenu(this);
+    menu->setObjectName(QStringLiteral("resultContextMenu"));
+    auto *commands = new ResultActions(result, canRefresh, menu);
+    menu->addAction(commands->refresh);
+    menu->addSeparator();
+    menu->addAction(commands->copyUrl);
+    menu->addAction(commands->openUrl);
+    menu->addAction(commands->copyTitle);
+    connect(commands, &ResultActions::refreshRequested, this, [this, providerId, resultId = result.id] {
+        const auto state = m_states.value(providerId);
+        auto *target = state.items.value(resultId);
+        if (!target)
+            return;
+        m_resultsTree->setCurrentItem(target);
+        onResultClicked(target, 0);
+        loadDetails(true);
+    });
+    return menu;
+}
+
+void SearchTab::showResultMenu(QTreeWidgetItem *item, const QPoint &globalPosition)
+{
+    auto *menu = createResultMenu(item);
+    if (!menu)
+        return;
+    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    menu->popup(globalPosition);
+}
+
+bool SearchTab::eventFilter(QObject *watched, QEvent *event)
+{
+    if ((watched == m_resultsTree || watched == m_resultsTree->viewport()) && event->type() == QEvent::ContextMenu) {
+        auto *context = static_cast<QContextMenuEvent *>(event);
+        auto *item = context->reason() == QContextMenuEvent::Keyboard
+                         ? m_resultsTree->currentItem()
+                         : m_resultsTree->itemAt(m_resultsTree->viewport()->mapFromGlobal(context->globalPos()));
+        const QPoint position = context->reason() == QContextMenuEvent::Keyboard && item
+                                    ? m_resultsTree->viewport()->mapToGlobal(m_resultsTree->visualItemRect(item).center())
+                                    : context->globalPos();
+        showResultMenu(item, position);
+        event->accept();
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
 }

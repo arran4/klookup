@@ -1,20 +1,22 @@
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
-#include "dbusadaptor.h"
 #include "searchtab.h"
+#include "resultactions.h"
+#include <QMimeData>
+#include "dbusadaptor.h"
 #include "settingsdialog.h"
 #include "providerauthmanager.h"
 #include "sourceurl.h"
-#include <KActionCollection>
-#include <QCoreApplication>
-#include <QDBusConnection>
 #include <QDesktopServices>
-#include <QDir>
-#include <QLoggingCategory>
-#include <QPluginLoader>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QDBusConnection>
+#include <QPluginLoader>
+#include <QDir>
+#include <QCoreApplication>
+#include <KActionCollection>
+#include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KStandardAction>
@@ -209,7 +211,9 @@ void MainWindow::handleClipboardEvent(ClipboardPolicy::Event event)
     KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
     const auto policy = ClipboardPolicy::read(group);
     if (!policy.permitsCapture(isVisible() && !isMinimized(), isActiveWindow())) return;
-    const auto input = ClipboardInput::classifyMimeData(QGuiApplication::clipboard()->mimeData());
+    const auto *mime = QGuiApplication::clipboard()->mimeData();
+    if (!mime || mime->hasFormat(QString::fromLatin1(SourceUrlClipboardMime))) return;
+    const auto input = ClipboardInput::classifyMimeData(mime);
     if (!input.permitsAutomaticCapture()) return;
     const bool changed = input.text != m_lastCapturedClipboardText;
     m_lastCapturedClipboardText = input.text;

@@ -3,6 +3,7 @@
 #include <QClipboard>
 #include <QMimeData>
 #include <QComboBox>
+#include "../src/resultactions.h"
 #include <QGuiApplication>
 #include <QTreeWidget>
 #include <KSharedConfig>
@@ -557,6 +558,17 @@ private slots:
         write(group, {Capture::Never, Trigger::Never});
     }
 
+    void testEmptyClipboardChange()
+    {
+        MainWindow window;
+        auto *tabs = window.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        const int count = tabs->count();
+        QGuiApplication::clipboard()->clear();
+        QVERIFY(QMetaObject::invokeMethod(&window, "onClipboardChanged", Qt::DirectConnection));
+        QCOMPARE(tabs->count(), count);
+    }
+
     void testClipboardDeduplication()
     {
         MainWindow mainWindow;
@@ -874,6 +886,25 @@ private slots:
         QCOMPARE(dialog.m_lastWarningTitle, QStringLiteral("Storage Unavailable"));
         QVERIFY(dialog.m_lastWarningText.contains("Credential storage is not available on this platform."));
         QVERIFY(dialog.m_lastWarningText.contains("Credentials will only be used for this session."));
+    }
+
+    void testOwnCopyUrlDoesNotBounceIntoLegacyCapture()
+    {
+        MainWindow window;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        group.writeEntry(QStringLiteral("MonitorClipboard"), true);
+        group.writeEntry(QStringLiteral("AutoSearchClipboard"), true);
+        group.writeEntry(QStringLiteral("ClipboardOnlyWhenFocused"), false);
+        auto *tabs = window.findChild<QTabWidget *>();
+        const int initial = tabs->count();
+        SearchResult result;
+        result.url = QStringLiteral("https://example.org/source");
+        ResultActions commands(result, false);
+        commands.copyUrl->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->count(), initial);
+        QCOMPARE(QGuiApplication::clipboard()->text(), result.url);
+        group.writeEntry(QStringLiteral("MonitorClipboard"), false);
     }
 
     void testProviderDisplayNameInResults()

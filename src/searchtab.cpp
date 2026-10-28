@@ -1,12 +1,14 @@
 #include "searchtab.h"
 #include "searchcontinuation.h"
 #include "sourceurl.h"
+#include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <functional>
 #include <utility>
 
 namespace
@@ -14,11 +16,12 @@ namespace
 constexpr int ProviderRole = Qt::UserRole + 1;
 constexpr int DetailLoadedRole = Qt::UserRole + 2;
 constexpr int DetailTokenRole = Qt::UserRole + 3;
+constexpr int MetadataRole = Qt::UserRole + 4;
 } // namespace
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
     : QWidget(parent), m_query(query), m_resultsTree(new QTreeWidget(this)), m_detailsView(new QTextBrowser(this)),
-      m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
+      m_metadataView(new QTreeWidget(this)), m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
 {
     auto *layout = new QHBoxLayout(this);
     auto *left = new QVBoxLayout;
@@ -29,6 +32,17 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     left->addWidget(m_resultsTree);
     auto *right = new QVBoxLayout;
     right->addWidget(m_detailsView);
+    right->addWidget(m_metadataView, 1);
+    m_metadataView->setObjectName(QStringLiteral("structuredMetadata"));
+    m_metadataView->setHeaderLabels({QStringLiteral("Field / category"), QStringLiteral("Value")});
+    m_metadataView->setWordWrap(true);
+    m_metadataView->setColumnWidth(0, 200);
+    m_metadataView->hide();
+    connect(m_metadataView, &QTreeWidget::itemActivated, this, [](QTreeWidgetItem *item, int) {
+        const auto url = Metadata::safeWebUrl(item->data(1, Qt::UserRole).toString());
+        if (!url.isEmpty())
+            QDesktopServices::openUrl(url);
+    });
     right->addWidget(m_detailsButton);
     layout->addLayout(left, 1);
     layout->addLayout(right, 2);
@@ -37,7 +51,13 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     connect(m_detailsButton, &QPushButton::clicked, this, [this] { loadDetails(); });
     connect(m_resultsTree, &QTreeWidget::itemClicked, this, &SearchTab::onResultClicked);
     connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) { onResultClicked(item, 0); });
-    m_detailsView->setOpenExternalLinks(true);
+    m_detailsView->setOpenExternalLinks(false);
+    m_detailsView->setOpenLinks(false);
+    connect(m_detailsView, &QTextBrowser::anchorClicked, this, [](const QUrl &url) {
+        const auto safe = Metadata::safeWebUrl(url.toString(QUrl::FullyEncoded));
+        if (!safe.isEmpty())
+            QDesktopServices::openUrl(safe);
+    });
 }
 
 SearchTab::~SearchTab()
@@ -115,13 +135,16 @@ void SearchTab::startProvider(SearchProvider *provider)
             pageStatus(state, QStringLiteral("Error: %1 — Retry").arg(error), true);
         } else if (requestId == m_detailRequest && m_detailRequest && id == m_detailProvider) {
             m_detailRequest = 0;
-            m_detailRetryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
+            state.detailRetryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
             if (m_selected && m_selected->data(0, ProviderRole).toString() == id &&
                 m_selected->data(0, Qt::UserRole).value<SearchResult>().id == m_detailId) {
                 renderResult(m_selected);
                 m_detailsView->append(QStringLiteral("<p>%1</p>").arg((QStringLiteral("Details error: ") + error).toHtmlEscaped()));
             }
             updateDetailsControl();
+            if (m_selected && (m_selected->data(0, ProviderRole).toString() != id ||
+                               m_selected->data(0, Qt::UserRole).value<SearchResult>().id != m_detailId))
+                loadInitialDetails();
         }
     });
     connect(provider, &SearchProvider::detailsCompleted, this, [this, id](quint64 requestId, const SearchDetails &details) {
@@ -132,6 +155,7 @@ void SearchTab::startProvider(SearchProvider *provider)
         auto *item = state.items.value(m_detailId);
         if (item && details.result.id == m_detailId) {
             item->setData(0, Qt::UserRole, QVariant::fromValue(details.result));
+            item->setData(0, MetadataRole, QVariant::fromValue(details.metadata));
             item->setData(0, DetailLoadedRole, true);
             const QString previousToken = item->data(0, DetailTokenRole).toString();
             item->setData(0, DetailTokenRole, details.nextToken == previousToken ? QString() : details.nextToken);
@@ -140,6 +164,8 @@ void SearchTab::startProvider(SearchProvider *provider)
                 renderResult(item);
         }
         updateDetailsControl();
+        if (item != m_selected)
+            loadInitialDetails();
     });
     loadMore(id);
 }
@@ -246,18 +272,25 @@ void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
     m_selected = item && item->data(0, Qt::UserRole).isValid() ? item : nullptr;
     renderResult(m_selected);
     updateDetailsControl();
+    loadInitialDetails();
+}
+
+void SearchTab::loadInitialDetails()
+{
+    if (m_selected && !m_selected->data(0, DetailLoadedRole).toBool())
+        loadDetails();
 }
 
 void SearchTab::loadDetails(bool refresh)
 {
-    if (!m_selected || m_detailRequest || m_detailRetryAt > QDateTime::currentDateTimeUtc())
+    if (!m_selected || m_detailRequest)
         return;
     if (!refresh && m_selected->data(0, DetailLoadedRole).toBool() && m_selected->data(0, DetailTokenRole).toString().isEmpty())
         return;
     const auto result = m_selected->data(0, Qt::UserRole).value<SearchResult>();
     const QString id = m_selected->data(0, ProviderRole).toString();
     auto it = m_states.find(id);
-    if (it == m_states.end() || !it->provider)
+    if (it == m_states.end() || !it->provider || it->detailRetryAt > QDateTime::currentDateTimeUtc())
         return;
     auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
     if (!continuation || !continuation->supportsDetails())
@@ -273,21 +306,23 @@ void SearchTab::loadDetails(bool refresh)
 void SearchTab::updateDetailsControl()
 {
     bool supported = false;
+    QDateTime retryAt;
     if (m_selected && m_selected->data(0, Qt::UserRole).isValid()) {
         auto it = m_states.find(m_selected->data(0, ProviderRole).toString());
         if (it != m_states.end() && it->provider) {
             auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
+            retryAt = it->detailRetryAt;
             supported = continuation && continuation->supportsDetails() &&
                         (!m_selected->data(0, DetailLoadedRole).toBool() || !m_selected->data(0, DetailTokenRole).toString().isEmpty());
         }
     }
     m_detailsButton->setVisible(supported);
-    m_detailsButton->setEnabled(!m_detailRequest && m_detailRetryAt <= QDateTime::currentDateTimeUtc());
+    m_detailsButton->setEnabled(!m_detailRequest && retryAt <= QDateTime::currentDateTimeUtc());
     m_detailsButton->setText(m_detailRequest ? QStringLiteral("Loading details…")
                                              : (m_selected && !m_selected->data(0, DetailTokenRole).toString().isEmpty()
                                                     ? QStringLiteral("Load more content")
                                                     : QStringLiteral("Load full details")));
-    const qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(m_detailRetryAt);
+    const qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(retryAt);
     if (delay > 0)
         QTimer::singleShot(int(delay), this, &SearchTab::updateDetailsControl);
 }
@@ -296,6 +331,8 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
 {
     if (!item || !item->data(0, Qt::UserRole).isValid()) {
         m_detailsView->clear();
+        m_metadataView->clear();
+        m_metadataView->hide();
         return;
     }
     const auto res = item->data(0, Qt::UserRole).value<SearchResult>();
@@ -319,9 +356,74 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
     if (!res.additionalData.isEmpty()) {
         html += QStringLiteral("<h3>Additional Info</h3><ul>");
         for (auto it = res.additionalData.cbegin(), end = res.additionalData.cend(); it != end; ++it) {
-            html += QStringLiteral("<li><b>%1:</b> %2</li>").arg(it.key().toHtmlEscaped(), it.value().toString().toHtmlEscaped());
+            const auto node = Metadata::fromVariant(it.key(), it.value());
+            std::function<QString(const MetadataNode &)> renderNode = [&renderNode](const MetadataNode &entry) {
+                QStringList values;
+                for (const auto &value : entry.values)
+                    values.append(value.text.toHtmlEscaped());
+                QString text = QStringLiteral("<li><b>%1:</b> %2").arg(entry.label.toHtmlEscaped(), values.join(QStringLiteral(", ")));
+                if (!entry.children.isEmpty()) {
+                    text += QStringLiteral("<ul>");
+                    for (const auto &child : entry.children)
+                        text += renderNode(child);
+                    text += QStringLiteral("</ul>");
+                }
+                return text + QStringLiteral("</li>");
+            };
+            html += renderNode(node);
         }
         html += QStringLiteral("</ul>");
     }
     m_detailsView->setHtml(html);
+    renderMetadata(item->data(0, MetadataRole).value<ResultMetadata>());
+}
+
+void SearchTab::renderMetadata(const ResultMetadata &metadata)
+{
+    m_metadataView->clear();
+    int remaining = 4000;
+    std::function<void(QTreeWidgetItem *, const MetadataNode &, int)> append = [&](QTreeWidgetItem *parent, const MetadataNode &node,
+                                                                                   int depth) {
+        if (remaining-- <= 0 || depth > 16)
+            return;
+        if (node.values.isEmpty() && node.children.isEmpty())
+            return;
+        auto *item = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(m_metadataView);
+        item->setText(0, node.label);
+        QStringList plainValues;
+        int valueCount = 0;
+        for (const auto &value : node.values) {
+            if (++valueCount > 200 || remaining-- <= 0)
+                break;
+            const auto url = Metadata::safeWebUrl(value.url.toString(QUrl::FullyEncoded));
+            if (value.kind == MetadataValue::Kind::Text || url.isEmpty())
+                plainValues.append(value.text);
+            else {
+                auto *link = new QTreeWidgetItem(item);
+                link->setText(0,
+                              value.kind == MetadataValue::Kind::Image ? QStringLiteral("Image reference") : QStringLiteral("Source link"));
+                link->setText(1, value.text.isEmpty() ? url.toDisplayString() : value.text);
+                link->setToolTip(1, url.toDisplayString());
+                link->setData(1, Qt::UserRole, url.toString(QUrl::FullyEncoded));
+                link->setForeground(1, palette().link());
+                link->setIcon(0, QIcon::fromTheme(QStringLiteral("internet-web-browser")));
+            }
+        }
+        item->setText(1, plainValues.join(QStringLiteral("; ")));
+        item->setToolTip(1, QStringLiteral("<p>%1</p>").arg(plainValues.join(QLatin1Char('\n')).toHtmlEscaped()));
+        for (const auto &child : node.children)
+            append(item, child, depth + 1);
+        item->setExpanded(depth < 2);
+    };
+    for (const auto &section : metadata.sections)
+        append(nullptr, section, 0);
+    if (remaining <= 0) {
+        auto *notice = new QTreeWidgetItem(m_metadataView);
+        notice->setText(0, QStringLiteral("Additional metadata omitted at display limit"));
+    }
+    // Attribution stays visible even for an unusually large upstream record.
+    remaining = qMax(remaining, 201);
+    if (!metadata.attribution.isEmpty())
+        append(nullptr, Metadata::text(QStringLiteral("Attribution"), metadata.attribution), 0);
+    m_metadataView->setVisible(m_metadataView->topLevelItemCount() > 0);
 }

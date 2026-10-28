@@ -1,4 +1,5 @@
 add_library(klookup_core STATIC
+    resultmetadata.cpp
     searchprovider.cpp
     searchdashboard.cpp
     mainwindow.cpp

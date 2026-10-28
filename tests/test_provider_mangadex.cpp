@@ -5,6 +5,7 @@
 #include <QPointer>
 #include <QUrlQuery>
 #include <QtTest>
+#include <functional>
 
 class DummyNetworkReplyMangaDex : public QNetworkReply
 {
@@ -105,6 +106,7 @@ class TestProviderMangaDex : public QObject
 private slots:
     void testHostilePaginationIsTerminal();
     void testOffsetContinuationAndDetails();
+    void testStructuredMetadata();
     void testIdentity();
     void testRequestConstructionAndEncoding();
     void testSearchSuccess();
@@ -370,6 +372,51 @@ void TestProviderMangaDex::testHostilePaginationIsTerminal()
         provider.requestPage(QStringLiteral("query"), {}, 1);
         QTRY_VERIFY(!pages.isEmpty());
         QVERIFY(pages.takeFirst().at(1).value<SearchPage>().nextToken.isEmpty());
+    }
+}
+
+void TestProviderMangaDex::testStructuredMetadata()
+{
+    TestableProviderMangaDex provider;
+    QFile fixture(QStringLiteral(FIXTURE_DIR "/mangadex-full.json"));
+    QVERIFY(fixture.open(QIODevice::ReadOnly));
+    provider.mockNam->nextResponse = fixture.readAll();
+    QSignalSpy details(&provider, &SearchProvider::detailsCompleted);
+    const QString id = QStringLiteral("example-id");
+    provider.requestDetails(id, {}, 42);
+    QTRY_COMPARE(details.count(), 1);
+    const auto result = details.first().at(1).value<SearchDetails>();
+    QCOMPARE(result.result.id, id);
+    QVERIFY(!result.metadata.sections.isEmpty());
+    QStringList labels;
+    QStringList values;
+    QList<QUrl> links;
+    std::function<void(const MetadataNode &)> collect = [&](const MetadataNode &node) {
+        labels.append(node.label);
+        for (const auto &value : node.values) {
+            values.append(value.text);
+            if (!value.url.isEmpty())
+                links.append(value.url);
+        }
+        for (const auto &child : node.children)
+            collect(child);
+    };
+    for (const auto &section : result.metadata.sections)
+        collect(section);
+    QVERIFY(!result.metadata.attribution.isEmpty());
+    QVERIFY(labels.contains(QStringLiteral("genre")));
+    QVERIFY(labels.contains(QStringLiteral("theme")));
+    QVERIFY(labels.contains(QStringLiteral("future-group")));
+    QVERIFY(values.contains(QStringLiteral("Another name")));
+    QVERIFY(values.contains(QStringLiteral("Named Author")));
+    QVERIFY(values.contains(QStringLiteral("Named Artist")));
+    QVERIFY(links.contains(QUrl(QStringLiteral("https://anilist.co/manga/12345"))));
+    const auto includes = QUrlQuery(provider.mockNam->lastUrl).allQueryItemValues(QStringLiteral("includes[]"));
+    QVERIFY(includes.contains(QStringLiteral("author")));
+    QVERIFY(includes.contains(QStringLiteral("artist")));
+    for (const auto &url : links) {
+        QVERIFY(url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"));
+        QVERIFY(url.userInfo().isEmpty());
     }
 }
 

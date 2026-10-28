@@ -10,6 +10,7 @@
 #include <QPushButton>
 #include <QUrlQuery>
 #include <QtTest>
+#include <functional>
 
 class DummyNetworkReplyMangaBaka : public QNetworkReply
 {
@@ -110,9 +111,11 @@ class TestProviderMangaBaka : public QObject
 private slots:
     void testAbortObserverCanDeleteReply();
     void testFractionalIdentityIsRejected();
+    void testOversizedTagListIsBounded();
     void testPaginationAndLazyDetails();
     void testContinuationFailureAndCancellation();
     void testUntrustedContinuation();
+    void testStructuredMetadata();
     void testIdentity();
     void testRequestConstructionAndEncoding();
     void testSearchSuccess();
@@ -419,14 +422,14 @@ void TestProviderMangaBaka::testPaginationAndLazyDetails()
         QTRY_COMPARE(group->childCount(), page * 10 + 1);
     }
     QCOMPARE(provider->mockNam->replies.size(), 3);
-    tree->setCurrentItem(group->child(0));
     const QString synopsis(1000, QLatin1Char('x'));
     provider->mockNam->nextResponse =
         QJsonDocument(QJsonObject{{QStringLiteral("data"), QJsonObject{{QStringLiteral("id"), 1},
                                                                        {QStringLiteral("title"), QStringLiteral("Full title")},
                                                                        {QStringLiteral("description"), synopsis}}}})
             .toJson();
-    tab.loadDetails();
+    tree->setCurrentItem(group->child(0)); // selection lazily requests the record
+    tab.loadDetails();                     // coalesces with the selection request
     QCOMPARE(provider->mockNam->lastUrl.path(), QStringLiteral("/v2/series/1"));
     QCOMPARE(QUrlQuery(provider->mockNam->lastUrl).queryItemValue(QStringLiteral("schema")), QStringLiteral("full"));
     QTRY_VERIFY(tab.findChild<QTextBrowser *>()->toPlainText().contains(synopsis));
@@ -505,6 +508,89 @@ void TestProviderMangaBaka::testFractionalIdentityIsRejected()
     const auto results = completed.first().at(1).value<SearchPage>().results;
     QCOMPARE(results.size(), 1);
     QCOMPARE(results.first().id, QStringLiteral("2"));
+}
+
+void TestProviderMangaBaka::testStructuredMetadata()
+{
+    TestableProviderMangaBaka provider;
+    QFile fixture(QStringLiteral(FIXTURE_DIR "/mangabaka-full.json"));
+    QVERIFY(fixture.open(QIODevice::ReadOnly));
+    provider.mockNam->nextResponse = fixture.readAll();
+    QSignalSpy details(&provider, &SearchProvider::detailsCompleted);
+    const QString id = QStringLiteral("84926");
+    provider.requestDetails(id, {}, 42);
+    QTRY_COMPARE(details.count(), 1);
+    const auto result = details.first().at(1).value<SearchDetails>();
+    QCOMPARE(result.result.id, id);
+    QVERIFY(!result.metadata.sections.isEmpty());
+    QStringList labels;
+    QStringList values;
+    QList<QUrl> links;
+    std::function<void(const MetadataNode &)> collect = [&](const MetadataNode &node) {
+        labels.append(node.label);
+        for (const auto &value : node.values) {
+            values.append(value.text);
+            if (!value.url.isEmpty())
+                links.append(value.url);
+        }
+        for (const auto &child : node.children)
+            collect(child);
+    };
+    for (const auto &section : result.metadata.sections)
+        collect(section);
+    QVERIFY(!result.metadata.attribution.isEmpty());
+    const QList<MetadataNode> *children = &result.metadata.sections;
+    for (const auto &label : {QStringLiteral("Tags"), QStringLiteral("Taxonomy"), QStringLiteral("Activities"), QStringLiteral("Leisure"),
+                              QStringLiteral("Travel")}) {
+        const MetadataNode *found = nullptr;
+        for (const auto &node : *children)
+            if (node.label == label) {
+                found = &node;
+                break;
+            }
+        QVERIFY2(found, qPrintable(label));
+        children = &found->children;
+    }
+    QVERIFY(labels.contains(QStringLiteral("Activities")));
+    QVERIFY(labels.contains(QStringLiteral("Leisure")));
+    QVERIFY(labels.contains(QStringLiteral("Travel")));
+    QVERIFY(labels.contains(QStringLiteral("Missing path child")));
+    QVERIFY(labels.contains(QStringLiteral("Orphan tag")));
+    QVERIFY(labels.contains(QStringLiteral("Cycle A")));
+    QVERIFY(values.contains(QStringLiteral("Author Two")));
+    QVERIFY(values.contains(QStringLiteral("異世界の物語")));
+    QVERIFY(values.contains(QStringLiteral("defining")));
+    QCOMPARE(result.result.type, QStringLiteral("novel"));
+    QVERIFY(result.result.description.contains(QStringLiteral("<script>")));
+    for (const auto &url : links) {
+        QVERIFY(url.scheme() == QStringLiteral("https") || url.scheme() == QStringLiteral("http"));
+        QVERIFY(url.userInfo().isEmpty());
+    }
+}
+
+void TestProviderMangaBaka::testOversizedTagListIsBounded()
+{
+    TestableProviderMangaBaka provider;
+    QJsonArray tags;
+    for (int i = 0; i < 1000; ++i)
+        tags.append(QJsonObject{{"id", i + 1}, {"name_path", QStringLiteral("Category > Tag %1").arg(i)}});
+    provider.mockNam->nextResponse =
+        QJsonDocument(QJsonObject{{"data", QJsonObject{{"id", 1}, {"title", "Bounded tags"}, {"tags", tags}}}}).toJson();
+    QSignalSpy completed(&provider, &SearchProvider::detailsCompleted);
+    provider.requestDetails(QStringLiteral("1"), {}, 1);
+    QTRY_COMPARE(completed.count(), 1);
+    const auto metadata = completed.first().at(1).value<SearchDetails>().metadata;
+    QVERIFY(metadata.attribution.join(QLatin1Char(' ')).contains(QStringLiteral("512")));
+    int categories = 0;
+    std::function<void(const MetadataNode &)> visit = [&](const MetadataNode &node) {
+        ++categories;
+        QVERIFY(node.label != QStringLiteral("Tag 999"));
+        for (const auto &child : node.children)
+            visit(child);
+    };
+    for (const auto &section : metadata.sections)
+        visit(section);
+    QVERIFY(categories < 2000);
 }
 
 QTEST_MAIN(TestProviderMangaBaka)

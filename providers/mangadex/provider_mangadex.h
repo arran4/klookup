@@ -29,6 +29,7 @@ public:
 
 private:
     SearchResult parseResult(const QJsonObject &obj) const;
+    ResultMetadata parseMetadata(const QJsonObject &obj) const;
 
 protected:
     QNetworkAccessManager *m_nam;

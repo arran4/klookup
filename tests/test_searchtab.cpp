@@ -1,10 +1,10 @@
-#include <QTest>
-#include <QTreeWidget>
-#include <QTextDocument>
-#include <QTextBlock>
-#include <QTextFragment>
-#include "../src/searchtab.h"
 #include "../src/searchprovider.h"
+#include "../src/searchtab.h"
+#include <QTest>
+#include <QTextBlock>
+#include <QTextDocument>
+#include <QTextFragment>
+#include <QTreeWidget>
 
 class SearchTabTest : public QObject
 {
@@ -24,7 +24,7 @@ private slots:
         QString providerName = "Friendly Display Name";
         tab.addResults(providerName, results);
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
         QVERIFY(treeWidget);
 
         QCOMPARE(treeWidget->topLevelItemCount(), 1);
@@ -41,7 +41,7 @@ private slots:
         QString providerName = "Another Friendly Name";
         tab.setError(providerName, "Connection failed");
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
         QVERIFY(treeWidget);
 
         QCOMPARE(treeWidget->topLevelItemCount(), 1);
@@ -61,11 +61,11 @@ private slots:
         results.append(res);
         tab.addResults("Provider", results);
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
         QTreeWidgetItem *providerItem = treeWidget->topLevelItem(0);
         QTreeWidgetItem *childItem = providerItem->child(0);
 
-        QTextBrowser *detailsView = tab.findChild<QTextBrowser*>();
+        QTextBrowser *detailsView = tab.findChild<QTextBrowser *>();
         QVERIFY(detailsView);
 
         emit treeWidget->itemClicked(childItem, 0);
@@ -85,11 +85,11 @@ private slots:
         results.append(res);
         tab.addResults("Provider", results);
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
         QTreeWidgetItem *providerItem = treeWidget->topLevelItem(0);
         QTreeWidgetItem *childItem = providerItem->child(0);
 
-        QTextBrowser *detailsView = tab.findChild<QTextBrowser*>();
+        QTextBrowser *detailsView = tab.findChild<QTextBrowser *>();
         QVERIFY(detailsView);
 
         // Emit itemClicked signal manually or just call the slot if possible.
@@ -119,13 +119,13 @@ private slots:
             {"https://example.com\" onclick=\"alert(1)", false}, // Invalid URL due to spaces and quotes when parsed by QUrl
             {"", false},
             {"malformed::/url", false},
-            {"https://", false}, // Valid scheme, but no host
-            {"http:", false}, // Valid scheme, no host
+            {"https://", false},          // Valid scheme, but no host
+            {"http:", false},             // Valid scheme, no host
             {"https:///path/only", false} // Valid scheme, no host
         };
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
-        QTextBrowser *detailsView = tab.findChild<QTextBrowser*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
+        QTextBrowser *detailsView = tab.findChild<QTextBrowser *>();
 
         for (const TestCase &tc : cases) {
             QList<SearchResult> results;
@@ -176,11 +176,11 @@ private slots:
         results.append(res);
         tab.addResults("Provider", results);
 
-        QTreeWidget *treeWidget = tab.findChild<QTreeWidget*>();
+        QTreeWidget *treeWidget = tab.findChild<QTreeWidget *>();
         QTreeWidgetItem *providerItem = treeWidget->topLevelItem(0);
         QTreeWidgetItem *childItem = providerItem->child(0);
 
-        QTextBrowser *detailsView = tab.findChild<QTextBrowser*>();
+        QTextBrowser *detailsView = tab.findChild<QTextBrowser *>();
 
         emit treeWidget->itemClicked(childItem, 0);
 
@@ -189,6 +189,27 @@ private slots:
         QVERIFY(html.contains("&lt;b&gt;Key&lt;/b&gt;"));
         QVERIFY(!html.contains("<script>"));
         QVERIFY(html.contains("&lt;script&gt;"));
+    }
+    void nestedLegacyMetadataFallback()
+    {
+        SearchTab tab(QStringLiteral("query"));
+        SearchResult result;
+        result.title = QStringLiteral("Legacy result");
+        result.additionalData.insert(QStringLiteral("Creators"), QStringList{QStringLiteral("One"), QStringLiteral("Two")});
+        result.additionalData.insert(
+            QStringLiteral("Tags"),
+            QVariantMap{{QStringLiteral("Theme"), QVariantList{QStringLiteral("Journey"), QStringLiteral("<b>plain</b>")}}});
+        tab.addResults(QStringLiteral("Provider"), {result});
+        auto *tree = tab.findChild<QTreeWidget *>();
+        emit tree->itemClicked(tree->topLevelItem(0)->child(0), 0);
+        const auto plain = tab.findChild<QTextBrowser *>()->toPlainText();
+        QVERIFY(plain.contains(QStringLiteral("One")));
+        QVERIFY(plain.contains(QStringLiteral("Two")));
+        QVERIFY(plain.contains(QStringLiteral("Theme")));
+        QVERIFY(plain.contains(QStringLiteral("Journey")));
+        QVERIFY(plain.contains(QStringLiteral("<b>plain</b>")));
+        QVERIFY(Metadata::safeWebUrl(QStringLiteral("https://user:secret@example.org/")).isEmpty());
+        QVERIFY(Metadata::safeWebUrl(QStringLiteral("file:///etc/passwd")).isEmpty());
     }
 };
 

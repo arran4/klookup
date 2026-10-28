@@ -174,6 +174,10 @@ private slots:
                           QStringLiteral("chapter two")});
         auto *view = tab.findChild<QTextBrowser *>();
         QVERIFY(!view->toPlainText().contains(QStringLiteral("Full first description")));
+        QCOMPARE(provider->details.last().query, QStringLiteral("2"));
+        emit provider->detailsCompleted(
+            provider->details.last().id,
+            SearchDetails{ContinuationMock::result(QStringLiteral("2"), QStringLiteral("Full second description")), {}});
         tree->setCurrentItem(group->child(0));
         QVERIFY(view->toPlainText().contains(QStringLiteral("Full first description")));
         auto *button = tab.findChild<QPushButton *>(QStringLiteral("loadDetails"));
@@ -183,7 +187,7 @@ private slots:
         emit provider->requestFailed(provider->details.last().id, QStringLiteral("Detail timeout"));
         QVERIFY(view->toPlainText().contains(QStringLiteral("Detail timeout")));
         tab.loadDetails();
-        QCOMPARE(provider->details.size(), 3);
+        QCOMPARE(provider->details.size(), 4);
         emit provider->detailsCompleted(
             provider->details.last().id,
             SearchDetails{ContinuationMock::result(QStringLiteral("1"), QStringLiteral("Complete content")), {}});
@@ -211,6 +215,64 @@ private slots:
         empty->finish({});
         QCOMPARE(tree->topLevelItem(1)->child(0)->text(0), QStringLiteral("No results"));
     }
+    void nestedMetadataHasTotalBudget()
+    {
+        QVariantList leaves;
+        for (int i = 0; i < 200; ++i)
+            leaves.append(QStringLiteral("value"));
+        QVariantMap branches;
+        for (int i = 0; i < 200; ++i)
+            branches.insert(QString::number(i), leaves);
+        const auto node = Metadata::fromVariant(QStringLiteral("Large metadata"), branches);
+        int count = 0;
+        std::function<void(const MetadataNode &)> visit = [&](const MetadataNode &entry) {
+            count += 1 + entry.values.size();
+            for (const auto &child : entry.children)
+                visit(child);
+        };
+        visit(node);
+        QVERIFY(count < 4100);
+        QVERIFY(!node.children.isEmpty());
+        QVERIFY(node.children.last().label.contains(QStringLiteral("limit")));
+    }
+    void typedMetadataIsCachedAndSafelyRendered()
+    {
+        SearchTab tab(QStringLiteral("query"));
+        auto *provider = new ContinuationMock(QStringLiteral("alpha"));
+        tab.startProvider(provider);
+        provider->finish({QStringLiteral("1")});
+        auto *tree = tab.findChild<QTreeWidget *>();
+        tree->setCurrentItem(tree->topLevelItem(0)->child(0));
+        QCOMPARE(provider->details.size(), 1); // selected result only
+        ResultMetadata metadata;
+        MetadataNode category{QStringLiteral("Activities"), {}, {}};
+        category.children.append(
+            Metadata::text(QStringLiteral("Leisure"), {QStringLiteral("Travel"), QStringLiteral("<script>untrusted</script>")}));
+        MetadataNode sources{QStringLiteral("Sources"), {}, {}};
+        sources.values = {
+            MetadataValue{QStringLiteral("Safe source"), QUrl(QStringLiteral("https://example.org/source")), MetadataValue::Kind::Link},
+            MetadataValue{QStringLiteral("Untrusted source"), QUrl(QStringLiteral("javascript:alert(1)")), MetadataValue::Kind::Link}};
+        metadata.sections = {category, sources};
+        metadata.attribution = {QStringLiteral("Provider credit")};
+        emit provider->detailsCompleted(provider->details.last().id,
+                                        SearchDetails{ContinuationMock::result(QStringLiteral("1")), {}, metadata});
+        auto *view = tab.findChild<QTreeWidget *>(QStringLiteral("structuredMetadata"));
+        QVERIFY(view);
+        QCOMPARE(view->topLevelItemCount(), 3);
+        QCOMPARE(view->topLevelItem(0)->text(0), QStringLiteral("Activities"));
+        QVERIFY(view->topLevelItem(0)->child(0)->text(1).contains(QStringLiteral("<script>untrusted</script>")));
+        QVERIFY(!view->topLevelItem(0)->child(0)->toolTip(1).contains(QStringLiteral("<script>")));
+        QVERIFY(view->topLevelItem(0)->child(0)->toolTip(1).contains(QStringLiteral("&lt;script&gt;")));
+        QCOMPARE(view->topLevelItem(1)->childCount(), 1); // unsafe URL becomes text, never a link
+        QCOMPARE(view->topLevelItem(1)->child(0)->data(1, Qt::UserRole).toString(), QStringLiteral("https://example.org/source"));
+        QCOMPARE(view->topLevelItem(2)->text(1), QStringLiteral("Provider credit"));
+        tree->setCurrentItem(tree->topLevelItem(0));
+        QVERIFY(view->isHidden());
+        tree->setCurrentItem(tree->topLevelItem(0)->child(0));
+        QCOMPARE(provider->details.size(), 1); // cache reuse
+        QCOMPARE(view->topLevelItemCount(), 3);
+    }
+
     void legacyAndTabDestruction()
     {
         auto *tab = new SearchTab(QStringLiteral("query"));

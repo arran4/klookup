@@ -101,3 +101,15 @@ persistence and redaction of adversarial error descriptions.
 Actual KWallet dialogs/storage, provider-registered app setup and system-browser
 return behavior require a signed-in Plasma desktop and an appropriate provider
 client ID. No live accounts or credentials are needed by the automated suite.
+
+## Correctness review hardening
+
+Wallet restore validates token controls/lengths and expiry field types before
+credentials reach providers, including legacy manual keys. A corrupt expiry field
+cannot silently turn a saved expiring token into a permanent session. Token
+responses require the supported Bearer token_type (RFC 6749 section 5.1).
+Coalesced refresh waiters recheck the generation between consumer callbacks, so
+one consumer disconnecting/reconnecting cannot authorize subsequent lookups with
+stale success. Short-lived tokens lacking refresh credentials remain usable until
+their actual expiry. Deterministic regressions exercise each case. Real encrypted
+KWallet unlock/write/remove dialogs still require desktop verification.

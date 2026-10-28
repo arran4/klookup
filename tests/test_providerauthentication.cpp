@@ -374,7 +374,9 @@ private slots:
         QCOMPARE(posted.queryItemValue(QStringLiteral("code"), QUrl::FullyDecoded), QStringLiteral("dummy+code&part"));
         QCOMPARE(posted.queryItemValue(QStringLiteral("client_id"), QUrl::FullyDecoded), client);
         reply->deleteLater();
-        const QList<QByteArray> malformed = {QByteArray(R"({"access_token":"bad token","token_type":"Bearer","expires_in":3600})"),
+        const QList<QByteArray> malformed = {QByteArray(R"({"access_token":"dummy-access","expires_in":3600})"),
+                                             QByteArray(R"({"access_token":"dummy-access","token_type":null,"expires_in":3600})"),
+                                             QByteArray(R"({"access_token":"bad token","token_type":"Bearer","expires_in":3600})"),
                                              QByteArray(R"({"access_token":"dummy-access","token_type":"Bearer","expires_in":true})"),
                                              QByteArray(R"({"access_token":"dummy-access","token_type":"Bearer","expires_in":3.5})"),
                                              QByteArray(R"({"access_token":"dummy-access","token_type":"WrongType","expires_in":3600})"),
@@ -566,6 +568,82 @@ private slots:
         insecure.connectOAuth(QStringLiteral("client"), false);
         QCOMPARE(insecure.state(), ProviderAuthSession::State::Error);
         QVERIFY(insecure.browserUrls.isEmpty());
+    }
+
+    void walletRestorationRejectsMalformedSecrets()
+    {
+        MemoryCredentials store;
+        TestAuthSession session(QStringLiteral("wallet-validation"), descriptor(), &store);
+        session.responses.append(token());
+        session.connectOAuth(QStringLiteral("client"), true);
+        QNetworkAccessManager browser;
+        auto *reply =
+            browser.get(QNetworkRequest(callback(session, QUrlQuery(session.browserUrls.last()).queryItemValue(QStringLiteral("state")))));
+        QTRY_COMPARE(session.state(), ProviderAuthSession::State::Connected);
+        reply->deleteLater();
+        const auto original = QJsonDocument::fromJson(store.saved.first().toUtf8()).object();
+        for (const auto &field : {QStringLiteral("accessToken"), QStringLiteral("refreshToken"), QStringLiteral("expiresAt")}) {
+            auto saved = original;
+            saved.insert(field,
+                         field == QStringLiteral("expiresAt") ? QJsonValue(42) : QJsonValue(QStringLiteral("dummy-invalid\r\nheader")));
+            store.saved[store.saved.firstKey()] = QString::fromUtf8(QJsonDocument(saved).toJson());
+            session.restore(QStringLiteral("client"));
+            QCOMPARE(session.state(), ProviderAuthSession::State::Error);
+            QVERIFY(session.accessToken().isEmpty());
+        }
+        const AuthenticationDescriptor manual{AuthenticationMode::ManualToken, {}};
+        ProviderAuthSession legacy(QStringLiteral("legacy-malformed"), manual, &store);
+        store.saved[QStringLiteral("legacy-malformed")] = QStringLiteral("dummy-invalid\nkey");
+        legacy.restore({});
+        QCOMPARE(legacy.state(), ProviderAuthSession::State::Error);
+        QVERIFY(legacy.accessToken().isEmpty());
+    }
+    void reentrantWaitersCannotUseDisconnectedCredentials()
+    {
+        MemoryCredentials store;
+        TestAuthSession session(QStringLiteral("waiters"), descriptor(), &store);
+        session.responses.append(token());
+        session.connectOAuth(QStringLiteral("client"), true);
+        QNetworkAccessManager browser;
+        auto *reply =
+            browser.get(QNetworkRequest(callback(session, QUrlQuery(session.browserUrls.last()).queryItemValue(QStringLiteral("state")))));
+        QTRY_COMPARE(session.state(), ProviderAuthSession::State::Connected);
+        reply->deleteLater();
+        expire(store);
+        session.restore(QStringLiteral("client"));
+        session.responses.append(token());
+        int calls = 0;
+        session.ensureReady(this, [&](bool ok, const QString &) {
+            QVERIFY(ok);
+            ++calls;
+            session.disconnectProvider();
+        });
+        session.ensureReady(this, [&](bool ok, const QString &) {
+            QVERIFY(!ok);
+            ++calls;
+        });
+        QTRY_COMPARE(calls, 2);
+        QVERIFY(session.accessToken().isEmpty());
+        QVERIFY(store.saved.isEmpty());
+    }
+    void shortLivedTokenWithoutRefreshIsUsableUntilExpiry()
+    {
+        MemoryCredentials store;
+        TestAuthSession session(QStringLiteral("short-lived"), descriptor(), &store);
+        auto response = QJsonDocument::fromJson(token()).object();
+        response.remove(QStringLiteral("refresh_token"));
+        response.insert(QStringLiteral("expires_in"), 20);
+        session.responses.append(QJsonDocument(response).toJson());
+        session.connectOAuth(QStringLiteral("client"), false);
+        QNetworkAccessManager browser;
+        auto *reply =
+            browser.get(QNetworkRequest(callback(session, QUrlQuery(session.browserUrls.last()).queryItemValue(QStringLiteral("state")))));
+        QTRY_COMPARE(session.state(), ProviderAuthSession::State::Connected);
+        bool ready = false;
+        session.ensureReady(this, [&](bool ok, const QString &) { ready = ok; });
+        QVERIFY(ready);
+        QCOMPARE(session.requests.size(), 1);
+        reply->deleteLater();
     }
     void configurationContainsNoCredentials()
     {

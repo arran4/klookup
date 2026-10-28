@@ -192,9 +192,16 @@ void ProviderAuthSession::finishWaiters(bool ok)
 {
     const auto waiting = std::exchange(m_waiters, {});
     const QString message = ok ? QString() : statusText();
-    for (const auto &entry : waiting)
-        if (entry.context)
-            entry.callback(ok, message);
+    const quint64 generation = m_generation;
+    QPointer<ProviderAuthSession> guard(this);
+    for (const auto &entry : waiting) {
+        if (!entry.context)
+            continue;
+        // A consumer may disconnect, reconnect or destroy this session while
+        // handling its callback. Remaining lookups must not use stale success.
+        const bool unchanged = guard && guard->m_generation == generation;
+        entry.callback(ok && unchanged, unchanged ? message : QStringLiteral("Authentication changed; retry this lookup"));
+    }
 }
 void ProviderAuthSession::fail(const QString &message)
 {
@@ -292,7 +299,9 @@ void ProviderAuthSession::startFlow(bool refreshing)
                                    access.toString().size() > 65536 || containsControls(access.toString(), true);
         const bool invalidRefresh = refresh.isValid() && (refresh.metaType().id() != QMetaType::QString ||
                                                           refresh.toString().size() > 65536 || containsControls(refresh.toString()));
-        if (invalidAccess || invalidRefresh || (!type.isEmpty() && type.compare(QStringLiteral("Bearer"), Qt::CaseInsensitive) != 0) ||
+        if (invalidAccess || invalidRefresh ||
+            (tokens.value(QStringLiteral("token_type")).metaType().id() != QMetaType::QString ||
+             type.compare(QStringLiteral("Bearer"), Qt::CaseInsensitive) != 0) ||
             !lifetimeOk) {
             fail(QStringLiteral("Provider returned an invalid token response"));
         }
@@ -480,7 +489,8 @@ void ProviderAuthSession::acceptRestored(const CredentialStoreResult &result, qu
         const auto doc = QJsonDocument::fromJson(result.value.toUtf8());
         const auto saved = doc.object();
         if (!doc.isObject() || saved.value(QStringLiteral("binding")).toString().toLatin1() != fingerprint() ||
-            !saved.value(QStringLiteral("accessToken")).isString() || !saved.value(QStringLiteral("refreshToken")).isString()) {
+            !saved.value(QStringLiteral("accessToken")).isString() || !saved.value(QStringLiteral("refreshToken")).isString() ||
+            !saved.value(QStringLiteral("expiresAt")).isString()) {
             fail(QStringLiteral("Saved credentials do not match this provider/client configuration; reconnect"));
             return;
         }
@@ -493,6 +503,11 @@ void ProviderAuthSession::acceptRestored(const CredentialStoreResult &result, qu
             fail(QStringLiteral("Saved credentials are malformed; reconnect"));
             return;
         }
+    }
+    if (access.size() > 65536 || refresh.size() > 65536 || containsControls(access, mode() == AuthenticationMode::OAuth2Pkce) ||
+        containsControls(refresh)) {
+        fail(QStringLiteral("Saved credentials are malformed; reconnect"));
+        return;
     }
     m_accessToken = access;
     m_refreshToken = refresh;
@@ -552,7 +567,7 @@ void ProviderAuthSession::disconnectProvider()
 void ProviderAuthSession::ensureReady(QObject *context, std::function<void(bool, const QString &)> callback)
 {
     const bool refreshDue = m_expiresAt.isValid() && m_expiresAt <= QDateTime::currentDateTimeUtc().addSecs(30);
-    if (m_descriptor.mode != AuthenticationMode::OAuth2Pkce || (hasUsableToken() && !refreshDue)) {
+    if (m_descriptor.mode != AuthenticationMode::OAuth2Pkce || (hasUsableToken() && (!refreshDue || m_refreshToken.isEmpty()))) {
         callback(true, {});
         return;
     }

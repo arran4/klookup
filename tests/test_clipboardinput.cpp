@@ -69,6 +69,21 @@ private slots:
         else
             QVERIFY(result.text.isEmpty()); // rejected input cannot reach capture/history
     }
+    void deliberateClipboardSearchIsSeparate()
+    {
+        QMimeData mime;
+        mime.setText(QStringLiteral("https://example.org/explicit"));
+        QVERIFY(!ClipboardInput::classifyMimeData(&mime).permitsAutomaticCapture());
+        QCOMPARE(ClipboardInput::explicitQuery(&mime), QStringLiteral("https://example.org/explicit"));
+        mime.setText(QStringLiteral("/an/intentional/path/query"));
+        QCOMPARE(ClipboardInput::explicitQuery(&mime), QStringLiteral("/an/intentional/path/query"));
+        mime.setText(QString(ClipboardInput::MaximumLength + 1, QLatin1Char('x')));
+        QVERIFY(ClipboardInput::explicitQuery(&mime).isEmpty());
+        mime.clear();
+        mime.setHtml(QStringLiteral("<p>HTML only</p>"));
+        QVERIFY(ClipboardInput::explicitQuery(&mime).isEmpty());
+    }
+
     void mimeData()
     {
         QMimeData mime;

@@ -1,6 +1,10 @@
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
+#include "globalshortcuts.h"
+#include <KShortcutsDialog>
+#include <QMessageBox>
+#include <QTimer>
 #include "searchtab.h"
 #include "resultactions.h"
 #include <QMimeData>
@@ -163,6 +167,21 @@ MainWindow::~MainWindow()
 void MainWindow::setupActions()
 {
     KStandardAction::preferences(this, &MainWindow::showSettingsDialog, actionCollection());
+    KStandardAction::keyBindings(this, &MainWindow::configureShortcuts, actionCollection());
+    auto *show = actionCollection()->addAction(QStringLiteral("show_search"));
+    show->setText(QStringLiteral("Show/focus KLookup search"));
+    show->setIcon(QIcon::fromTheme(QStringLiteral("edit-find")));
+    auto *clipboard = actionCollection()->addAction(QStringLiteral("search_clipboard"));
+    clipboard->setText(QStringLiteral("Search clipboard now"));
+    clipboard->setIcon(QIcon::fromTheme(QStringLiteral("edit-paste")));
+    clipboard->setToolTip(QStringLiteral("Explicitly look up current plain clipboard text, including URLs"));
+    for (auto *action : {show, clipboard}) {
+        action->setProperty("componentName", QStringLiteral("org.kde.klookup"));
+        action->setProperty("componentDisplayName", QStringLiteral("KLookup"));
+    }
+    connect(show, &QAction::triggered, this, &MainWindow::showSearchViaShortcut);
+    connect(clipboard, &QAction::triggered, this, &MainWindow::searchClipboardNow);
+    m_globalShortcuts = new GlobalShortcuts({show, clipboard}, this);
     KStandardAction::quit(qApp, &QCoreApplication::quit, actionCollection());
 }
 
@@ -173,11 +192,10 @@ void MainWindow::setupTrayIcon()
     QAction *restoreAction = trayMenu->addAction(QIcon::fromTheme(QStringLiteral("window-restore")), QStringLiteral("Restore"));
     connect(restoreAction, &QAction::triggered, this, &MainWindow::restoreFromTray);
 
+    trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::KeyBindings)));
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Preferences)));
-    // Removed locally to use KF6
     trayMenu->addSeparator();
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Quit)));
-    // Removed locally to use KF6
 
     m_trayIcon->setContextMenu(trayMenu);
     m_trayIcon->show();
@@ -188,6 +206,50 @@ void MainWindow::setupTrayIcon()
             else restoreFromTray();
         }
     });
+}
+
+void MainWindow::configureShortcuts()
+{
+    m_globalShortcuts->refresh();
+    if (m_globalShortcuts->status() == GlobalShortcuts::Status::Unavailable) {
+        QMessageBox::information(this, QStringLiteral("Keyboard Shortcuts"),
+            QStringLiteral("KDE global shortcuts are unavailable in this session. KLookup can still be opened from its launcher or tray."));
+        return;
+    }
+    KShortcutsDialog dialog(KShortcutsEditor::GlobalAction, KShortcutsEditor::LetterShortcutsDisallowed, this);
+    dialog.addCollection(actionCollection(), QStringLiteral("KLookup"));
+    dialog.configure(true);
+}
+
+void MainWindow::showSearch()
+{
+    m_tabWidget->setCurrentIndex(0);
+    showNormal();
+    raise();
+    activateWindow();
+    m_dashboard->focusQuery();
+}
+
+void MainWindow::showSearchViaShortcut()
+{
+    showSearch();
+    QTimer::singleShot(0, this, &MainWindow::notifyClipboardShortcutUsed);
+}
+
+void MainWindow::searchClipboardNow()
+{
+    const QString query = ClipboardInput::explicitQuery(QGuiApplication::clipboard()->mimeData());
+    // Reserve this text before activation so focus-trigger policy cannot add a
+    // duplicate automatic tab for the same explicit invocation.
+    if (!query.isEmpty()) {
+        m_lastAutoSearchClipboardText = query;
+        m_lastCapturedClipboardText = query;
+    }
+    showNormal();
+    raise();
+    activateWindow();
+    if (!query.isEmpty()) performSearch(query);
+    else showSearch();
 }
 
 void MainWindow::showSettingsDialog()

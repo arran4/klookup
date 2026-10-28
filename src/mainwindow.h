@@ -11,6 +11,8 @@
 class QSystemTrayIcon;
 class QPluginLoader;
 class ProviderAuthManager;
+class GlobalShortcuts;
+class RecentActivity;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -24,6 +26,9 @@ public slots:
     void performSearch(const QString &query);
     void processClipboardText(const QString &text, bool autoSearch);
 
+    void showSearch();
+    void showSearchViaShortcut();
+    void searchClipboardNow();
     void notifyClipboardShortcutUsed();
     void restoreFromTray();
 
@@ -36,6 +41,7 @@ protected:
 private slots:
     void onClipboardChanged();
     void showSettingsDialog();
+    void configureShortcuts();
 
 private:
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
@@ -60,6 +66,7 @@ private:
     bool m_hadFocus = false;
     bool m_settingsSaved = false;
     ProviderAuthManager *m_authManager;
+    GlobalShortcuts *m_globalShortcuts = nullptr;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

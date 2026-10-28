@@ -157,3 +157,9 @@ void SearchDashboard::refreshRecent()
     m_clearRecent->setEnabled(!empty);
     findChild<QPushButton *>(QStringLiteral("openRecentItem"))->setEnabled(!empty);
 }
+
+void SearchDashboard::focusQuery()
+{
+    m_searchBar->selectAll();
+    m_searchBar->setFocus();
+}

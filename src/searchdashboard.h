@@ -2,10 +2,11 @@
 #define SEARCHDASHBOARD_H
 
 #include "recentactivity.h"
-#include <QCompleter>
-#include <QLineEdit>
 #include <QPointer>
 #include <QWidget>
+#include <QLineEdit>
+#include <QCompleter>
+
 class QListWidget;
 class QLabel;
 class QPushButton;
@@ -18,6 +19,7 @@ public:
     explicit SearchDashboard(QWidget *parent = nullptr);
     ~SearchDashboard();
 
+    void focusQuery();
     void loadHistory(const QStringList &history);
     QStringList saveHistory() const;
     void setRecentActivity(RecentActivity *activity);

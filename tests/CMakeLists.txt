@@ -102,6 +102,10 @@ add_executable(test_provider_spotify test_provider_spotify.cpp ../providers/spot
 target_link_libraries(test_provider_spotify Qt6::Test klookup_core KF6::ConfigCore Qt6::Core Qt6::Gui Qt6::Network)
 add_test(NAME test_provider_spotify COMMAND test_provider_spotify)
 
+add_executable(test_recentactivity test_recentactivity.cpp)
+target_link_libraries(test_recentactivity Qt6::Test klookup_core)
+add_test(NAME test_recentactivity COMMAND test_recentactivity)
+
 add_executable(test_globalshortcuts test_globalshortcuts.cpp)
 target_link_libraries(test_globalshortcuts Qt6::Test klookup_core)
 add_test(NAME test_globalshortcuts COMMAND test_globalshortcuts)

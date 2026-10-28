@@ -23,8 +23,11 @@ public:
     ~SearchTab() override;
     QMenu *createResultMenu(QTreeWidgetItem *item);
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
-    void addResults(const QString &providerName, const QList<SearchResult> &results);
+    void addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId = {});
     void setError(const QString &providerName, const QString &errorMsg);
+
+signals:
+    void resultViewed(const QString &providerId, const SearchResult &result);
 
 public slots:
     void loadMore(const QString &providerId);

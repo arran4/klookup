@@ -86,6 +86,10 @@ add_executable(test_providerauthentication test_providerauthentication.cpp)
 target_link_libraries(test_providerauthentication Qt6::Test klookup_core)
 add_test(NAME test_providerauthentication COMMAND test_providerauthentication)
 
+add_executable(test_provider_wikipedia test_provider_wikipedia.cpp ../providers/wikipedia/provider_wikipedia.cpp)
+target_link_libraries(test_provider_wikipedia Qt6::Test klookup_core)
+add_test(NAME test_provider_wikipedia COMMAND test_provider_wikipedia)
+
 add_executable(test_provider_spotify test_provider_spotify.cpp ../providers/spotify/provider_spotify.cpp)
 target_link_libraries(test_provider_spotify Qt6::Test klookup_core KF6::ConfigCore Qt6::Core Qt6::Gui Qt6::Network)
 add_test(NAME test_provider_spotify COMMAND test_provider_spotify)

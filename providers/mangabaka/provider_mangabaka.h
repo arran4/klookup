@@ -1,16 +1,17 @@
 #ifndef PROVIDER_MANGABAKA_H
 #define PROVIDER_MANGABAKA_H
 
+#include "provideroptions.h"
 #include "searchcontinuation.h"
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QPointer>
 
-class ProviderMangaBaka : public SearchProvider, public SearchProviderContinuation
+class ProviderMangaBaka : public SearchProvider, public SearchProviderContinuation, public SearchProviderOptions
 {
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.kde.klookup.SearchProvider")
-    Q_INTERFACES(SearchProvider SearchProviderContinuation)
+    Q_INTERFACES(SearchProvider SearchProviderContinuation SearchProviderOptions)
 public:
     explicit ProviderMangaBaka(QObject *parent = nullptr);
     virtual ~ProviderMangaBaka();
@@ -26,8 +27,17 @@ public:
     void requestDetails(const QString &resultId, const QString &token, quint64 requestId) override;
     void cancelRequests() override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
+    QWidget *createOptionsWidget(QWidget *parent) const override;
+    void saveOptions(QWidget *widget) override;
+    QStringList formats() const
+    {
+        return m_formats;
+    }
+    static QStringList supportedFormats();
+    static QString formatLabel(const QString &type);
 
 private:
+    QStringList m_formats;
     SearchResult parseResult(const QJsonObject &obj) const;
     ResultMetadata parseMetadata(const QJsonObject &obj) const;
 

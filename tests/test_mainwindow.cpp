@@ -558,6 +558,17 @@ private slots:
         write(group, {Capture::Never, Trigger::Never});
     }
 
+    void testEmptyClipboardChange()
+    {
+        MainWindow window;
+        auto *tabs = window.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        const int count = tabs->count();
+        QGuiApplication::clipboard()->clear();
+        QVERIFY(QMetaObject::invokeMethod(&window, "onClipboardChanged", Qt::DirectConnection));
+        QCOMPARE(tabs->count(), count);
+    }
+
     void testClipboardDeduplication()
     {
         MainWindow mainWindow;

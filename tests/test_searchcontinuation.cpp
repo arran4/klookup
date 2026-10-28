@@ -284,11 +284,19 @@ private slots:
         other->finish({QStringLiteral("other")});
         auto *tree = tab.findChild<QTreeWidget *>();
         auto *target = tree->topLevelItem(0)->child(1);
+        tree->setCurrentItem(target);
+        // Structured metadata can request initial details on selection. Finish
+        // that request before exercising an explicit refresh of the same row.
+        const auto initialDetails = provider->details.size();
+        if (initialDetails) {
+            QCOMPARE(provider->details.last().query, QStringLiteral("2"));
+            emit provider->detailsCompleted(provider->details.last().id, SearchDetails{ContinuationMock::result(QStringLiteral("2")), {}});
+        }
         auto *menu = tab.createResultMenu(target);
         auto *refresh = menu->findChild<QAction *>(QStringLiteral("refresh_details"));
         QVERIFY(refresh->isEnabled());
         refresh->trigger();
-        QCOMPARE(provider->details.size(), 1);
+        QCOMPARE(provider->details.size(), initialDetails + 1);
         QCOMPARE(provider->details.last().query, QStringLiteral("2"));
         QCOMPARE(provider->pages.size(), 1);
         QCOMPARE(other->pages.size(), 1);
@@ -300,7 +308,7 @@ private slots:
         auto *retry = tab.createResultMenu(target);
         QVERIFY(retry->findChild<QAction *>(QStringLiteral("refresh_details"))->isEnabled());
         retry->findChild<QAction *>(QStringLiteral("refresh_details"))->trigger();
-        QCOMPARE(provider->details.size(), 2);
+        QCOMPARE(provider->details.size(), initialDetails + 2);
         emit provider->detailsCompleted(
             provider->details.last().id,
             SearchDetails{ContinuationMock::result(QStringLiteral("2"), QStringLiteral("Refreshed content")), {}});

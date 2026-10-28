@@ -85,3 +85,7 @@ endforeach()
 add_executable(test_providerauthentication test_providerauthentication.cpp)
 target_link_libraries(test_providerauthentication Qt6::Test klookup_core)
 add_test(NAME test_providerauthentication COMMAND test_providerauthentication)
+
+add_executable(test_provider_wikipedia test_provider_wikipedia.cpp ../providers/wikipedia/provider_wikipedia.cpp)
+target_link_libraries(test_provider_wikipedia Qt6::Test klookup_core)
+add_test(NAME test_provider_wikipedia COMMAND test_provider_wikipedia)

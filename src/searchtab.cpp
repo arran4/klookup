@@ -18,6 +18,7 @@ constexpr int ProviderRole = Qt::UserRole + 1;
 constexpr int DetailLoadedRole = Qt::UserRole + 2;
 constexpr int DetailTokenRole = Qt::UserRole + 3;
 constexpr int MetadataRole = Qt::UserRole + 4;
+constexpr int ContentRole = Qt::UserRole + 5;
 } // namespace
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
@@ -110,6 +111,11 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
         if (!state.nextToken.isEmpty())
             state.seenTokens.insert(state.nextToken);
         appendResults(state.group, page.results, &state);
+        for (const auto &result : page.results) {
+            if (auto *item = state.items.value(result.id);
+                item && !item->data(0, DetailLoadedRole).toBool() && page.content.contains(result.id))
+                item->setData(0, ContentRole, QVariant::fromValue(page.content.value(result.id)));
+        }
         pageStatus(state,
                    state.nextToken.isEmpty() ? (state.items.isEmpty() ? QStringLiteral("No results") : QStringLiteral("No more results"))
                                              : QStringLiteral("Load more results"),
@@ -165,6 +171,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
         if (item && details.result.id == m_detailId) {
             item->setData(0, Qt::UserRole, QVariant::fromValue(details.result));
             item->setData(0, MetadataRole, QVariant::fromValue(details.metadata));
+            item->setData(0, ContentRole, QVariant::fromValue(details.content));
             item->setData(0, DetailLoadedRole, true);
             const QString previousToken = item->data(0, DetailTokenRole).toString();
             item->setData(0, DetailTokenRole, details.nextToken == previousToken ? QString() : details.nextToken);
@@ -386,9 +393,11 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
     if (!res.type.isEmpty()) {
         html += QStringLiteral("<p><b>Type:</b> %1</p>").arg(res.type.toHtmlEscaped());
     }
-    if (!res.description.isEmpty()) {
+    const auto content = item->data(0, ContentRole).value<ResultContent>();
+    if (!content.description.isEmpty())
+        html += Content::render(content).html;
+    else if (!res.description.isEmpty())
         html += QStringLiteral("<p>%1</p>").arg(res.description.toHtmlEscaped());
-    }
 
     if (!res.url.isEmpty()) {
         const QUrl qurl = validatedSourceUrl(res.url);

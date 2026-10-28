@@ -17,9 +17,15 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     m_searchBar->setCompleter(m_completer);
     layout->addWidget(m_searchBar);
 
+    auto *searchButtonsLayout = new QHBoxLayout;
     QPushButton *searchButton = new QPushButton(QStringLiteral("Search"), this);
     searchButton->setIcon(QIcon::fromTheme(QStringLiteral("edit-find")));
-    layout->addWidget(searchButton);
+    QPushButton *searchNewWindowButton = new QPushButton(QStringLiteral("Search in New Window"), this);
+    searchNewWindowButton->setObjectName(QStringLiteral("searchNewWindow"));
+    searchNewWindowButton->setIcon(QIcon::fromTheme(QStringLiteral("window-new")));
+    searchButtonsLayout->addWidget(searchButton);
+    searchButtonsLayout->addWidget(searchNewWindowButton);
+    layout->addLayout(searchButtonsLayout);
 
     m_recentSection = new QWidget(this);
     m_recentSection->setObjectName(QStringLiteral("recentActivitySection"));
@@ -74,6 +80,12 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
 
     connect(m_searchBar, &QLineEdit::returnPressed, this, &SearchDashboard::onSearchTriggered);
     connect(searchButton, &QPushButton::clicked, this, &SearchDashboard::onSearchTriggered);
+    connect(searchNewWindowButton, &QPushButton::clicked, this, [this] {
+        const QString query = m_searchBar->text().trimmed();
+        if (!query.isEmpty()) {
+            emit searchInNewWindowRequested(query);
+        }
+    });
 }
 
 SearchDashboard::~SearchDashboard() {}

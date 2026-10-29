@@ -1,0 +1,21 @@
+{
+  "id": "openlibrary",
+  "name": "OpenLibrary",
+  "description": "Books, authors and publication metadata from Open Library",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "https://openlibrary.org"
+    ]
+  },
+  "capabilities": {
+    "pagination": true,
+    "details": false,
+    "separateContent": false,
+    "authentication": false
+  }
+}

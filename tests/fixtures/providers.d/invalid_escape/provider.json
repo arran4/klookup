@@ -1,0 +1,7 @@
+{
+  "id": "traversal",
+  "name": "Invalid Traversal Provider",
+  "version": "1.0.0",
+  "runtime": "javascript",
+  "entry": "../outside.mjs"
+}

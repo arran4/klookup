@@ -20,10 +20,42 @@
 #include <mutex>
 #include <thread>
 #include <utility>
+#ifdef Q_OS_LINUX
+#include <pthread.h>
+#include <time.h>
+#endif
 
 // Only setInterrupted() crosses threads; Qt explicitly documents it thread-safe.
 // Stop/join precedes engine destruction. No QJSValue is accessed by this thread.
 namespace { const int InterruptCleanupEvent = QEvent::registerEventType(); }
+
+// A Linux per-thread clock excludes scheduler delays and blocking native waits.
+// Other platforms retain an elapsed-execution fallback, not process-wide CPU
+// time that would charge unrelated background workers to this engine.
+class JsExecutionClock {
+public:
+    JsExecutionClock() {
+#ifdef Q_OS_LINUX
+        timespec value{};
+        m_cpu = pthread_getcpuclockid(pthread_self(), &m_clock) == 0 && clock_gettime(m_clock, &value) == 0;
+#endif
+    }
+    qint64 now() const {
+#ifdef Q_OS_LINUX
+        if (m_cpu) {
+            timespec value{};
+            clock_gettime(m_clock, &value);
+            return qint64(value.tv_sec) * 1000000000 + value.tv_nsec;
+        }
+#endif
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+private:
+#ifdef Q_OS_LINUX
+    clockid_t m_clock{};
+    bool m_cpu = false;
+#endif
+};
 
 class JsExecutionWatchdog {
 public:
@@ -33,9 +65,13 @@ public:
             while (!m_stopping) {
                 if (!m_armed) { m_changed.wait(lock); continue; }
                 const auto generation = m_generation;
-                if (m_changed.wait_until(lock, m_deadline, [this, generation] {
-                    return m_stopping || generation != m_generation;
-                })) continue;
+                const auto remaining = m_deadline - now();
+                if (remaining > 0) {
+                    m_changed.wait_for(lock, std::chrono::nanoseconds(qMin<qint64>(remaining, 5000000)), [this, generation] {
+                        return m_stopping || generation != m_generation;
+                    });
+                    continue;
+                }
                 m_armed = false;
                 engine->setInterrupted(true);
                 QCoreApplication::postEvent(context, new QEvent(QEvent::Type(InterruptCleanupEvent)), Qt::HighEventPriority);
@@ -46,9 +82,10 @@ public:
         m_changed.notify_all();
         m_thread.join();
     }
+    qint64 now() const { return m_clock.now(); }
     void arm(qint64 nanoseconds) {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_deadline = std::chrono::steady_clock::now() + std::chrono::nanoseconds(qMax<qint64>(1, nanoseconds));
+        m_deadline = now() + qMax<qint64>(1, nanoseconds);
         m_armed = true;
         ++m_generation;
         m_changed.notify_all();
@@ -65,7 +102,8 @@ private:
     bool m_stopping = false;
     bool m_armed = false;
     quint64 m_generation = 0;
-    std::chrono::steady_clock::time_point m_deadline;
+    qint64 m_deadline = 0;
+    JsExecutionClock m_clock;
     std::thread m_thread;
 };
 
@@ -384,21 +422,21 @@ bool JsProvider::operationActive(quint64 token) const { return token != 0 && m_t
 quint64 JsProvider::enterOperation(quint64 token)
 {
     const auto previous = m_currentOperationToken;
-    if (auto *old = operationForToken(previous); old && m_executionElapsed.isValid()) old->cpuNanoseconds += m_executionElapsed.nsecsElapsed();
+    if (auto *old = operationForToken(previous); old && m_executionStarted >= 0) old->cpuNanoseconds += (m_watchdog->now() - m_executionStarted);
     m_currentOperationToken = token;
-    m_executionElapsed.start();
+    m_executionStarted = m_watchdog->now();
     if (auto *op = operationForToken(token)) m_watchdog->arm(100000000 - op->cpuNanoseconds);
     return previous;
 }
 
 void JsProvider::leaveOperation(quint64 previous)
 {
-    if (auto *op = operationForToken(m_currentOperationToken); op && m_executionElapsed.isValid()) {
-        op->cpuNanoseconds += m_executionElapsed.nsecsElapsed();
+    if (auto *op = operationForToken(m_currentOperationToken); op && m_executionStarted >= 0) {
+        op->cpuNanoseconds += (m_watchdog->now() - m_executionStarted);
         if (op->cpuNanoseconds >= 100000000) m_engine->setInterrupted(true);
     }
     m_currentOperationToken = previous;
-    m_executionElapsed.start();
+    m_executionStarted = m_watchdog->now();
     if (auto *op = operationForToken(previous)) m_watchdog->arm(100000000 - op->cpuNanoseconds);
     else m_watchdog->disarm();
     if (m_engine && m_engine->isInterrupted()) executionInterrupted();

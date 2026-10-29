@@ -109,7 +109,7 @@ private:
     quint64 m_executionCounter = 0;
     quint64 m_currentOperationToken = 0;
     int m_operationTimeoutMs = 10000;
-    QElapsedTimer m_executionElapsed;
+    qint64 m_executionStarted = -1;
     QHash<quint64, Operation> m_operations;
     QHash<quint64, quint64> m_tokens;
     QHash<quint64, quint64> m_terminals;

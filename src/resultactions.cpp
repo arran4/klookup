@@ -21,6 +21,9 @@ ResultActions::ResultActions(const SearchResult &result, bool canRefresh, QObjec
     copyTitle = new QAction(QIcon::fromTheme(QStringLiteral("edit-copy")), QStringLiteral("Copy Title"), this);
     copyTitle->setObjectName(QStringLiteral("copy_title"));
     copyTitle->setEnabled(!result.title.isEmpty());
+    openDetailsInNewWindow = new QAction(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open Details in New Window"), this);
+    openDetailsInNewWindow->setObjectName(QStringLiteral("open_details_in_new_window"));
+    connect(openDetailsInNewWindow, &QAction::triggered, this, &ResultActions::openDetailsInNewWindowRequested);
     connect(copyUrl, &QAction::triggered, this, [url] {
         if (url.isEmpty())
             return;

@@ -24,6 +24,7 @@ path = [
   ".geminiignore",
   ".gitignore",
   ".jules/*.sh",
+  "run_inner.sh",
 ]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 KLookup contributors"
@@ -46,6 +47,8 @@ SPDX-License-Identifier = "BSD-2-Clause"
 path = [
   "README.md",
   "AGENTS.md",
+  "SECURITY.md",
+  "CONTRIBUTING.md",
   "docs/*.md",
   "icons/README.md",
 ]

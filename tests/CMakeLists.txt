@@ -110,6 +110,14 @@ add_executable(test_globalshortcuts test_globalshortcuts.cpp)
 target_link_libraries(test_globalshortcuts Qt6::Test klookup_core)
 add_test(NAME test_globalshortcuts COMMAND test_globalshortcuts)
 
+add_executable(test_independent_windows test_independent_windows.cpp)
+target_link_libraries(test_independent_windows Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+add_test(NAME test_independent_windows COMMAND test_independent_windows)
+
+add_executable(test_autostart test_autostart.cpp)
+target_link_libraries(test_autostart Qt6::Test klookup_core KF6::ConfigCore)
+add_test(NAME test_autostart COMMAND test_autostart)
+
 add_executable(test_customhttp test_customhttp.cpp)
 target_link_libraries(test_customhttp Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
 add_test(NAME test_customhttp COMMAND test_customhttp)

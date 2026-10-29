@@ -16,6 +16,7 @@ public:
 
 public slots:
     void performSearch(const QString &query);
+    void openSearchInNewWindow(const QString &query);
 
 private:
     MainWindow *m_mainWindow;

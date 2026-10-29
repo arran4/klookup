@@ -4,11 +4,13 @@
 #include <KPageDialog>
 #include <QListWidget>
 #include <QMap>
+#include <memory>
 
 class SearchProvider;
 class ProviderAuthManager;
 class CustomHttpSourceManager;
 class QTreeWidget;
+class AutostartManager;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -31,6 +33,9 @@ public:
                             ProviderAuthManager *authentication = nullptr,
                             CustomHttpSourceManager *sourceManager = nullptr);
     ~SettingsDialog();
+
+    AutostartManager *autostartManager() const;
+    void setAutostartManager(std::unique_ptr<AutostartManager> manager);
 
 signals:
     void settingsApplied();
@@ -74,6 +79,9 @@ private:
     QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_clearTabsOnCloseCheck;
+    QCheckBox *m_autostartCheck;
+    std::unique_ptr<AutostartManager> m_autostartManager;
     QComboBox *m_captureMode;
     QComboBox *m_searchTrigger;
     QCheckBox *m_showRecent;

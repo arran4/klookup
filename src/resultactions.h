@@ -20,7 +20,9 @@ public:
     QAction *copyUrl;
     QAction *openUrl;
     QAction *copyTitle;
+    QAction *openDetailsInNewWindow;
 signals:
     void refreshRequested();
+    void openDetailsInNewWindowRequested();
 };
 #endif

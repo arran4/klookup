@@ -8,6 +8,8 @@ add_library(klookup_core STATIC
     recentactivity.cpp
     mainwindow.cpp
     searchtab.cpp
+    searchwindow.cpp
+    resultdetailwindow.cpp
     customhttpsource.cpp
     customhttpprovider.cpp
     customhttpsourcemanager.cpp
@@ -23,6 +25,7 @@ add_library(klookup_core STATIC
     oauthcodeflow.cpp
     providerauthmanager.cpp
     globalshortcuts.cpp
+    autostartmanager.cpp
 )
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)

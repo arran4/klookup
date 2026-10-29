@@ -1,0 +1,21 @@
+{
+  "id": "cheapshark",
+  "name": "CheapShark",
+  "description": "PC game deals and store prices in USD, supplied by CheapShark",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "https://www.cheapshark.com"
+    ]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": true,
+    "separateContent": false,
+    "authentication": false
+  }
+}

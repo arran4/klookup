@@ -45,6 +45,15 @@ public:
     QMap<QString, QString> values;
 };
 
+class DeferredCredentialStore : public CredentialStore {
+public:
+    QList<Callback> callbacks;
+    void cancelPending(const QString &) override {}
+    void read(const QString &, bool, Callback callback) override { callbacks.append(std::move(callback)); }
+    void write(const QString &, const QString &, bool, Callback callback) override { callbacks.append(std::move(callback)); }
+    void remove(const QString &, bool, Callback callback) override { callbacks.append(std::move(callback)); }
+};
+
 class FakeNetworkReply : public QNetworkReply
 {
     Q_OBJECT
@@ -282,6 +291,60 @@ private Q_SLOTS:
         QVERIFY(!broken.first().isValid()); // Broken user override remains visible and blocks duplicate system ID.
         qputenv("XDG_DATA_HOME", oldHome);
         qputenv("XDG_DATA_DIRS", oldDirs);
+    }
+
+    void testLateCredentialCallbacksCannotResurrectRequests()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/user/alpha"));
+        pkg.setTrusted(true);
+        DeferredCredentialStore store;
+        FakeNetworkAccessManager nam;
+        int starts = 0;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            ++starts;
+            return new FakeNetworkReply(request, &nam);
+        };
+        auto host = std::make_unique<ProviderHostService>(pkg, nullptr, &nam);
+        host->setCredentialStore(&store);
+        HttpRequestOptions options;
+        options.url = QUrl(QStringLiteral("https://api.alpha.example.com/data"));
+        options.secretKey = QStringLiteral("alpha_key");
+        options.secretHeader = QStringLiteral("Authorization");
+        options.requestId = 7;
+        const CredentialStoreResult credential{true, QStringLiteral("test-value"), {}, CredentialStoreResult::Code::None};
+        host->executeHttpRequest(options);
+        host->cancelRequest(7);
+        host->executeHttpRequest(options);
+        QCOMPARE(store.callbacks.size(), 2);
+        store.callbacks[0](credential);
+        QCOMPARE(starts, 0); // Old generation cannot start a reused ID.
+        store.callbacks[1](credential);
+        QCOMPARE(starts, 1);
+        host->executeHttpRequest(options);
+        host.reset();
+        store.callbacks[2](credential); // Destroyed host cannot be dereferenced.
+        QCOMPARE(starts, 1);
+    }
+
+    void testBorrowedTransportDestruction()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/user/alpha"));
+        pkg.setTrusted(true);
+        auto nam = std::make_unique<FakeNetworkAccessManager>();
+        nam->handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            return new FakeNetworkReply(request, nam.get());
+        };
+        ProviderHostService host(pkg, nullptr, nam.get());
+        HttpRequestOptions options;
+        options.url = QUrl(QStringLiteral("https://api.alpha.example.com/data"));
+        host.executeHttpRequest(options);
+        nam.reset();
+        host.cancelAllRequests();
+        QSignalSpy response(&host, &ProviderHostService::httpResponseReady);
+        host.executeHttpRequest(options);
+        QTRY_COMPARE(response.count(), 1);
+        QVERIFY(!response.first()[1].value<HttpResponse>().success);
+        QVERIFY(response.first()[1].value<HttpResponse>().errorMessage.contains(QStringLiteral("no longer available")));
     }
 
     void testDiscoveryPrecedence()

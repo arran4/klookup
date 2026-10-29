@@ -1,0 +1,8 @@
+{
+  "id": "lifecycle_js",
+  "name": "Lifecycle fixture",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {"origins": ["https://api.lifecycle.test"]},
+  "capabilities": {"details": true, "separateContent": true}
+}

@@ -51,7 +51,10 @@ endforeach()
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(klookup_core PRIVATE KLOOKUP_PACKAGE_INSTALL_DIR="${KDE_INSTALL_FULL_DATADIR}/klookup/providers.d")
 
+find_package(Threads REQUIRED)
+
 target_link_libraries(klookup_core PUBLIC
+    Threads::Threads
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

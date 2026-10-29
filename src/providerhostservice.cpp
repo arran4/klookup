@@ -31,6 +31,7 @@ ProviderHostService::~ProviderHostService()
 
 void ProviderHostService::cancelRequest(quint64 requestId)
 {
+    m_pendingCredentialReads.remove(requestId);
     if (m_activeRequests.contains(requestId)) {
         auto active = m_activeRequests.take(requestId);
         if (active.reply) {
@@ -45,6 +46,7 @@ void ProviderHostService::cancelRequest(quint64 requestId)
 
 void ProviderHostService::cancelAllRequests()
 {
+    m_pendingCredentialReads.clear();
     for (auto it = m_activeRequests.begin(); it != m_activeRequests.end(); ++it) {
         if (it.value().reply) {
             it.value().reply->disconnect(this);
@@ -60,6 +62,7 @@ void ProviderHostService::cancelAllRequests()
 quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &options)
 {
     const quint64 reqId = options.requestId != 0 ? options.requestId : ++m_requestCounter;
+    cancelRequest(reqId); // Reused IDs must not retain work or an older wallet callback.
 
     // 1. Trust Check
     if (!m_package.isTrusted()) {
@@ -115,9 +118,16 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
         // Asynchronous resolution via CredentialStore (KWallet)
         if (m_credentialStore) {
             const QString storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
-            m_credentialStore->read(storeKey, true, [this, reqId, options](const CredentialStoreResult &res) {
+            const quint64 generation = ++m_credentialGeneration;
+            m_pendingCredentialReads.insert(reqId, generation);
+            QPointer<ProviderHostService> guard(this);
+            m_credentialStore->read(storeKey, true, [guard, reqId, generation, options](const CredentialStoreResult &res) {
+                if (!guard || guard->m_pendingCredentialReads.value(reqId) != generation) return;
+                guard->m_pendingCredentialReads.remove(reqId);
+                if (!guard->m_package.isTrusted() || !guard->m_package.isOriginAllowed(options.url) ||
+                    !guard->m_package.isSecretAllowed(options.secretKey)) return;
                 const QString secretVal = res.ok ? res.value : QString();
-                startRequestInternal(reqId, options, 0, secretVal);
+                guard->startRequestInternal(reqId, options, 0, secretVal);
             });
             return reqId;
         }
@@ -135,6 +145,13 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
 
 void ProviderHostService::startRequestInternal(quint64 reqId, const HttpRequestOptions &options, int hops, const QString &resolvedSecret)
 {
+    if (!m_nam) {
+        HttpResponse response;
+        response.requestId = reqId;
+        response.errorMessage = QStringLiteral("Provider transport is no longer available");
+        QTimer::singleShot(0, this, [this, reqId, response] { emit httpResponseReady(reqId, response); });
+        return;
+    }
     QUrl requestUrl = options.url;
     QNetworkRequest request(requestUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup/1.0 (XDG Provider Package)"));

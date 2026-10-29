@@ -10,6 +10,8 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
+#include <QTemporaryDir>
+#include <QFile>
 
 class FakeNetworkReply : public QNetworkReply
 {
@@ -93,6 +95,249 @@ class TestJsProvider : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void testNeverSettlingOperationsHaveIndependentDeadlines()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        JsProvider provider(pkg);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        provider.setOperationTimeoutMs(25);
+        QSignalSpy pages(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        QSignalSpy details(&provider, &ProviderApiV1::ProviderV1::detailsFailed);
+        QSignalSpy content(&provider, &ProviderApiV1::ProviderV1::contentFailed);
+        provider.search(QStringLiteral("never"), 1);
+        provider.getDetails(QStringLiteral("never"), 2);
+        provider.getContent(QStringLiteral("never"), {}, 3);
+        QTRY_COMPARE(pages.count(), 1);
+        QTRY_COMPARE(details.count(), 1);
+        QTRY_COMPARE(content.count(), 1);
+        QCOMPARE(pages.first()[1].value<ProviderApiV1::ErrorCode>(), ProviderApiV1::ErrorCode::Timeout);
+        QCOMPARE(details.first()[2].value<ProviderApiV1::ErrorCode>(), ProviderApiV1::ErrorCode::Timeout);
+        QCOMPARE(content.first()[2].value<ProviderApiV1::ErrorCode>(), ProviderApiV1::ErrorCode::Timeout);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider.search(QStringLiteral("state"));
+        QTRY_COMPARE(ready.count(), 1);
+        provider.search(QStringLiteral("state"));
+        QTRY_COMPARE(ready.count(), 2);
+        QCOMPARE(ready[1][1].value<SearchPage>().results.first().id, QStringLiteral("2"));
+    }
+
+    void testRepeatedCancellationAndReusedRequestIds()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        int aborted = 0;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            auto *reply = new FakeNetworkReply(request, &nam);
+            connect(reply, &QNetworkReply::finished, this, [&, reply] { if (reply->isAborted()) ++aborted; });
+            return reply;
+        };
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, &host);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        for (int i = 0; i < 50; ++i) {
+            provider.search(QStringLiteral("fetch"), 77);
+            QCOMPARE(provider.pendingFetchCount(), 1);
+            provider.cancel(77);
+            provider.cancel(77);
+            QCOMPARE(provider.activeOperationCount(), 0);
+            QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+        }
+        QCOMPARE(aborted, 50);
+        provider.search(QStringLiteral("state"), 77);
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(failed.count(), 0);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+        QTRY_VERIFY([&] {
+            for (auto *child : provider.children()) if (QByteArray(child->metaObject()->className()) == "JsPromiseHandler") return false;
+            return true;
+        }());
+    }
+
+    void testChainedFetchesRemainOwnedByOverlappingOperations()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        QMap<QString, QPointer<FakeNetworkReply>> replies;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            auto *reply = new FakeNetworkReply(request, &nam);
+            replies.insert(request.url().path(), reply);
+            return reply;
+        };
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, &host);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider.search(QStringLiteral("chain-a"), 101);
+        provider.search(QStringLiteral("chain-b"), 102);
+        QCOMPARE(replies.size(), 2);
+        replies[QStringLiteral("/first/chain-a")]->respondSuccess(200, "{}");
+        QTRY_COMPARE(replies.size(), 3);
+        replies[QStringLiteral("/first/chain-b")]->respondSuccess(200, "{}");
+        QTRY_COMPARE(replies.size(), 4);
+        auto a = replies.value(QStringLiteral("/second/chain-a"));
+        auto b = replies.value(QStringLiteral("/second/chain-b"));
+        QVERIFY(a && b);
+        provider.cancel(101);
+        QVERIFY(a->isAborted());
+        QVERIFY(!b->isAborted());
+        b->respondSuccess(200, "[]");
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(ready.first().first().toULongLong(), 102ULL);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+    }
+
+    void testCompletionAndDeadlineAbortAllOwnedWork()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        int aborted = 0;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            auto *reply = new FakeNetworkReply(request, &nam);
+            connect(reply, &QNetworkReply::finished, this, [&, reply] { if (reply->isAborted()) ++aborted; });
+            return reply;
+        };
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, &host);
+        provider.setOperationTimeoutMs(30);
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        provider.search(QStringLiteral("detached"));
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(aborted, 2);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+        provider.search(QStringLiteral("fetch"));
+        QTRY_COMPARE(failed.count(), 1);
+        QCOMPARE(aborted, 3);
+        QCOMPARE(failed.first()[1].value<ProviderApiV1::ErrorCode>(), ProviderApiV1::ErrorCode::Timeout);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+    }
+
+    void testDetailsContentFallbackDoesNotRetainHandlers()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        JsProvider provider(pkg);
+        QSignalSpy content(&provider, &ProviderApiV1::ProviderV1::contentReady);
+        QSignalSpy details(&provider, &ProviderApiV1::ProviderV1::detailsReady);
+        provider.getContent(QStringLiteral("id"), {}, 77);
+        QTRY_COMPARE(content.count(), 1);
+        QCOMPARE(content.first()[1].value<ProviderApiV1::ContentResponse>().content.description, QStringLiteral("Details content"));
+        provider.getDetails(QStringLiteral("id"), 77);
+        QTRY_COMPARE(details.count(), 1);
+        QCOMPARE(content.count(), 1);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+    }
+
+    void testBorrowedHostDestructionDuringOperation()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) { return new FakeNetworkReply(request, &nam); };
+        auto host = std::make_unique<ProviderHost::ProviderHostService>(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, host.get());
+        provider.setOperationTimeoutMs(25);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        provider.search(QStringLiteral("fetch"));
+        host.reset();
+        QTRY_COMPARE(failed.count(), 1);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QCOMPARE(provider.pendingFetchCount(), 0);
+        QCOMPARE(provider.retainedPromiseCount(), 0);
+    }
+
+    void testCpuInterruption_data()
+    {
+        QTest::addColumn<QString>("query");
+        QTest::newRow("synchronous-loop") << QStringLiteral("spin");
+        QTest::newRow("promise-callback-loop") << QStringLiteral("microtask-spin");
+        QTest::newRow("promise-job-storm") << QStringLiteral("microtask-storm");
+    }
+
+    void testCpuInterruption()
+    {
+        QFETCH(QString, query);
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        JsProvider provider(pkg);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        provider.search(query);
+        QTRY_COMPARE(failed.count(), 1);
+        QVERIFY(elapsed.elapsed() < 1500);
+        QCOMPARE(failed.first()[1].value<ProviderApiV1::ErrorCode>(), ProviderApiV1::ErrorCode::Timeout);
+        QCOMPARE(provider.activeOperationCount(), 0);
+        QVERIFY(!provider.isLoaded());
+    }
+
+    void testQueuedCompletionCancellationAndConsumerDestruction()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        QPointer<JsProvider> provider = new JsProvider(pkg);
+        QSignalSpy ready(provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider->search(QStringLiteral("sync"), 7);
+        provider->cancel(7);
+        QTest::qWait(10);
+        QCOMPARE(ready.count(), 0);
+        connect(provider, &ProviderApiV1::ProviderV1::pageReady, this, [provider] { delete provider; });
+        provider->search(QStringLiteral("state"));
+        QTRY_VERIFY(provider.isNull());
+        QCOMPARE(ready.count(), 1);
+    }
+
+    void testAccountingBridgeIsPrivate()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        JsProvider provider(pkg);
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider.search(QStringLiteral("boundary"));
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(ready.first()[1].value<SearchPage>().results.first().title, QStringLiteral("undefined,undefined,undefined"));
+    }
+
+    void testModuleInitializationIsInterruptible()
+    {
+        QTemporaryDir temporary;
+        QFile manifest(temporary.filePath(QStringLiteral("provider.json")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"loop\",\"name\":\"Loop\"}");
+        manifest.close();
+        QFile source(temporary.filePath(QStringLiteral("main.mjs")));
+        QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("while (true) {} export function search() { return []; }");
+        source.close();
+        auto pkg = ProviderPackage::fromDirectory(temporary.path());
+        pkg.setTrusted(true);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        JsProvider provider(pkg);
+        QVERIFY(elapsed.elapsed() < 1500);
+        QVERIFY(!provider.isLoaded());
+        QVERIFY(provider.loadError().contains(QStringLiteral("CPU budget")));
+    }
+
     void testUntrustedJsProviderRejected()
     {
         const QString fixtureDir = QStringLiteral(FIXTURES_DIR "/providers.d/sample_js");

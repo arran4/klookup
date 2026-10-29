@@ -132,6 +132,11 @@ target_link_libraries(test_providerdiscovery Qt6::Test klookup_core KF6::Widgets
 target_compile_definitions(test_providerdiscovery PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME test_providerdiscovery COMMAND test_providerdiscovery)
 
+add_executable(test_jsprovider test_jsprovider.cpp)
+target_link_libraries(test_jsprovider Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus Qt6::Qml KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_jsprovider PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_jsprovider COMMAND test_jsprovider)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)

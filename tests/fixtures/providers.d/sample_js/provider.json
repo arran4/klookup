@@ -1,0 +1,18 @@
+{
+  "id": "sample_js",
+  "name": "Sample JS Provider",
+  "description": "ECMAScript module reference provider for tests",
+  "version": "1.0.0",
+  "author": "KLookup Tests",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": ["api.sample.test"]
+  },
+  "capabilities": {
+    "pagination": true,
+    "details": true,
+    "separateContent": true
+  }
+}

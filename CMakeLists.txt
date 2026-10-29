@@ -95,7 +95,7 @@ add_custom_target(klookup_with_plugins ALL
 if(BUILD_TESTING)
     add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_globalshortcuts test_recentactivity test_provider_spotify test_provider_wikipedia)
     add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
-    add_dependencies(klookup_with_plugins test_resultactions test_sourcelink test_provider_mangadex test_provider_mangabaka test_independent_windows test_autostart test_resultcontent test_providerapiv1 test_providerdiscovery)
+    add_dependencies(klookup_with_plugins test_resultactions test_sourcelink test_provider_mangadex test_provider_mangabaka test_independent_windows test_autostart test_resultcontent test_providerapiv1 test_providerdiscovery test_jsprovider)
     if(TARGET test_customhttp)
         add_dependencies(klookup_with_plugins test_customhttp)
     endif()

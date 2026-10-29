@@ -137,6 +137,15 @@ target_link_libraries(test_jsprovider Qt6::Test klookup_core KF6::WidgetsAddons 
 target_compile_definitions(test_jsprovider PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 add_test(NAME test_jsprovider COMMAND test_jsprovider)
 
+add_executable(test_tvmaze_parity test_tvmaze_parity.cpp ../providers/tvmaze/provider_tvmaze.cpp)
+target_link_libraries(test_tvmaze_parity Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus Qt6::Qml KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_include_directories(test_tvmaze_parity PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/providers/tvmaze)
+target_compile_definitions(test_tvmaze_parity PRIVATE
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_tvmaze_parity COMMAND test_tvmaze_parity)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)

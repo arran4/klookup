@@ -1,0 +1,48 @@
+[
+  {
+    "score": 0.9,
+    "show": {
+      "id": 139,
+      "url": "https://www.tvmaze.com/shows/139/girls",
+      "name": "Girls",
+      "type": "Scripted",
+      "language": "English",
+      "genres": ["Drama", "Comedy", "Romance"],
+      "status": "Ended",
+      "premiered": "2012-04-15",
+      "rating": {
+        "average": 6.6
+      },
+      "network": {
+        "id": 8,
+        "name": "HBO"
+      },
+      "image": {
+        "medium": "https://static.tvmaze.com/uploads/images/medium_portrait/31/78286.jpg",
+        "original": "https://static.tvmaze.com/uploads/images/original_untouched/31/78286.jpg"
+      },
+      "summary": "<p>This Emmy winning series follows a group of young women in their 20s navigating life in New York.</p>"
+    }
+  },
+  {
+    "score": 0.85,
+    "show": {
+      "id": 41735,
+      "url": "https://www.tvmaze.com/shows/41735/der-pass",
+      "name": "Pagan Peak",
+      "type": "Scripted",
+      "language": "German",
+      "genres": ["Drama", "Crime", "Mystery"],
+      "status": "Ended",
+      "premiered": "2019-01-25",
+      "rating": {
+        "average": 8.0
+      },
+      "network": {
+        "id": 578,
+        "name": "Sky One"
+      },
+      "summary": "<p>A body is found on a mountain pass near the German-Austrian border.</p>"
+    }
+  }
+]

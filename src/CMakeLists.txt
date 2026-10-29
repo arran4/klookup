@@ -42,6 +42,7 @@ foreach(resource_target IN LISTS klookup_icon_resource_targets)
 endforeach()
 
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(klookup_core PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 target_link_libraries(klookup_core PUBLIC
     Qt6::Core

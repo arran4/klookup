@@ -13,12 +13,14 @@ class ProviderTvMaze : public SearchProvider
     Q_INTERFACES(SearchProvider)
 public:
     explicit ProviderTvMaze(QObject *parent = nullptr);
+    explicit ProviderTvMaze(QObject *parent, QNetworkAccessManager *nam);
     virtual ~ProviderTvMaze();
 
     QString name() const override;
     QString id() const override;
     void search(const QString &query) override;
     SearchProvider* clone(QObject *parent = nullptr) const override;
+    void setNetworkAccessManager(QNetworkAccessManager *nam) { m_nam = nam ? nam : new QNetworkAccessManager(this); }
 
 private slots:
     void onReplyFinished(QNetworkReply *reply);

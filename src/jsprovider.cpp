@@ -202,7 +202,8 @@ JsProvider::~JsProvider()
 
 ProviderApiV1::ProviderV1 *JsProvider::clone(QObject *parent) const
 {
-    return new JsProvider(m_package, parent);
+    auto *clonedHost = new ProviderHost::ProviderHostService(m_package, parent, m_hostService ? m_hostService->networkAccessManager() : nullptr);
+    return new JsProvider(m_package, parent, clonedHost);
 }
 
 void JsProvider::registerNetworkRequest(quint64 opId, quint64 netId)
@@ -384,6 +385,9 @@ quint64 JsProvider::getPage(const QString &query, const QString &pageToken, quin
     }
 
     if (!m_module.property(QStringLiteral("getPage")).isCallable()) {
+        if (pageToken.isEmpty() && m_module.property(QStringLiteral("search")).isCallable()) {
+            return search(query, reqId);
+        }
         QTimer::singleShot(0, this, [this, reqId] {
             emit pageFailed(reqId, ProviderApiV1::ErrorCode::MethodNotFound, QStringLiteral("getPage is not exported by module"));
         });

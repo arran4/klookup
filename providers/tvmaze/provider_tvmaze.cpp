@@ -13,6 +13,13 @@ ProviderTvMaze::ProviderTvMaze(QObject *parent)
 {
 }
 
+ProviderTvMaze::ProviderTvMaze(QObject *parent, QNetworkAccessManager *nam)
+    : SearchProvider(parent)
+    , m_nam(nam ? nam : new QNetworkAccessManager(this))
+    , m_reply(nullptr)
+{
+}
+
 ProviderTvMaze::~ProviderTvMaze()
 {
 }
@@ -121,5 +128,5 @@ void ProviderTvMaze::onReplyFinished(QNetworkReply *reply)
 
 SearchProvider* ProviderTvMaze::clone(QObject *parent) const
 {
-    return new ProviderTvMaze(parent);
+    return new ProviderTvMaze(parent, m_nam);
 }

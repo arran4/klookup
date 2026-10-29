@@ -15,6 +15,7 @@ class QPluginLoader;
 class ProviderAuthManager;
 class GlobalShortcuts;
 class RecentActivity;
+class QNetworkAccessManager;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -45,6 +46,15 @@ public slots:
 
     void restoreProviderState(SearchProvider* provider);
 
+    const QList<SearchProvider*> &providers() const { return m_providers; }
+    SearchProvider *provider(const QString &id) const;
+    SearchProvider *fallbackProvider(const QString &id) const;
+    bool switchToFallback(const QString &id);
+    void loadPlugins(const QStringList &customPackagePaths = {}, const QStringList &customPluginPaths = {});
+    void setNetworkAccessManagerFactory(std::function<QNetworkAccessManager *(QObject *)> factory);
+    void setPackageTrusted(const QString &id, bool trusted);
+    bool isPackageTrusted(const QString &id) const;
+
 protected:
     bool queryClose() override;
     void changeEvent(QEvent *event) override;
@@ -56,7 +66,6 @@ private slots:
 
 private:
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
-    void loadPlugins();
     void loadSettings();
     void saveSettings();
     void setupActions();
@@ -70,6 +79,9 @@ private:
     // accepted loader alive for as long as its provider is used.
     QList<QPluginLoader *> m_providerLoaders;
     QList<SearchProvider*> m_providers;
+    QHash<QString, SearchProvider *> m_fallbackProviders;
+    QList<SearchProvider *> m_scriptedAdapters;
+    std::function<QNetworkAccessManager *(QObject *)> m_namFactory;
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
     QString m_lastCapturedClipboardText;

@@ -52,6 +52,7 @@ public:
 
     const ProviderPackage &package() const { return m_package; }
     void setPackage(const ProviderPackage &package) { m_package = package; }
+    QNetworkAccessManager *networkAccessManager() const { return m_nam; }
 
     void setSecretResolver(std::function<QString(const QString &)> resolver)
     {

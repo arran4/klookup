@@ -74,6 +74,7 @@ private:
     QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_clearTabsOnCloseCheck;
     QCheckBox *m_autostartCheck;
     std::unique_ptr<AutostartManager> m_autostartManager;
     QComboBox *m_captureMode;

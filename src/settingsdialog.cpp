@@ -134,6 +134,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     m_minimizeToTrayCheck = new QCheckBox(QStringLiteral("Minimize to System Tray on Close"), this);
     m_minimizeToTrayCheck->setObjectName(QStringLiteral("minimizeToTray"));
+    m_clearTabsOnCloseCheck = new QCheckBox(QStringLiteral("Clear search tabs when closing the window"), this);
+    m_clearTabsOnCloseCheck->setObjectName(QStringLiteral("clearTabsOnClose"));
     m_autostartCheck = new QCheckBox(QStringLiteral("Start KLookup when logging in"), this);
     m_autostartCheck->setObjectName(QStringLiteral("autostartOnLogin"));
     m_captureMode = new QComboBox(this);
@@ -143,6 +145,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_searchTrigger->setObjectName(QStringLiteral("clipboardSearchTrigger"));
     m_searchTrigger->addItems({QStringLiteral("Never"), QStringLiteral("When opened from tray"), QStringLiteral("When clipboard changes"), QStringLiteral("When window gains focus"), QStringLiteral("When global shortcut is used")});
     generalLayout->addWidget(m_minimizeToTrayCheck);
+    generalLayout->addWidget(m_clearTabsOnCloseCheck);
     generalLayout->addWidget(m_autostartCheck);
     auto *clipboardForm = new QFormLayout;
     clipboardForm->addRow(QStringLiteral("Capture clipboard while:"), m_captureMode);
@@ -173,6 +176,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
     m_minimizeToTrayCheck->setChecked(genGroup.readEntry(QStringLiteral("MinimizeToTray"), true));
+    m_clearTabsOnCloseCheck->setChecked(genGroup.readEntry(QStringLiteral("ClearTabsOnClose"), false));
     m_autostartCheck->setChecked(m_autostartManager ? m_autostartManager->isAutostartEnabled() : false);
     const auto policy = ClipboardPolicy::read(genGroup);
     m_captureMode->setCurrentIndex(int(policy.capture));
@@ -293,6 +297,7 @@ void SettingsDialog::saveSettings()
     }
     KConfigGroup genGroup(config, QStringLiteral("General"));
     genGroup.writeEntry(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("ClearTabsOnClose"), m_clearTabsOnCloseCheck->isChecked());
     genGroup.writeEntry(QStringLiteral("ShowRecentActivity"), m_showRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),

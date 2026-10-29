@@ -989,6 +989,88 @@ private slots:
         QVERIFY(foundSuccess);
         QVERIFY(foundError);
     }
+
+    void testClearTabsOnCloseEnabled()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        qputenv("XDG_CONFIG_HOME", tempDir.path().toUtf8());
+
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup genGroup(config, QStringLiteral("General"));
+        genGroup.writeEntry(QStringLiteral("ClearTabsOnClose"), true);
+        config->sync();
+
+        TestableMainWindow mw;
+        DBusAdaptor adaptor(&mw);
+        adaptor.performSearch(QStringLiteral("query1"));
+        adaptor.performSearch(QStringLiteral("query2"));
+
+        auto *tabs = mw.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 3);
+
+        QCloseEvent closeEv;
+        QApplication::sendEvent(&mw, &closeEv);
+
+        QCOMPARE(tabs->count(), 1);
+
+        config->reparseConfiguration();
+        KConfigGroup tabGroup(config, QStringLiteral("OpenTabs"));
+        QCOMPARE(tabGroup.readEntry(QStringLiteral("Count"), 0), 0);
+    }
+
+    void testClearTabsOnCloseDisabled()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        qputenv("XDG_CONFIG_HOME", tempDir.path().toUtf8());
+
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup genGroup(config, QStringLiteral("General"));
+        genGroup.writeEntry(QStringLiteral("ClearTabsOnClose"), false);
+        genGroup.writeEntry(QStringLiteral("MinimizeToTray"), false);
+        config->sync();
+
+        TestableMainWindow mw;
+        DBusAdaptor adaptor(&mw);
+        adaptor.performSearch(QStringLiteral("query1"));
+        adaptor.performSearch(QStringLiteral("query2"));
+
+        auto *tabs = mw.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 3);
+
+        QCloseEvent closeEv;
+        QApplication::sendEvent(&mw, &closeEv);
+
+        QCOMPARE(tabs->count(), 3);
+    }
+
+    void testClearTabsOnCloseSettingsDialog()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+        qputenv("XDG_CONFIG_HOME", tempDir.path().toUtf8());
+
+        KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        config->deleteGroup(QStringLiteral("General"));
+        config->sync();
+
+        SettingsDialog dlg({});
+        auto *clearTabsCheck = dlg.findChild<QCheckBox *>(QStringLiteral("clearTabsOnClose"));
+        QVERIFY(clearTabsCheck);
+        QCOMPARE(clearTabsCheck->isChecked(), false);
+
+        clearTabsCheck->setChecked(true);
+        auto *applyButton = dlg.button(QDialogButtonBox::Apply);
+        QVERIFY(applyButton);
+        applyButton->click();
+
+        config->reparseConfiguration();
+        KConfigGroup genGroup(config, QStringLiteral("General"));
+        QCOMPARE(genGroup.readEntry(QStringLiteral("ClearTabsOnClose"), false), true);
+    }
 };
 
 QTEST_MAIN(MainWindowTest)

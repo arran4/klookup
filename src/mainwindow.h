@@ -33,6 +33,7 @@ public slots:
     void searchClipboardNow();
     void notifyClipboardShortcutUsed();
     void restoreFromTray();
+    void clearSearchTabs();
 
     SearchWindow *openSearchInNewWindow(const QString &query);
     ResultDetailWindow *openResultDetailsInNewWindow(const SearchResult &result,

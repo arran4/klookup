@@ -393,6 +393,7 @@ void JsProvider::fail(quint64 token, ProviderApiV1::ErrorCode code, const QStrin
 
 void JsProvider::invalidate()
 {
+    m_terminals.clear(); // Suppress results completed just before reload/revocation.
     m_loaded = false;
     m_loadError = QStringLiteral("Package disabled, revoked or reloaded; start a new search");
     const auto tokens = m_tokens.keys();

@@ -294,6 +294,12 @@ private Q_SLOTS:
     {
         auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
         pkg.setTrusted(true);
+        JsProvider revoked(pkg);
+        QSignalSpy late(&revoked, &ProviderApiV1::ProviderV1::pageReady);
+        revoked.search(QStringLiteral("sync"), 77);
+        revoked.invalidate();
+        QTest::qWait(10);
+        QCOMPARE(late.count(), 0);
         QPointer<JsProvider> provider = new JsProvider(pkg);
         QSignalSpy ready(provider, &ProviderApiV1::ProviderV1::pageReady);
         provider->search(QStringLiteral("sync"), 7);

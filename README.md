@@ -120,7 +120,7 @@ KLookup currently builds **14 providers**. They are separate plugins, so enablin
 
 **Choosing sources:** Open **Settings → Providers** to enable or disable individual plugins and configure authentication where necessary. Providers are allowed to return different kinds of results. Some support pagination and deeper detail lookup, and some need credentials or may be subject to upstream service limits.
 
-**Local sources are not included yet.** Installed StarDict dictionaries, WordNet/dictd lexical data, local man pages and GNU Info manuals are planned independently of the existing online providers; see [Planned improvements](#planned-improvements).
+**Local sources are not included yet.** Proposed local providers only read already-rendered **Markdown, HTML or plain-text** documents. Native StarDict files, WordNet/dictd databases, roff man pages, Info node files and other specialised formats are outside the agreed scope. See [Planned improvements](#planned-improvements).
 
 ### What the results look like
 
@@ -228,17 +228,32 @@ These are **roadmap items, not available features**:
 | Proposal | Intended benefit | Tracking |
 | --- | --- | --- |
 | StarDict-style selection popup and new hotkey | Highlight a word, explicitly invoke (or opt into) a lightweight definition popup without switching contexts | [#88](https://github.com/arran4/klookup/issues/88) |
-| Local dictionary sources (StarDict, local DICT/dictd, WordNet) | Retrieve definitions from installed local data without sending queries online | [#86](https://github.com/arran4/klookup/issues/86) |
-| Local `man`-page provider | Look up locally installed Linux commands, system calls and manual sections without a browser | [#87](https://github.com/arran4/klookup/issues/87) |
-| Local GNU Info/Texinfo provider | Search installed Info manuals, index entries and navigable documentation nodes offline | [#90](https://github.com/arran4/klookup/issues/90) |
+| Local text-only dictionary sources | Search existing Markdown, HTML or text definitions without parsing StarDict, dictd or WordNet binary/native formats | [#86](https://github.com/arran4/klookup/issues/86) |
+| Local manual reference | Search **already-rendered** HTML/text/Markdown manual pages; no roff parser, automatic `man` invocation or compressed manuals | [#87](https://github.com/arran4/klookup/issues/87) |
+| Local GNU Info-derived documentation | Search **already-rendered** HTML/text exports, not native Info nodes, compressed `.info` files or Texinfo syntax | [#90](https://github.com/arran4/klookup/issues/90) |
 | User-configurable HTTP sources | Add an HTTP/API lookup source without compiling a new C++ plugin | [#57](https://github.com/arran4/klookup/issues/57), [PR #82](https://github.com/arran4/klookup/pull/82) |
 | Optional start-on-login | Make KLookup ready in the tray when a Plasma session starts | [#70](https://github.com/arran4/klookup/issues/70), [PR #76](https://github.com/arran4/klookup/pull/76) |
 
 Why these matter: a desktop lookup tool is most useful when it can answer a small question immediately and, where possible, **locally**. The selection popup and local sources are part of that longer-term direction, rather than claims about KLookup's current capabilities.
 
-### Other local sources to consider
+### Local documentation providers under consideration
 
-Potential future providers (not yet committed features) include **KDE application help** via KHelpCenter, **Qt Help** collections (`.qch`/`.qhc`), **Zeal/Dash** offline developer docsets, **GTK-Doc/Devhelp** indexes, cached **tldr** command examples, locally installed package metadata, and user-chosen documentation directories. Any indexing of private files should require an explicit path opt-in, and search providers that generate documentation or execute arbitrary commands need additional security review. These are candidates for prioritisation rather than assertions that the application already supports them.
+The proposed local providers share a deliberately narrow input contract: **only already-existing plain text (`.txt`), Markdown (`.md`/`.markdown`) and HTML (`.html`/`.htm`)**. There will be **no bespoke parsers or new parser dependencies** for alternate document formats, and no arbitrary external command execution. Users will be able to configure **multiple scan directories per source**, alongside safe discovery of conventional system documentation directories. A provider with no compatible files stays unavailable. Any separately approved fixed executable adapter would require an explicit opt-in and remain disabled by default.
+
+| Proposed local source | Supported subset | Issue |
+| --- | --- | --- |
+| KDE application manuals | Already-rendered text/HTML handbooks; no DocBook processing | [#92](https://github.com/arran4/klookup/issues/92) |
+| Zeal/Dash docsets | HTML/text document pages only; ignore the SQLite `docSet.dsidx` index | [#93](https://github.com/arran4/klookup/issues/93) |
+| Qt documentation | Existing HTML/text pages only; no `.qch`/`.qhc` support | [#94](https://github.com/arran4/klookup/issues/94) |
+| GTK-Doc/Devhelp | Already-rendered HTML/text; no `.devhelp2` XML index parsing | [#95](https://github.com/arran4/klookup/issues/95) |
+| Local tldr examples | Installed Markdown command pages; no downloads or CLI execution | [#96](https://github.com/arran4/klookup/issues/96) |
+| Installed package documentation | Text/HTML/Markdown documents, not package database queries, ebuild evaluation or USE flags | [#97](https://github.com/arran4/klookup/issues/97) |
+| User-configured documentation directories | Bounded, safe search across individually enabled scan roots | [#98](https://github.com/arran4/klookup/issues/98) |
+| Word-list suggestions | Ordinary plain-text word lists, not native Hunspell/Aspell dictionaries or full spell checking | [#99](https://github.com/arran4/klookup/issues/99) |
+
+The [shared local-provider contract (#91)](https://github.com/arran4/klookup/issues/91) defines format restrictions, path discovery, disabled/unavailable states and security limits for these proposals.
+
+**Important limitation:** Native StarDict dictionaries, GNU Info files, standard roff man pages, Qt Help collections and Devhelp indexes cannot be searched *directly* under this policy. KLookup would only find their already-rendered text or HTML equivalents, if available. This keeps implementation and dependency scope small, at the cost of some coverage and symbol/index precision.
 
 ## Troubleshooting
 

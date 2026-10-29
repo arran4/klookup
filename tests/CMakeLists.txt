@@ -118,6 +118,10 @@ add_executable(test_autostart test_autostart.cpp)
 target_link_libraries(test_autostart Qt6::Test klookup_core KF6::ConfigCore)
 add_test(NAME test_autostart COMMAND test_autostart)
 
+add_executable(test_resultcontent test_resultcontent.cpp)
+target_link_libraries(test_resultcontent Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+add_test(NAME test_resultcontent COMMAND test_resultcontent)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)

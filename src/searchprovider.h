@@ -17,6 +17,8 @@ struct SearchResult {
     QString url;
     QString type;
     QVariantMap additionalData;
+    QString parentId = {};
+    QList<SearchResult> children = {};
 };
 Q_DECLARE_METATYPE(SearchResult)
 

@@ -28,6 +28,8 @@ struct ResultMetadata {
 };
 Q_DECLARE_METATYPE(ResultMetadata)
 
+class QTreeWidget;
+
 namespace Metadata
 {
 QUrl safeWebUrl(const QString &text);
@@ -35,5 +37,7 @@ MetadataNode text(const QString &label, const QStringList &values);
 // Legacy QVariant containers get a bounded recursive fallback, never toString()
 // on a list/map. Provider-specific mapping should prefer labelled typed nodes.
 MetadataNode fromVariant(const QString &label, const QVariant &value, int depth = 0);
+// Shared renderer to populate metadata tree widgets identically in SearchTab and ResultDetailWindow
+void populateMetadataTree(QTreeWidget *treeWidget, const ResultMetadata &metadata);
 } // namespace Metadata
 #endif

@@ -10,6 +10,7 @@
 #include <QSignalSpy>
 #include <QTest>
 #include <QTimer>
+#include <QThread>
 #include <QTemporaryDir>
 #include <QFile>
 
@@ -313,6 +314,35 @@ private Q_SLOTS:
         provider->search(QStringLiteral("state"));
         QTRY_VERIFY(provider.isNull());
         QCOMPARE(ready.count(), 1);
+    }
+
+    void testNativeWaitDoesNotConsumeLinuxCpuBudget()
+    {
+#ifndef Q_OS_LINUX
+        QSKIP("Per-thread CPU accounting is Linux-specific; other platforms use elapsed execution time");
+#else
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager network;
+        network.handler = [](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            // Deliberately block in a borrowed native dependency. The watchdog
+            // must charge CPU consumed, not time descheduled/asleep. This is
+            // not a promise that arbitrary native blocking can be preempted.
+            QThread::msleep(300);
+            auto *reply = new FakeNetworkReply(request);
+            reply->respondSuccess(200, "[]");
+            return reply;
+        };
+        ProviderHost::ProviderHostService host(pkg, nullptr, &network);
+        JsProvider provider(pkg, nullptr, &host);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        provider.search(QStringLiteral("fetch"));
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(failed.count(), 0);
+        QVERIFY(provider.isLoaded());
+#endif
     }
 
     void testNestedThenablesKeepOperationOwnership()

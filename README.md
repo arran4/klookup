@@ -191,7 +191,7 @@ By default, **KLookup does not passively capture or automatically search the cli
 
 Simply permitting capture does **not** automatically enable searching. When automatic capture is enabled, content filtering rejects plain URL-only content, recognised email/path-like input and unsupported formats; deliberate searches (including the explicit clipboard command) are a separate action. A classifier cannot guarantee that arbitrary selected or copied text is safe to share.
 
-Clipboard-derived recent activity recording and persistence are separately controlled and **off by default**. For the implementation details and retention rules, see [clipboard input policy](docs/clipboard-input-policy.md), [clipboard trigger policy](docs/clipboard-trigger-policy.md) and [recent activity](docs/recent-activity.md).
+Clipboard-derived recent activity recording and persistence are separately controlled and **off by default**. For implementation details and retention rules, see the [technical documentation](docs/) and [recent activity](docs/recent-activity.md). Clipboard policy documents are being consolidated in [PR #77](https://github.com/arran4/klookup/pull/77).
 
 ### A future selected-text mode
 
@@ -327,8 +327,7 @@ Relevant implementation guides:
 - [Spotify provider setup](docs/spotify-provider.md)
 - [Global shortcuts](docs/global-shortcuts.md)
 - [Recent activity and retention](docs/recent-activity.md)
-- [Result actions](docs/result-actions.md)
-- [Dragging source links](docs/source-link-drag.md)
+- [Result actions and source-link handling (documentation collection)](docs/) — consolidation into a combined guide is tracked in [PR #77](https://github.com/arran4/klookup/pull/77)
 - [Wikipedia result content](docs/wikipedia-content.md)
 
 ### Diagnostics and verification

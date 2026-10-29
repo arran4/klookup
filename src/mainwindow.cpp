@@ -440,6 +440,14 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
                 if (plugin) {
                     SearchProvider *provider = qobject_cast<SearchProvider*>(plugin);
                     if (provider) {
+                        // TVMaze is shipped exclusively as an ECMAScript provider.
+                        // Ignore an obsolete native module left by an older installation.
+                        if (provider->id() == QLatin1String("tvmaze")) {
+                            qCWarning(KLOOKUP_PLUGINS) << "Ignoring obsolete native TVMaze plugin:" << fileName;
+                            loader->unload();
+                            delete loader;
+                            continue;
+                        }
                         if (!loadedProviderIds.contains(provider->id())) {
                             loadedProviderIds.insert(provider->id());
                             qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();

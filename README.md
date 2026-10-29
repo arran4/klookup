@@ -170,7 +170,7 @@ A separate **Look up selected text** hotkey and compact popup are **planned, not
 
 KLookup can remain available from the tray when its window is closed, depending on your settings. Search tabs and independent search/detail windows are useful when you want to reference one result while searching for another.
 
-There is also a proposed **Start KLookup when logging in** setting in [PR #76](https://github.com/arran4/klookup/pull/76); it is not included in this README as an already-released setting.
+You can also choose to **Start KLookup automatically on login** in **Settings → General**; see [Autostart configuration](docs/autostart.md). When enabled, KLookup starts quietly in the background without raising windows or triggering unrequested searches.
 
 ## History and clipboard controls
 
@@ -191,7 +191,7 @@ By default, **KLookup does not passively capture or automatically search the cli
 
 Simply permitting capture does **not** automatically enable searching. When automatic capture is enabled, content filtering rejects plain URL-only content, recognised email/path-like input and unsupported formats; deliberate searches (including the explicit clipboard command) are a separate action. A classifier cannot guarantee that arbitrary selected or copied text is safe to share.
 
-Clipboard-derived recent activity recording and persistence are separately controlled and **off by default**. For implementation details and retention rules, see the [technical documentation](docs/) and [recent activity](docs/recent-activity.md). Clipboard policy documents are being consolidated in [PR #77](https://github.com/arran4/klookup/pull/77).
+Clipboard-derived recent activity recording and persistence are separately controlled and **off by default**. For implementation details and retention rules, see [Clipboard policy and privacy](docs/clipboard-policy.md) and [Recent activity](docs/recent-activity.md).
 
 ### A future selected-text mode
 
@@ -232,7 +232,6 @@ These are **roadmap items, not available features**:
 | Local manual reference | Search **already-rendered** HTML/text/Markdown manual pages; no roff parser, automatic `man` invocation or compressed manuals | [#87](https://github.com/arran4/klookup/issues/87) |
 | Local GNU Info-derived documentation | Search **already-rendered** HTML/text exports, not native Info nodes, compressed `.info` files or Texinfo syntax | [#90](https://github.com/arran4/klookup/issues/90) |
 | User-configurable HTTP sources | Add an HTTP/API lookup source without compiling a new C++ plugin | [#57](https://github.com/arran4/klookup/issues/57), [PR #82](https://github.com/arran4/klookup/pull/82) |
-| Optional start-on-login | Make KLookup ready in the tray when a Plasma session starts | [#70](https://github.com/arran4/klookup/issues/70), [PR #76](https://github.com/arran4/klookup/pull/76) |
 
 Why these matter: a desktop lookup tool is most useful when it can answer a small question immediately and, where possible, **locally**. The selection popup and local sources are part of that longer-term direction, rather than claims about KLookup's current capabilities.
 
@@ -347,7 +346,9 @@ Relevant implementation guides:
 - [Spotify provider setup](docs/spotify-provider.md)
 - [Global shortcuts](docs/global-shortcuts.md)
 - [Recent activity and retention](docs/recent-activity.md)
-- [Result actions and source-link handling (documentation collection)](docs/) — consolidation into a combined guide is tracked in [PR #77](https://github.com/arran4/klookup/pull/77)
+- [Result actions and source interactions](docs/result-interactions.md)
+- [Clipboard policy and privacy](docs/clipboard-policy.md)
+- [Autostart configuration](docs/autostart.md)
 - [Wikipedia result content](docs/wikipedia-content.md)
 
 ### Diagnostics and verification

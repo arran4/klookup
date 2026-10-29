@@ -2,6 +2,9 @@
 #include "appicon.h"
 #include "clipboardinput.h"
 #include "globalshortcuts.h"
+#include "resultdetailwindow.h"
+#include "searchwindow.h"
+#include <QTabBar>
 #include <KShortcutsDialog>
 #include <QMessageBox>
 #include <QTimer>
@@ -60,6 +63,27 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_tabWidget->addTab(m_dashboard, QStringLiteral("Dashboard"));
     m_tabWidget->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
+    m_tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tabWidget->tabBar(), &QWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        int index = m_tabWidget->tabBar()->tabAt(pos);
+        if (index > 0) {
+            QMenu menu(this);
+            auto *newWindowAction = menu.addAction(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"));
+            menu.addSeparator();
+            auto *closeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("tab-close")), QStringLiteral("Close Tab"));
+            connect(newWindowAction, &QAction::triggered, this, [this, index] {
+                openSearchInNewWindow(m_tabWidget->tabText(index));
+            });
+            connect(closeAction, &QAction::triggered, this, [this, index] {
+                if (index > 0 && index < m_tabWidget->count()) {
+                    QWidget *widget = m_tabWidget->widget(index);
+                    m_tabWidget->removeTab(index);
+                    widget->deleteLater();
+                }
+            });
+            menu.exec(m_tabWidget->tabBar()->mapToGlobal(pos));
+        }
+    });
 
     setCentralWidget(m_tabWidget);
     setWindowTitle(QStringLiteral("KLookup"));
@@ -143,6 +167,7 @@ MainWindow::MainWindow(QWidget *parent)
     loadPlugins();
 
     connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
+    connect(m_dashboard, &SearchDashboard::searchInNewWindowRequested, this, &MainWindow::openSearchInNewWindow);
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
 
@@ -430,6 +455,15 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
     SearchTab *tab = new SearchTab(query, this);
     tab->setProperty("automaticClipboardQuery", clipboard);
     connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
+    connect(tab, &SearchTab::openSearchInNewWindowRequested, this, &MainWindow::openSearchInNewWindow);
+    connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
+        if (win) {
+            m_detailWindows.append(win);
+            connect(win, &ResultDetailWindow::windowClosing, this, [this, win] {
+                m_detailWindows.removeAll(win);
+            });
+        }
+    });
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
@@ -459,6 +493,12 @@ bool MainWindow::queryClose()
     // application emits aboutToQuit.  Save while all session widgets are live;
     // aboutToQuit provides the same guarantee for explicit Quit actions.
     saveSettings();
+    for (auto win : m_searchWindows) {
+        if (win) win->close();
+    }
+    for (auto win : m_detailWindows) {
+        if (win) win->close();
+    }
     return true;
 }
 
@@ -474,6 +514,77 @@ void MainWindow::clearSearchTabs()
     tabGroup.deleteGroup();
     tabGroup.writeEntry("Count", 0);
     config->sync();
+}
+
+SearchWindow *MainWindow::openSearchInNewWindow(const QString &query)
+{
+    auto *window = new SearchWindow(query, m_providers, m_authManager);
+    m_searchWindows.append(window);
+    connect(window, &SearchWindow::windowClosing, this, [this, window] {
+        m_searchWindows.removeAll(window);
+    });
+    if (auto *tab = window->searchTab()) {
+        connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
+        connect(tab, &SearchTab::openSearchInNewWindowRequested, this, [this](const QString &q) {
+            openSearchInNewWindow(q);
+        });
+        connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
+            if (win) {
+                m_detailWindows.append(win);
+                connect(win, &ResultDetailWindow::windowClosing, this, [this, win] {
+                    m_detailWindows.removeAll(win);
+                });
+            }
+        });
+    }
+    window->show();
+    window->raise();
+    window->activateWindow();
+    return window;
+}
+
+ResultDetailWindow *MainWindow::openResultDetailsInNewWindow(const SearchResult &result,
+                                                            const QString &providerName,
+                                                            const ResultMetadata &metadata,
+                                                            const QString &contentHtml)
+{
+    auto *detail = new ResultDetailWindow(result, providerName, metadata, contentHtml);
+    m_detailWindows.append(detail);
+    connect(detail, &ResultDetailWindow::windowClosing, this, [this, detail] {
+        m_detailWindows.removeAll(detail);
+    });
+    detail->show();
+    detail->raise();
+    detail->activateWindow();
+    return detail;
+}
+
+QList<SearchWindow *> MainWindow::searchWindows() const
+{
+    const_cast<MainWindow *>(this)->m_searchWindows.removeIf([](const QPointer<SearchWindow> &win) {
+        return !win;
+    });
+    QList<SearchWindow *> result;
+    for (const auto &win : m_searchWindows) {
+        if (win) {
+            result.append(win.data());
+        }
+    }
+    return result;
+}
+
+QList<ResultDetailWindow *> MainWindow::detailWindows() const
+{
+    const_cast<MainWindow *>(this)->m_detailWindows.removeIf([](const QPointer<ResultDetailWindow> &win) {
+        return !win;
+    });
+    QList<ResultDetailWindow *> result;
+    for (const auto &win : m_detailWindows) {
+        if (win) {
+            result.append(win.data());
+        }
+    }
+    return result;
 }
 
 void MainWindow::loadSettings()

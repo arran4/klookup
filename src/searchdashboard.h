@@ -27,6 +27,7 @@ public:
 
 signals:
     void searchRequested(const QString &query);
+    void searchInNewWindowRequested(const QString &query);
     void recentActivated(const RecentItem &item);
 
 private slots:

@@ -55,3 +55,12 @@ through QPointer; destroying it first is safe. Pending credential callbacks use 
 weak host reference and generation check, so cancellation or destruction cannot
 start HTTP later. This ownership guard does not implement the separate production
 KWallet provisioning, restore/revoke and clone-context acceptance in issue #85.
+
+On Linux these are per-thread CPU budgets, measured from the engine thread's
+POSIX CPU clock by both accounting and watchdog polling (at most 5 ms apart).
+Scheduler delays and blocking native waits do not spend the CPU allowance; wall
+operation deadlines remain separate. Platforms without this clock retain an
+elapsed-execution fallback. This does not add native-code preemption or an OS
+sandbox. The unchanged busy-loop/job-storm tests still enforce interruption, and
+a native-wait regression proves waiting longer than the CPU allowance alone does
+not invalidate a healthy engine on Linux.

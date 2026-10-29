@@ -20,8 +20,7 @@ We appreciate the efforts of security researchers and users in making KLookup se
 
 If you believe you have found a security vulnerability in KLookup, please report it privately:
 
-1. **GitHub Private Security Advisory**: Use the "Report a vulnerability" button on the [GitHub Advisories page](https://github.com/arran4/klookup/security/advisories/new) (recommended).
-2. **Direct Contact**: If GitHub advisories are unavailable, contact the project maintainer via email at `arran4@users.noreply.github.com` or `arran4@gmail.com` with the subject tag `[KLookup Security]`.
+**GitHub private vulnerability reporting is the only supported channel.** Use **Report a vulnerability** under [KLookup Security Advisories](https://github.com/arran4/klookup/security/advisories/new) when private reporting is enabled. Do not post exploit details, tokens, or proof-of-concept payloads in public issues or discussions. If the private reporting control is unavailable, the maintainer must enable it before inviting external vulnerability submissions; there is currently no published alternative contact channel.
 
 Please include as much information as possible to help us reproduce and resolve the issue:
 - Description of the vulnerability and its potential impact.
@@ -31,7 +30,7 @@ Please include as much information as possible to help us reproduce and resolve 
 
 ### What to Expect
 
-- **Acknowledgment**: You will receive an acknowledgment of your report within 48 hours.
+- **Acknowledgment**: Reports will be reviewed as resources permit; no fixed acknowledgment or resolution deadline is promised.
 - **Assessment**: We will evaluate the report, verify its severity, and keep you informed of our progress.
 - **Coordination**: We will coordinate with you on patch release and public disclosure timelines. We kindly request that you do not disclose the vulnerability publicly until a patch is released.
 
@@ -40,14 +39,15 @@ Please include as much information as possible to help us reproduce and resolve 
 KLookup is designed with several security layers:
 
 1. **Credential Isolation (KWallet)**:
-   - Sensitive credentials (API keys, OAuth refresh tokens, secrets) are never written to plaintext configuration files (`klookuprc`).
-   - Secrets are stored in KDE Wallet (KWallet) under the dedicated folder `klookup`.
-   - Access to KWallet is explicitly guarded and never automatically prompted during background startup.
+   - Built-in provider credential persistence uses KDE Wallet (KWallet) under the dedicated folder `KLookup` instead of writing saved tokens directly to `klookuprc`.
+   - Restoring credentials from KWallet is an explicit user action, to avoid surprise wallet prompts during background startup.
+   - Declarative custom HTTP sources are still under security review: secret-bearing headers/URL/body templates must not be persisted or exported as plaintext, and must not be described as KWallet-protected until that integration is verified (see PR #82).
 
 2. **Clipboard Privacy**:
-   - Automatic clipboard search only operates on plain text, explicitly filtering out URLs unless configured or triggered manually (`Meta+Shift+K` or "Search clipboard now").
-   - Clipboard capture respects active focus constraints (`ClipboardOnlyWhenFocused`) to prevent background surveillance.
-   - Internal URL copies made by KLookup are tagged with a custom MIME format to prevent feedback loops.
+   - Passive capture is controlled by separate user-configurable capture modes (Never, Visible, Focused, Running) and search triggers; it is not universally focus-only.
+   - Automatic capture uses plain-text classification and filters standalone URLs; an explicitly invoked clipboard search can bypass those automatic filters.
+   - Clipboard activity and recent-history persistence have independent settings. Users must understand the privacy implications of the Running and automatic-search modes.
+   - KLookup's own URL-copy actions mark clipboard data to avoid feedback loops.
 
 3. **URL Validation & Navigation Safety**:
    - Results and source links strictly validate URLs, enforcing `http` and `https` schemes with full domain validation.

@@ -31,8 +31,14 @@ explicitly documents as thread-safe. Initialization has a 250 ms execution
 budget; each operation has a cumulative 100 ms budget across its JavaScript
 calls and promise callbacks. Waiting for HTTP is excluded. Interrupted execution
 invalidates the engine and fails all its active operations once; Retry/reload
-creates a fresh engine. The watchdog is stopped and joined before destroying the
-engine. Ordinary promise wall timeouts do not invalidate the engine.
+creates a fresh engine. Disposal runs after the interrupted JavaScript stack
+unwinds, before pending promise jobs. A public application event filter also
+handles jobs already present in Qt's current posted-event batch; other engines'
+events are preserved. This avoids Qt
+6.11's unsafe thenable-adoption exception path when interruption remains set,
+and destroys the engine's queued reactions. User thenables are adopted under
+the originating operation's execution guard. The watchdog is stopped and joined
+before destroying the engine. Ordinary promise wall timeouts do not invalidate the engine.
 
 This is trusted in-process QJSEngine execution, not an OS sandbox. The execution
 budget bounds JavaScript loops and callbacks through Qt's interruption mechanism;

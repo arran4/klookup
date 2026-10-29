@@ -4,6 +4,8 @@
 #include "jsprovider.h"
 
 #include <QDebug>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -20,10 +22,12 @@
 
 // Only setInterrupted() crosses threads; Qt explicitly documents it thread-safe.
 // Stop/join precedes engine destruction. No QJSValue is accessed by this thread.
+namespace { const int InterruptCleanupEvent = QEvent::registerEventType(); }
+
 class JsExecutionWatchdog {
 public:
-    JsExecutionWatchdog(QJSEngine *engine, QObject *context, std::function<void()> expired)
-        : m_thread([this, engine, context, expired] {
+    JsExecutionWatchdog(QJSEngine *engine, QObject *context)
+        : m_thread([this, engine, context] {
             std::unique_lock<std::mutex> lock(m_mutex);
             while (!m_stopping) {
                 if (!m_armed) { m_changed.wait(lock); continue; }
@@ -33,7 +37,7 @@ public:
                 })) continue;
                 m_armed = false;
                 engine->setInterrupted(true);
-                QMetaObject::invokeMethod(context, expired, Qt::QueuedConnection);
+                QCoreApplication::postEvent(context, new QEvent(QEvent::Type(InterruptCleanupEvent)), Qt::HighEventPriority);
             }
         }) {}
     ~JsExecutionWatchdog() {
@@ -62,6 +66,57 @@ private:
     quint64 m_generation = 0;
     std::chrono::steady_clock::time_point m_deadline;
     std::thread m_thread;
+};
+
+// Qt processes posted events in batches. A high-priority cleanup posted during
+// one batch need not preempt jobs already in that batch. Before the next posted
+// event is dispatched, retire interrupted engines through this public event
+// filter; leave other engines' events intact. No Qt private API is required.
+class JsInterruptionGate : public QObject {
+public:
+    static JsInterruptionGate *instance() {
+        static QPointer<JsInterruptionGate> gate;
+        if (!gate) gate = new JsInterruptionGate(QCoreApplication::instance());
+        return gate;
+    }
+    void remove(JsProvider *provider) {
+        for (auto it = m_providers.begin(); it != m_providers.end();) {
+            if (it->isNull() || it->data() == provider) it = m_providers.erase(it); else ++it;
+        }
+    }
+    void add(JsProvider *provider) {
+        for (auto it = m_providers.begin(); it != m_providers.end();) {
+            if (it->isNull()) it = m_providers.erase(it); else ++it;
+        }
+        m_providers.append(provider);
+        connect(provider, &QObject::destroyed, this, [this, provider] {
+            for (auto it = m_providers.begin(); it != m_providers.end();) {
+                if (it->isNull() || it->data() == provider) it = m_providers.erase(it); else ++it;
+            }
+        });
+    }
+protected:
+    bool eventFilter(QObject *receiver, QEvent *event) override {
+        // Do not dispose during synchronous child/property notifications that
+        // may occur inside a running JavaScript/C++ call.
+        if (event->type() < QEvent::User && event->type() != QEvent::MetaCall &&
+            event->type() != QEvent::Timer && event->type() != QEvent::DeferredDelete) return false;
+        QPointer<QObject> target(receiver);
+        const auto providers = m_providers;
+        for (const auto &provider : providers) {
+            if (provider && provider->m_engine && provider->m_engine->isInterrupted()) {
+                provider->m_disposalPosted = true;
+                provider->executionInterrupted();
+                provider->disposeEngine();
+            }
+        }
+        // QObject permits deleting the filtered receiver only if the event is
+        // consumed. This is the case for the retired engine's reaction handler.
+        return target.isNull();
+    }
+private:
+    explicit JsInterruptionGate(QObject *application) : QObject(application) { application->installEventFilter(this); }
+    QList<QPointer<JsProvider>> m_providers;
 };
 
 class JsPromiseHandler : public QObject
@@ -222,6 +277,7 @@ private:
         const auto previous = m_provider->enterOperation(pending.token);
         if (resp.success) {
             QJSValue respObj = m_engine->newObject();
+            respObj.setProperty(QStringLiteral("then"), QJSValue(QJSValue::UndefinedValue));
             respObj.setProperty(QStringLiteral("status"), resp.statusCode);
             respObj.setProperty(QStringLiteral("ok"), resp.statusCode >= 200 && resp.statusCode < 300);
             respObj.setProperty(QStringLiteral("statusText"), QStringLiteral("OK"));
@@ -251,8 +307,7 @@ private:
     QPointer<ProviderHost::ProviderHostService> m_hostService;
     struct PendingFetch { quint64 token; QJSValue deferred; };
     QHash<quint64, PendingFetch> m_pendingFetches;
-    // Root promise identities until termination. This avoids the crash observed
-    // with Qt 6.11's WeakMap in the promise-storm regression fixture.
+    // Root promise identities until their owning operation terminates.
     QList<QPair<QJSValue, quint64>> m_ownedPromises;
 };
 
@@ -265,9 +320,15 @@ JsProvider::JsProvider(const ProviderPackage &package, QObject *parent, Provider
 
 JsProvider::~JsProvider()
 {
+    if (m_registeredWithGate && QCoreApplication::instance()) JsInterruptionGate::instance()->remove(this);
     m_loaded = false;
     const auto ids = m_operations.keys();
     for (quint64 id : ids) release(id);
+    disposeEngine();
+}
+
+void JsProvider::disposeEngine()
+{
     m_watchdog.reset(); // Join before deleting QJSEngine or any QJSValue.
     delete m_bridge;
     m_bridge = nullptr;
@@ -275,6 +336,22 @@ JsProvider::~JsProvider()
     m_helpers = {};
     delete m_engine;
     m_engine = nullptr;
+}
+
+bool JsProvider::event(QEvent *event)
+{
+    if (event->type() == InterruptCleanupEvent) {
+        m_disposalPosted = true;
+        executionInterrupted();
+        // Qt 6.11's Promise ResolveThenable exception path dereferences an
+        // uninitialized rejection wrapper if another queued job executes with
+        // interruption still set. Dispose at higher priority than promise jobs,
+        // after the interrupted JS stack has unwound. QObject destruction also
+        // removes the engine's queued reaction events, through public Qt APIs.
+        disposeEngine();
+        return true;
+    }
+    return ProviderV1::event(event);
 }
 
 ProviderApiV1::ProviderV1 *JsProvider::clone(QObject *parent) const
@@ -323,7 +400,7 @@ void JsProvider::leaveOperation(quint64 previous)
     m_executionElapsed.start();
     if (auto *op = operationForToken(previous)) m_watchdog->arm(100000000 - op->cpuNanoseconds);
     else m_watchdog->disarm();
-    if (m_engine->isInterrupted()) executionInterrupted();
+    if (m_engine && m_engine->isInterrupted()) executionInterrupted();
 }
 
 void JsProvider::registerNetworkRequest(quint64 token, quint64 netId)
@@ -405,6 +482,10 @@ void JsProvider::invalidate()
 void JsProvider::executionInterrupted()
 {
     if (!m_engine || !m_engine->isInterrupted()) return;
+    if (!m_disposalPosted) {
+        m_disposalPosted = true;
+        QCoreApplication::postEvent(this, new QEvent(QEvent::Type(InterruptCleanupEvent)), Qt::HighEventPriority);
+    }
     m_loaded = false;
     m_loadError = QStringLiteral("Script execution exceeded its CPU budget; retry the provider");
     const auto tokens = m_tokens.keys();
@@ -417,7 +498,9 @@ bool JsProvider::initEngine()
     if (!m_package.isTrusted()) { m_loadError = QStringLiteral("Untrusted provider package cannot execute code."); return false; }
     if (!m_snapshot.isValid() || !m_package.writeVerifiedSnapshot(m_snapshot.path(), &m_loadError)) return false;
     m_engine = new QJSEngine(this);
-    m_watchdog = std::make_unique<JsExecutionWatchdog>(m_engine, this, [this] { executionInterrupted(); });
+    JsInterruptionGate::instance()->add(this);
+    m_registeredWithGate = true;
+    m_watchdog = std::make_unique<JsExecutionWatchdog>(m_engine, this);
     m_bridge = new JsHostBridge(this, m_engine, m_hostService, this);
     m_engine->globalObject().setProperty(QStringLiteral("__klookupBridge"), m_engine->newQObject(m_bridge));
     m_watchdog->arm(250000000);
@@ -428,14 +511,29 @@ bool JsProvider::initEngine()
             function claim(promise, token) { return bridge.claimPromise(promise, token); }
             function OperationPromise(executor) {
                 if (!(this instanceof OperationPromise)) throw new TypeError('Promise requires new');
-                return claim(new NativePromise(executor), bridge.operationToken());
+                if (typeof executor !== 'function') throw new TypeError('Promise executor must be callable');
+                var token = bridge.operationToken();
+                var promise = new NativePromise(function(resolve, reject) {
+                    function yes(value) {
+                        try { resolve(adopt(value, token)); } catch (error) { reject(error); }
+                    }
+                    executor(token ? bind(yes, token) : yes, token ? bind(reject, token) : reject);
+                });
+                var prototype = Object.getPrototypeOf(this);
+                if (prototype !== OperationPromise.prototype) Object.setPrototypeOf(promise, prototype);
+                return claim(promise, token);
             }
             OperationPromise.prototype = NativePromise.prototype;
             Object.defineProperty(OperationPromise.prototype, 'constructor', {value: OperationPromise});
+            if (typeof Symbol === 'function' && Symbol.species)
+                Object.defineProperty(OperationPromise, Symbol.species, {get: function() { return this; }});
             ['resolve', 'reject', 'all', 'race', 'allSettled', 'any'].forEach(function(method) {
                 if (typeof NativePromise[method] !== 'function') return;
                 Object.defineProperty(OperationPromise, method, {value: function(value) {
-                    return claim(NativePromise[method].call(NativePromise, value), bridge.operationToken());
+                    var token = bridge.operationToken();
+                    if (method === 'resolve') value = adopt(value, token);
+                    else if (method !== 'reject') value = Array.from(value, function(item) { return adopt(item, token); });
+                    return claim(NativePromise[method].call(this, value), token);
                 }});
             });
             Object.defineProperty(this, 'Promise', {value: OperationPromise, writable: false, configurable: false});
@@ -452,9 +550,28 @@ bool JsProvider::initEngine()
                 return function(value) {
                     if (!bridge.operationActive(token)) return;
                     var previous = bridge.enterOperation(token);
-                    try { return fn(value); }
+                    try { return adopt(fn(value), token); }
                     finally { bridge.leaveOperation(previous); }
                 };
+            }
+            function adopt(value, token) {
+                if (!value || (typeof value !== 'object' && typeof value !== 'function') || value instanceof NativePromise) return value;
+                var then = value.then;
+                if (typeof then !== 'function') return value;
+                // Execute user thenables under the originating operation's
+                // guard, rather than in an unowned native adoption job.
+                return claim(new NativePromise(function(resolve, reject) {
+                    var settled = false;
+                    function yes(result) {
+                        if (settled) return;
+                        settled = true;
+                        if (result === value) { reject(new TypeError('Thenable resolved to itself')); return; }
+                        try { resolve(adopt(result, token)); } catch (error) { reject(error); }
+                    }
+                    function no(error) { if (!settled) { settled = true; reject(error); } }
+                    try { then.call(value, bind(yes, token), bind(no, token)); }
+                    catch (error) { no(error); }
+                }), token);
             }
             Object.defineProperty(OperationPromise.prototype, 'then', {configurable: false, writable: false,
                 value: function(onResolved, onRejected) {
@@ -470,6 +587,7 @@ bool JsProvider::initEngine()
                     return {promise: claim(promise, bridge.operationToken()), resolve: resolve, reject: reject};
                 },
                 attachPromise: function(p, resolve, reject) {
+                    p = adopt(p, bridge.operationToken());
                     if (p && typeof p.then === 'function') p.then(resolve, function(error) {
                         reject(error ? (error.message || String(error)) : 'Script error');
                     });
@@ -483,7 +601,7 @@ bool JsProvider::initEngine()
     if (helpers.isError()) { m_loadError = helpers.toString(); m_watchdog->disarm(); return false; }
     m_module = m_engine->importModule(QDir(m_snapshot.path()).filePath(QDir(m_package.packageDir()).relativeFilePath(m_package.entryFilePath())));
     m_watchdog->disarm();
-    if (m_engine->isInterrupted()) { m_loadError = QStringLiteral("Module initialization exceeded its CPU budget"); return false; }
+    if (m_engine->isInterrupted()) { executionInterrupted(); m_loadError = QStringLiteral("Module initialization exceeded its CPU budget"); return false; }
     if (m_module.isError()) { m_loadError = QStringLiteral("Error importing module: %1").arg(m_module.toString()); return false; }
     if (!m_module.property(QStringLiteral("search")).isCallable()) { m_loadError = QStringLiteral("Module does not export callable search"); return false; }
     m_loaded = true;
@@ -520,13 +638,14 @@ quint64 JsProvider::invoke(const QString &method, const QJSValueList &arguments,
     handler->onReject = [this, token](const QString &error) { fail(token, ProviderApiV1::ErrorCode::InternalError, error); };
     const auto previous = enterOperation(token);
     const auto value = m_module.property(method).call(arguments);
-    if (m_engine->isInterrupted()) executionInterrupted();
+    if (m_engine && m_engine->isInterrupted()) executionInterrupted();
     else if (value.isError()) fail(token, ProviderApiV1::ErrorCode::InternalError, value.toString());
     else if (operationActive(token)) {
         const auto object = m_engine->newQObject(handler);
         const auto attached = m_helpers.property(QStringLiteral("attachPromise")).call({
             value, object.property(QStringLiteral("resolve")), object.property(QStringLiteral("reject"))});
-        if (attached.isError()) fail(token, ProviderApiV1::ErrorCode::InternalError, attached.toString());
+        if (m_engine->isInterrupted()) executionInterrupted();
+        else if (attached.isError()) fail(token, ProviderApiV1::ErrorCode::InternalError, attached.toString());
     }
     leaveOperation(previous);
     return id;

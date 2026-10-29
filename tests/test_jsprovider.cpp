@@ -270,6 +270,9 @@ private Q_SLOTS:
         QTest::newRow("synchronous-loop") << QStringLiteral("spin");
         QTest::newRow("promise-callback-loop") << QStringLiteral("microtask-spin");
         QTest::newRow("promise-job-storm") << QStringLiteral("microtask-storm");
+        QTest::newRow("returned-thenable-loop") << QStringLiteral("thenable-spin");
+        QTest::newRow("export-thenable-loop") << QStringLiteral("export-thenable-spin");
+        QTest::newRow("resolved-thenable-loop") << QStringLiteral("resolve-thenable-spin");
     }
 
     void testCpuInterruption()
@@ -310,6 +313,51 @@ private Q_SLOTS:
         provider->search(QStringLiteral("state"));
         QTRY_VERIFY(provider.isNull());
         QCOMPARE(ready.count(), 1);
+    }
+
+    void testNestedThenablesKeepOperationOwnership()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        JsProvider provider(pkg);
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        const QList<QPair<QString, QString>> cases = {{QStringLiteral("nested-thenable"), QStringLiteral("nested")},
+            {QStringLiteral("baseline"), QStringLiteral("baseline")}, {QStringLiteral("subclass"), QStringLiteral("subclass")},
+            {QStringLiteral("all"), QStringLiteral("one")}};
+        for (const auto &item : cases) {
+            provider.search(item.first);
+            QTRY_COMPARE(ready.count(), 1);
+            const auto results = ready.takeFirst()[1].value<SearchPage>().results;
+            QCOMPARE(results.first().id, item.second);
+            QCOMPARE(results.size(), item.first == QLatin1String("all") ? 2 : 1);
+            QCOMPARE(provider.retainedPromiseCount(), 0);
+        }
+    }
+
+    void testInterruptedEnginePreservesOtherProvidersQueuedWork()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/lifecycle_js"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        FakeNetworkReply *reply = nullptr;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            reply = new FakeNetworkReply(request, &nam);
+            return reply;
+        };
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider healthy(pkg, nullptr, &host), interrupted(pkg);
+        QSignalSpy ready(&healthy, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&interrupted, &ProviderApiV1::ProviderV1::pageFailed);
+        healthy.search(QStringLiteral("fetch"));
+        QVERIFY(reply);
+        reply->respondSuccess(200, "[]");
+        interrupted.search(QStringLiteral("spin"));
+        QTRY_COMPARE(failed.count(), 1);
+        QTRY_COMPARE(ready.count(), 1);
+        QVERIFY(healthy.isLoaded());
+        healthy.search(QStringLiteral("state"));
+        QTRY_COMPARE(ready.count(), 2);
+        QCOMPARE(healthy.retainedPromiseCount(), 0);
     }
 
     void testAccountingBridgeIsPrivate()

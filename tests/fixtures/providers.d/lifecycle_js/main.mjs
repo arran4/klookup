@@ -1,7 +1,25 @@
 // SPDX-FileCopyrightText: 2026 KLookup contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 var counter = 0;
+var baseline = Promise.resolve([{id: "baseline", title: "Initialized module promise"}]);
 function search(query) {
+    if (query === "baseline") return baseline;
+    if (query === "subclass") {
+        class LocalPromise extends Promise {}
+        var result = LocalPromise.resolve([{id: "subclass", title: "Promise subclass"}]).then(function(value) { return value; });
+        if (!(result instanceof LocalPromise)) throw new Error("Promise subclass was lost");
+        return result;
+    }
+    if (query === "all") return Promise.all([
+        Promise.resolve({id: "one", title: "Native promise"}),
+        {then: function(resolve) { resolve({id: "two", title: "Thenable"}); }}
+    ]);
+    if (query === "thenable-spin") return Promise.resolve().then(function() { return {then: function() { while (true) {} }}; });
+    if (query === "export-thenable-spin") return {then: function() { while (true) {} }};
+    if (query === "resolve-thenable-spin") return Promise.resolve({then: function() { while (true) {} }});
+    if (query === "nested-thenable") return Promise.resolve().then(function() {
+        return {then: function(yes) { yes({then: function(done) { done([{id: "nested", title: "Nested thenable"}]); }}); }};
+    });
     if (query === "microtask-storm") {
         function again() { return Promise.resolve().then(again); }
         return again();

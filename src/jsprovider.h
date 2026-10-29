@@ -17,6 +17,7 @@
 class JsHostBridge;
 class JsPromiseHandler;
 class JsExecutionWatchdog;
+class JsInterruptionGate;
 class QTimer;
 
 // Trusted in-process execution, not an OS sandbox. Package approval, host
@@ -55,8 +56,12 @@ public:
     void registerNetworkRequest(quint64 token, quint64 netId);
     void unregisterNetworkRequest(quint64 netId);
 
+protected:
+    bool event(QEvent *event) override;
+
 private:
     friend class JsHostBridge;
+    friend class JsInterruptionGate;
     enum class Kind { Page, Details, Content, ContentFromDetails };
     struct Operation {
         Kind kind = Kind::Page;
@@ -75,6 +80,7 @@ private:
     void fail(quint64 token, ProviderApiV1::ErrorCode code, const QString &message);
     void release(quint64 requestId);
     void executionInterrupted();
+    void disposeEngine();
     void emitFailure(quint64 requestId, quint64 token, Kind kind, const QString &resultId,
                      ProviderApiV1::ErrorCode code, const QString &message);
     void postTerminal(quint64 requestId, quint64 token, std::function<void()> callback);
@@ -88,6 +94,8 @@ private:
     QJSValue m_module;
     QJSValue m_helpers;
     bool m_loaded = false;
+    bool m_disposalPosted = false;
+    bool m_registeredWithGate = false;
     QString m_loadError;
     quint64 m_counter = 0;
     quint64 m_executionCounter = 0;

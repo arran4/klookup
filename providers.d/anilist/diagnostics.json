@@ -1,0 +1,104 @@
+{
+  "query": "Björk 雪 & + / ? \"quoted\"\nquery { malicious }",
+  "valid": {
+    "data": {
+      "Page": {
+        "media": [
+          {
+            "id": 42,
+            "title": {
+              "english": "Fixture 雪",
+              "romaji": "Fixture Romaji"
+            },
+            "description": "<p>Synthetic anime description.</p>",
+            "siteUrl": "https://anilist.co/anime/42",
+            "status": "FINISHED",
+            "episodes": 12,
+            "averageScore": 82
+          }
+        ]
+      }
+    }
+  },
+  "empty": {
+    "data": {
+      "Page": {
+        "media": []
+      }
+    }
+  },
+  "partial": {
+    "data": {
+      "Page": {
+        "media": [
+          null,
+          {},
+          {
+            "id": 42,
+            "title": {
+              "english": "Fixture 雪",
+              "romaji": "Fixture Romaji"
+            },
+            "description": "<p>Synthetic anime description.</p>",
+            "siteUrl": "https://anilist.co/anime/42",
+            "status": "FINISHED",
+            "episodes": 12,
+            "averageScore": 82
+          }
+        ]
+      }
+    },
+    "errors": [
+      {
+        "message": "Synthetic field failure"
+      }
+    ]
+  },
+  "invalid": {
+    "errors": [
+      {
+        "message": "Synthetic error"
+      }
+    ],
+    "data": null
+  },
+  "null_media": {
+    "data": {
+      "Page": {
+        "media": null
+      }
+    }
+  },
+  "graphql_error": {
+    "errors": [
+      {
+        "message": "Synthetic error"
+      }
+    ],
+    "data": {
+      "Page": {
+        "media": []
+      }
+    }
+  },
+  "graphql_rate": {
+    "errors": [
+      {
+        "message": "Limited",
+        "status": 429
+      }
+    ],
+    "data": null
+  },
+  "expected": {
+    "id": "42",
+    "title": "Fixture 雪",
+    "url": "https://anilist.co/anime/42",
+    "type": "anime",
+    "additionalData": {
+      "status": "FINISHED",
+      "episodes": 12,
+      "score": 82
+    }
+  }
+}

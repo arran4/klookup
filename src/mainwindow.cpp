@@ -445,7 +445,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
                     if (provider) {
                         // TVMaze is shipped exclusively as an ECMAScript provider.
                         // Ignore an obsolete native module left by an older installation.
-                        if (provider->id() == QLatin1String("tvmaze") || provider->id() == QLatin1String("lyrics_ovh") || provider->id() == QLatin1String("openlibrary")) {
+                        if (provider->id() == QLatin1String("tvmaze") || provider->id() == QLatin1String("lyrics_ovh") || provider->id() == QLatin1String("openlibrary") || provider->id() == QLatin1String("anilist")) {
                             qCWarning(KLOOKUP_PLUGINS) << "Ignoring obsolete migrated native plugin:" << fileName;
                             loader->unload();
                             delete loader;

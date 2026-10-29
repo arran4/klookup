@@ -40,3 +40,12 @@ if [ -x "$build_dir/tests/test_scripted_openlibrary" ]; then
     XDG_DATA_HOME="$stage/empty-user" XDG_DATA_DIRS="$stage/share" XDG_CONFIG_HOME="$stage/config-openlibrary" \
         KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-openlibrary" normalDiscoveryApprovalAndEnablement
 fi
+
+if [ -x "$build_dir/tests/test_scripted_anilist" ]; then
+    test -f "$stage/share/klookup/providers.d/anilist/provider.json"
+    test -f "$stage/share/klookup/providers.d/anilist/main.mjs"
+    cp "$build_dir/tests/obsolete/provider_anilist.so" "$stage/lib/plugins/klookup/"
+    cp "$build_dir/tests/test_scripted_anilist" "$stage/bin/test-installed-anilist"
+    XDG_DATA_HOME="$stage/empty-user" XDG_DATA_DIRS="$stage/share" XDG_CONFIG_HOME="$stage/config-anilist" \
+        KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-anilist" normalDiscoveryApprovalAndEnablement
+fi

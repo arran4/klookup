@@ -58,7 +58,7 @@ QList<ProviderDiagnostics::Source> ProviderDiagnostics::discover(const QStringLi
             auto id = file.completeBaseName();
             if (id.startsWith(QStringLiteral("lib"))) id.remove(0, 3);
             if (id.startsWith(QStringLiteral("provider_"))) id.remove(0, 9);
-            if (id == QLatin1String("tvmaze") || id == QLatin1String("lyrics_ovh") || id == QLatin1String("openlibrary") || ids.contains(id)) continue;
+            if (id == QLatin1String("tvmaze") || id == QLatin1String("lyrics_ovh") || id == QLatin1String("openlibrary") || id == QLatin1String("anilist") || ids.contains(id)) continue;
             ids.insert(id);
             sources.append({id, QStringLiteral("native"), file.absoluteFilePath(), {}, {}, {}, settings.readEntry(id + QStringLiteral("_Enabled"), true)});
         }

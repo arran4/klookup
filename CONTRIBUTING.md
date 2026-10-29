@@ -9,15 +9,15 @@ Thank you for your interest in contributing to KLookup! KLookup is an extensible
 
 ## Development Environment
 
-KLookup is built with standard modern C++ (C++20), CMake, Qt 6, and KDE Frameworks 6 (KF6).
+KLookup is built with standard modern C++ (C++17), CMake, Qt 6, and KDE Frameworks 6 (KF6).
 
 ### 1. Universal Project Requirements
 
 To build KLookup, your environment requires:
-- C++20 compatible compiler (GCC >= 12 or Clang >= 15)
+- C++17 compatible compiler (GCC or Clang)
 - CMake >= 3.16 and Ninja (or Make)
-- Qt 6 (Core, Gui, Widgets, Network, DBus, Test)
-- KDE Frameworks 6 (CoreAddons, Config, ConfigWidgets, I18n, WidgetsAddons, XmlGui, Notifications, Wallet, GlobalAccel, Runner, DBusAddons)
+- Qt 6 (Core, Gui, Widgets, Network, DBus, Qml; Test when BUILD_TESTING is enabled)
+- KDE Frameworks 6 (CoreAddons, Config, I18n, WidgetsAddons, XmlGui, Notifications, Wallet, GlobalAccel, Runner, DBusAddons)
 
 ### 2. Supported Workflows
 

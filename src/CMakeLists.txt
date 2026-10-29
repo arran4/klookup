@@ -4,6 +4,8 @@ add_library(klookup_core STATIC
     sourcelink.cpp
     resultcontent.cpp
     providerapiv1.cpp
+    providerpackage.cpp
+    providerhostservice.cpp
     searchprovider.cpp
     searchdashboard.cpp
     recentactivity.cpp

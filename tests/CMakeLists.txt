@@ -163,3 +163,7 @@ set_target_properties(provider_mock_tvmaze PROPERTIES
 add_dependencies(test_tvmaze_scripted provider_mock_tvmaze)
 add_test(NAME test_staged_install COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/check_staged_install.sh" "${CMAKE_BINARY_DIR}")
 set_tests_properties(test_staged_install PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)
+
+add_executable(test_providerhost_transport test_providerhost_transport.cpp)
+target_link_libraries(test_providerhost_transport Qt6::Test klookup_core ZLIB::ZLIB)
+add_test(NAME test_providerhost_transport COMMAND test_providerhost_transport)

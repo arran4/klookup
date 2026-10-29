@@ -55,6 +55,7 @@ find_package(Threads REQUIRED)
 
 target_link_libraries(klookup_core PUBLIC
     Threads::Threads
+    ZLIB::ZLIB
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets

@@ -95,6 +95,20 @@ private slots:
         QTRY_COMPARE(a.count(), 2);
         QCOMPARE(a.last()[1].toJsonObject().value(QStringLiteral("counts")).toObject().value(QStringLiteral("pass")).toInt(), 1);
     }
+    void executionPermissionAndMissingDependencyFailuresAreIsolated() {
+        auto loop = source(QStringLiteral("loop"), "export function search() {} export function selfTest() { while(true) {} }");
+        auto denied = source(QStringLiteral("denied"), "export function search() {} export function selfTest() { return host.fetch('https://undeclared.invalid').then(function() { return {passed:false}; }, function() { return {passed:true}; }); }");
+        auto healthy = source(QStringLiteral("after_loop"), "export function search() {} export function selfTest() { return {passed:true}; }");
+        ProviderDiagnostics::Source missing{QStringLiteral("missing_native"), QStringLiteral("native"), root.filePath(QStringLiteral("no-library.so")), {}, {}, {}, true};
+        const auto report = check({loop, missing, denied, healthy}, ProviderDiagnostics::Mode::Offline);
+        const auto rows = report.value(QStringLiteral("results")).toArray();
+        QCOMPARE(rows.size(), 4);
+        QCOMPARE(rows[0].toObject().value(QStringLiteral("code")).toString(), QStringLiteral("check.timeout"));
+        QCOMPARE(rows[1].toObject().value(QStringLiteral("code")).toString(), QStringLiteral("native.missing"));
+        QVERIFY(rows[1].toObject().value(QStringLiteral("capabilities")).isNull()); // Native v1 has no passive capability manifest.
+        QCOMPARE(rows[2].toObject().value(QStringLiteral("status")).toString(), QStringLiteral("pass"));
+        QCOMPARE(rows[3].toObject().value(QStringLiteral("status")).toString(), QStringLiteral("pass"));
+    }
     void meaningfulNativeAndScriptExamples() {
         auto pkg = ProviderPackage::fromDirectory(QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze"));
         pkg.setTrusted(true); pkg.setEnabled(true);

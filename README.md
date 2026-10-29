@@ -99,7 +99,7 @@ Find catalogue information through **Spotify** (after connecting it) or search f
 
 ## Search providers
 
-KLookup currently builds **14 providers**. They are separate plugins, so enabling one does not require using all the others.
+KLookup ships **14 specialised lookup providers**: 13 native C++ modules and TVMaze as an ECMAScript-module package (from the TVMaze hard cutover in [#106](https://github.com/arran4/klookup/issues/106)). Providers can be enabled or disabled independently.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |
@@ -231,7 +231,6 @@ These are **roadmap items, not available features**:
 | Local text-only dictionary sources | Search existing Markdown, HTML or text definitions without parsing StarDict, dictd or WordNet binary/native formats | [#86](https://github.com/arran4/klookup/issues/86) |
 | Local manual reference | Search **already-rendered** HTML/text/Markdown manual pages; no roff parser, automatic `man` invocation or compressed manuals | [#87](https://github.com/arran4/klookup/issues/87) |
 | Local GNU Info-derived documentation | Search **already-rendered** HTML/text exports, not native Info nodes, compressed `.info` files or Texinfo syntax | [#90](https://github.com/arran4/klookup/issues/90) |
-| User-configurable HTTP sources | Add an HTTP/API lookup source without compiling a new C++ plugin | [#57](https://github.com/arran4/klookup/issues/57), [PR #82](https://github.com/arran4/klookup/pull/82) |
 
 Why these matter: a desktop lookup tool is most useful when it can answer a small question immediately and, where possible, **locally**. The selection popup and local sources are part of that longer-term direction, rather than claims about KLookup's current capabilities.
 
@@ -332,11 +331,11 @@ KRunner activation and shortcut delivery must also be checked in a real desktop 
 
 ### Provider/plugin model
 
-The application compiles each built-in provider as a module discovered at runtime. The `SearchProvider` interface exposes a stable provider identifier and display name, asynchronous search results, and optional pagination and detail capabilities. Providers can also expose settings and authentication capabilities.
+KLookup supports **both native C++ Qt plugins and scripted providers** using its versioned Provider API v1. Native providers are loaded from KDE plugin directories. Scripted providers use ECMAScript modules (`.mjs`) and a `provider.json` manifest in `klookup/providers.d/`, discovered via XDG user/system data paths: `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d` and each directory in `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}/klookup/providers.d`.
 
-The plugin loader checks application-local provider directories for build-tree runs and KDE library/plugin installation directories for an installed application. When packaging KLookup, **ship the corresponding plugins and the runner** along with the executable; do not assume the core executable alone provides all results.
+TVMaze is shipped **only as a JavaScript provider**; obsolete native TVMaze shared libraries are ignored after the migration. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
 
-The existing architecture permits C++ provider plugins. A planned custom HTTP provider UI ([#57](https://github.com/arran4/klookup/issues/57)) is a separate feature and should not be presented as already integrated.
+Scripts can provide lightweight search results, pagination, lazy details and rich Markdown/structured content. Network requests and credentials are mediated by the host's permissioned services. User-installed scripts require explicit approval before they execute; system-installed packages follow the distribution trust policy. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their requested origins/permissions. See [#103](https://github.com/arran4/klookup/issues/103)–[#106](https://github.com/arran4/klookup/issues/106). The previous custom HTTP configuration wizard was deliberately superseded ([#57](https://github.com/arran4/klookup/issues/57)); do not try to use the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor.
 
 Relevant implementation guides:
 

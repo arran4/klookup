@@ -5,6 +5,7 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -23,17 +24,58 @@ bool ProviderPackage::isOriginAllowed(const QUrl &url) const
 {
     if (!url.isValid())
         return false;
-    const QString host = url.host().toLower();
-    if (host.isEmpty())
+    const QString targetScheme = url.scheme().toLower();
+    const QString targetHost = url.host().toLower();
+    if (targetScheme.isEmpty() || targetHost.isEmpty())
+        return false;
+    const int targetPort = url.port(targetScheme == QStringLiteral("https") ? 443 : (targetScheme == QStringLiteral("http") ? 80 : -1));
+    if (targetPort <= 0)
         return false;
 
     for (const auto &allowed : m_manifest.permissions.origins) {
-        const QString pattern = allowed.trimmed().toLower();
-        if (pattern == host)
+        const QString pattern = allowed.trimmed();
+        if (pattern.isEmpty())
+            continue;
+
+        QString patternScheme;
+        QString patternHost;
+        int patternPort = -1;
+
+        if (pattern.contains(QStringLiteral("://"))) {
+            QUrl patternUrl(pattern);
+            if (!patternUrl.isValid())
+                continue;
+            patternScheme = patternUrl.scheme().toLower();
+            patternHost = patternUrl.host().toLower();
+            patternPort = patternUrl.port(patternScheme == QStringLiteral("https") ? 443 : (patternScheme == QStringLiteral("http") ? 80 : -1));
+        } else {
+            // If scheme is omitted, require https on port 443 by default
+            patternScheme = QStringLiteral("https");
+            const int colonIdx = pattern.indexOf(QLatin1Char(':'));
+            if (colonIdx != -1) {
+                patternHost = pattern.left(colonIdx).toLower();
+                patternPort = pattern.mid(colonIdx + 1).toInt();
+            } else {
+                patternHost = pattern.toLower();
+                patternPort = 443;
+            }
+        }
+
+        // Scheme check: exact match (prevent scheme downgrade)
+        if (targetScheme != patternScheme)
+            continue;
+
+        // Effective port check
+        if (targetPort != patternPort)
+            continue;
+
+        // Host check: exact or wildcard (*.example.com)
+        if (patternHost == targetHost)
             return true;
-        if (pattern.startsWith(QStringLiteral("*."))) {
-            const QString domain = pattern.mid(2);
-            if (host == domain || host.endsWith(QLatin1Char('.') + domain))
+
+        if (patternHost.startsWith(QStringLiteral("*."))) {
+            const QString domain = patternHost.mid(2);
+            if (targetHost == domain || targetHost.endsWith(QLatin1Char('.') + domain))
                 return true;
         }
     }
@@ -150,14 +192,26 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
         pkg.m_manifest.defaultSettings = root.value(QStringLiteral("defaultSettings")).toObject();
     }
 
-    // Calculate package content hash (SHA-256 over provider.json and entry file content)
-    QFile entryFile(canonicalEntryPath);
-    if (entryFile.open(QIODevice::ReadOnly)) {
-        QCryptographicHash hash(QCryptographicHash::Sha256);
-        hash.addData(manifestBytes);
-        hash.addData(entryFile.readAll());
-        pkg.m_contentHash = hash.result();
+    // Calculate package content hash over manifest and all script/json assets in package directory
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    QDirIterator it(canonicalPackageDir,
+                    QStringList{QStringLiteral("*.json"), QStringLiteral("*.js"), QStringLiteral("*.mjs"), QStringLiteral("*.cjs")},
+                    QDir::Files | QDir::Readable,
+                    QDirIterator::Subdirectories);
+    QStringList sortedRelPaths;
+    while (it.hasNext()) {
+        it.next();
+        sortedRelPaths.append(dir.relativeFilePath(it.filePath()));
     }
+    sortedRelPaths.sort();
+    for (const auto &rel : sortedRelPaths) {
+        QFile f(dir.filePath(rel));
+        if (f.open(QIODevice::ReadOnly)) {
+            hash.addData(rel.toUtf8());
+            hash.addData(f.readAll());
+        }
+    }
+    pkg.m_contentHash = hash.result();
 
     pkg.m_valid = true;
     return pkg;

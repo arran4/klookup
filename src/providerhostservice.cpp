@@ -99,7 +99,6 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
     }
 
     // 4. Secret Permission & Resolution Check
-    QString resolvedSecret;
     if (!options.secretKey.isEmpty()) {
         if (!m_package.isSecretAllowed(options.secretKey)) {
             HttpResponse errResp;
@@ -112,11 +111,30 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
             });
             return reqId;
         }
+
+        // Asynchronous resolution via CredentialStore (KWallet)
+        if (m_credentialStore) {
+            const QString storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
+            m_credentialStore->read(storeKey, true, [this, reqId, options](const CredentialStoreResult &res) {
+                const QString secretVal = res.ok ? res.value : QString();
+                startRequestInternal(reqId, options, 0, secretVal);
+            });
+            return reqId;
+        }
+
         if (m_secretResolver) {
-            resolvedSecret = m_secretResolver(options.secretKey);
+            const QString secretVal = m_secretResolver(options.secretKey);
+            startRequestInternal(reqId, options, 0, secretVal);
+            return reqId;
         }
     }
 
+    startRequestInternal(reqId, options, 0, QString());
+    return reqId;
+}
+
+void ProviderHostService::startRequestInternal(quint64 reqId, const HttpRequestOptions &options, int hops, const QString &resolvedSecret)
+{
     QUrl requestUrl = options.url;
     QNetworkRequest request(requestUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup/1.0 (XDG Provider Package)"));
@@ -143,6 +161,8 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
     ActiveReply active;
     active.requestId = reqId;
     active.requestUrl = requestUrl;
+    active.options = options;
+    active.hops = hops;
     active.reply = reply;
     active.buffer = buffer;
     active.limitExceeded = limitExceeded;
@@ -161,14 +181,24 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
         }
     });
 
-    // Streaming accumulation bound
+    // Streaming accumulation bound: read strictly bounded chunks, immediately aborting without buffer bloat
     connect(reply, &QIODevice::readyRead, this, [this, reqId, reply, buffer, limitExceeded] {
         if (!m_activeRequests.contains(reqId) || *limitExceeded || !reply) return;
-        buffer->append(reply->readAll());
-        if (buffer->size() > MaxResponseBytes) {
+        const qint64 remaining = MaxResponseBytes - buffer->size();
+        if (remaining <= 0) {
             *limitExceeded = true;
+            buffer->clear();
             reply->abort();
+            return;
         }
+        const qint64 available = reply->bytesAvailable();
+        if (available > remaining) {
+            *limitExceeded = true;
+            buffer->clear();
+            reply->abort();
+            return;
+        }
+        buffer->append(reply->read(available));
     });
 
     // Timeout timer
@@ -183,7 +213,7 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
     timer->start(timeout);
 
     // Completion handler
-    connect(reply, &QNetworkReply::finished, this, [this, reqId, reply, buffer, limitExceeded, requestUrl] {
+    connect(reply, &QNetworkReply::finished, this, [this, reqId, reply, buffer, limitExceeded, options, hops, resolvedSecret] {
         if (!m_activeRequests.contains(reqId)) {
             reply->deleteLater();
             return;
@@ -202,23 +232,49 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
             return;
         }
 
-        // Redirect security check
+        // Bounded and permission-rechecked redirect handling (up to 5 hops)
         const QVariant redirectTarget = reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
         if (redirectTarget.isValid()) {
-            const QUrl targetUrl = requestUrl.resolved(redirectTarget.toUrl());
-            if (requestUrl.scheme() == QStringLiteral("https") && targetUrl.scheme() != QStringLiteral("https")) {
+            if (hops >= 5) {
+                resp.success = false;
+                resp.errorMessage = QStringLiteral("Too many redirects: exceeded maximum of 5 hops.");
+                emit httpResponseReady(reqId, resp);
+                return;
+            }
+            const QUrl targetUrl = options.url.resolved(redirectTarget.toUrl());
+            if (!targetUrl.isValid()) {
+                resp.success = false;
+                resp.errorMessage = QStringLiteral("Invalid redirect target URL.");
+                emit httpResponseReady(reqId, resp);
+                return;
+            }
+            // Enforce no HTTPS -> HTTP scheme downgrade
+            if (options.url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 &&
+                targetUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0) {
                 resp.success = false;
                 resp.errorMessage = QStringLiteral("Insecure redirect from HTTPS to HTTP blocked.");
                 emit httpResponseReady(reqId, resp);
                 return;
             }
-            if (targetUrl.host() != requestUrl.host() && !m_package.isOriginAllowed(targetUrl)) {
+            // Permission check on redirected target
+            if (!m_package.isOriginAllowed(targetUrl)) {
                 resp.success = false;
-                resp.errorMessage = QStringLiteral("Cross-origin redirect to undeclared host '%1' blocked.")
+                resp.errorMessage = QStringLiteral("Redirect to undeclared origin '%1' blocked by package policy.")
                                         .arg(targetUrl.host());
                 emit httpResponseReady(reqId, resp);
                 return;
             }
+            // If cross-origin redirect, strip secrets
+            HttpRequestOptions nextOptions = options;
+            nextOptions.url = targetUrl;
+            QString nextSecret = resolvedSecret;
+            if (targetUrl.host().compare(options.url.host(), Qt::CaseInsensitive) != 0) {
+                nextSecret.clear();
+                nextOptions.secretKey.clear();
+                nextOptions.secretHeader.clear();
+            }
+            startRequestInternal(reqId, nextOptions, hops + 1, nextSecret);
+            return;
         }
 
         if (reply->error() != QNetworkReply::NoError) {
@@ -238,8 +294,6 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
 
         emit httpResponseReady(reqId, resp);
     });
-
-    return reqId;
 }
 
 } // namespace ProviderHost

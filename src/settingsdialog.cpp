@@ -1,4 +1,5 @@
 #include "settingsdialog.h"
+#include "autostartmanager.h"
 #include "searchprovider.h"
 #include "providerauthmanager.h"
 #include <QLineEdit>
@@ -26,6 +27,7 @@
 
 SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent, ProviderAuthManager *authentication)
     : KPageDialog(parent), m_providers(providers), m_authentication(authentication)
+    , m_autostartManager(std::make_unique<AutostartManager>())
 {
 
 
@@ -132,6 +134,10 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     m_minimizeToTrayCheck = new QCheckBox(QStringLiteral("Minimize to System Tray on Close"), this);
     m_minimizeToTrayCheck->setObjectName(QStringLiteral("minimizeToTray"));
+    m_clearTabsOnCloseCheck = new QCheckBox(QStringLiteral("Clear search tabs when closing the window"), this);
+    m_clearTabsOnCloseCheck->setObjectName(QStringLiteral("clearTabsOnClose"));
+    m_autostartCheck = new QCheckBox(QStringLiteral("Start KLookup when logging in"), this);
+    m_autostartCheck->setObjectName(QStringLiteral("autostartOnLogin"));
     m_captureMode = new QComboBox(this);
     m_captureMode->setObjectName(QStringLiteral("clipboardCaptureMode"));
     m_captureMode->addItems({QStringLiteral("Never"), QStringLiteral("KLookup window is visible"), QStringLiteral("KLookup window has focus"), QStringLiteral("While KLookup is running (including background)")});
@@ -139,6 +145,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_searchTrigger->setObjectName(QStringLiteral("clipboardSearchTrigger"));
     m_searchTrigger->addItems({QStringLiteral("Never"), QStringLiteral("When opened from tray"), QStringLiteral("When clipboard changes"), QStringLiteral("When window gains focus"), QStringLiteral("When global shortcut is used")});
     generalLayout->addWidget(m_minimizeToTrayCheck);
+    generalLayout->addWidget(m_clearTabsOnCloseCheck);
+    generalLayout->addWidget(m_autostartCheck);
     auto *clipboardForm = new QFormLayout;
     clipboardForm->addRow(QStringLiteral("Capture clipboard while:"), m_captureMode);
     clipboardForm->addRow(QStringLiteral("Automatically search clipboard:"), m_searchTrigger);
@@ -168,6 +176,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
     m_minimizeToTrayCheck->setChecked(genGroup.readEntry(QStringLiteral("MinimizeToTray"), true));
+    m_clearTabsOnCloseCheck->setChecked(genGroup.readEntry(QStringLiteral("ClearTabsOnClose"), false));
+    m_autostartCheck->setChecked(m_autostartManager ? m_autostartManager->isAutostartEnabled() : false);
     const auto policy = ClipboardPolicy::read(genGroup);
     m_captureMode->setCurrentIndex(int(policy.capture));
     m_searchTrigger->setCurrentIndex(int(policy.trigger));
@@ -287,12 +297,16 @@ void SettingsDialog::saveSettings()
     }
     KConfigGroup genGroup(config, QStringLiteral("General"));
     genGroup.writeEntry(QStringLiteral("MinimizeToTray"), m_minimizeToTrayCheck->isChecked());
+    genGroup.writeEntry(QStringLiteral("ClearTabsOnClose"), m_clearTabsOnCloseCheck->isChecked());
     genGroup.writeEntry(QStringLiteral("ShowRecentActivity"), m_showRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
     ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
     config->sync();
+    if (m_autostartManager) {
+        m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());
+    }
     emit settingsApplied();
 }
 
@@ -415,4 +429,17 @@ void SettingsDialog::displayInfo(const QString& title, const QString& text) {
 
 QString SettingsDialog::promptForToken(const QString& title, const QString& label, bool *ok) {
     return QInputDialog::getText(this, title, label, QLineEdit::Password, QString(), ok);
+}
+
+AutostartManager *SettingsDialog::autostartManager() const
+{
+    return m_autostartManager.get();
+}
+
+void SettingsDialog::setAutostartManager(std::unique_ptr<AutostartManager> manager)
+{
+    m_autostartManager = std::move(manager);
+    if (m_autostartManager && m_autostartCheck) {
+        m_autostartCheck->setChecked(m_autostartManager->isAutostartEnabled());
+    }
 }

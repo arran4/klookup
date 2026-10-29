@@ -11,3 +11,8 @@ void DBusAdaptor::performSearch(const QString &query)
 {
     m_mainWindow->performSearch(query);
 }
+
+void DBusAdaptor::openSearchInNewWindow(const QString &query)
+{
+    m_mainWindow->openSearchInNewWindow(query);
+}

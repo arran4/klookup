@@ -1,6 +1,7 @@
 #include "searchtab.h"
 #include "providerauthsession.h"
 #include "resultactions.h"
+#include "resultdetailwindow.h"
 #include "searchcontinuation.h"
 #include "sourcelink.h"
 #include "sourceurl.h"
@@ -33,9 +34,18 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
 {
     auto *layout = new QHBoxLayout(this);
     auto *left = new QVBoxLayout;
+    auto *headerLayout = new QHBoxLayout;
     auto *label = new QLabel(QStringLiteral("Results for: ") + query, this);
     label->setTextFormat(Qt::PlainText);
-    left->addWidget(label);
+    headerLayout->addWidget(label);
+    headerLayout->addStretch();
+    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"), this);
+    detachButton->setObjectName(QStringLiteral("openSearchInNewWindow"));
+    connect(detachButton, &QPushButton::clicked, this, [this] {
+        emit openSearchInNewWindowRequested(m_query);
+    });
+    headerLayout->addWidget(detachButton);
+    left->addLayout(headerLayout);
     m_resultsTree->setHeaderHidden(true);
     m_resultsTree->installEventFilter(this);
     m_resultsTree->viewport()->installEventFilter(this);
@@ -64,6 +74,15 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     });
     right->addWidget(m_sourceLink);
     right->addWidget(m_detailsButton);
+    m_openDetailsWindowButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open Details in New Window"), this);
+    m_openDetailsWindowButton->setObjectName(QStringLiteral("openDetailsInNewWindowButton"));
+    m_openDetailsWindowButton->hide();
+    connect(m_openDetailsWindowButton, &QPushButton::clicked, this, [this] {
+        if (m_selected) {
+            openResultDetailsInNewWindow(m_selected);
+        }
+    });
+    right->addWidget(m_openDetailsWindowButton);
     layout->addLayout(left, 1);
     layout->addLayout(right, 2);
     m_detailsButton->setObjectName(QStringLiteral("loadDetails"));
@@ -405,7 +424,13 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
         m_metadataView->clear();
         m_metadataView->hide();
         m_sourceLink->setResult({});
+        if (m_openDetailsWindowButton) {
+            m_openDetailsWindowButton->hide();
+        }
         return;
+    }
+    if (m_openDetailsWindowButton) {
+        m_openDetailsWindowButton->show();
     }
     const auto res = item->data(0, Qt::UserRole).value<SearchResult>();
     m_sourceLink->setResult(res);
@@ -519,10 +544,14 @@ QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
     menu->setObjectName(QStringLiteral("resultContextMenu"));
     auto *commands = new ResultActions(result, canRefresh, menu);
     menu->addAction(commands->refresh);
+    menu->addAction(commands->openDetailsInNewWindow);
     menu->addSeparator();
     menu->addAction(commands->copyUrl);
     menu->addAction(commands->openUrl);
     menu->addAction(commands->copyTitle);
+    connect(commands, &ResultActions::openDetailsInNewWindowRequested, this, [this, item] {
+        openResultDetailsInNewWindow(item);
+    });
     connect(commands, &ResultActions::refreshRequested, this, [this, providerId, resultId = result.id] {
         const auto state = m_states.value(providerId);
         auto *target = state.items.value(resultId);
@@ -533,6 +562,24 @@ QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
         loadDetails(true);
     });
     return menu;
+}
+
+ResultDetailWindow *SearchTab::openResultDetailsInNewWindow(QTreeWidgetItem *item)
+{
+    if (!item || !item->data(0, Qt::UserRole).canConvert<SearchResult>()) {
+        return nullptr;
+    }
+    const SearchResult result = item->data(0, Qt::UserRole).value<SearchResult>();
+    const QString providerName = item->parent() ? item->parent()->text(0) : QString();
+    const auto metadata = item->data(0, MetadataRole).value<ResultMetadata>();
+    const QString html = m_detailsView->toHtml();
+
+    auto *detailWin = new ResultDetailWindow(result, providerName, metadata, html);
+    detailWin->show();
+    detailWin->raise();
+    detailWin->activateWindow();
+    emit detailWindowCreated(detailWin);
+    return detailWin;
 }
 
 void SearchTab::showResultMenu(QTreeWidgetItem *item, const QPoint &globalPosition)

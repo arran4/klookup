@@ -2,12 +2,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "providerapiv1.h"
+#include "searchtab.h"
 
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QPushButton>
 #include <QSignalSpy>
 #include <QTest>
+#include <QTextBrowser>
+#include <QTreeWidget>
 
 using namespace ProviderApiV1;
 
@@ -124,6 +128,12 @@ public:
         return caps;
     }
 
+    ProviderV1 *clone(QObject *parent = nullptr) const override
+    {
+        auto *copy = new MockV1Provider(parent);
+        return copy;
+    }
+
     quint64 search(const QString &query, quint64 requestId = 0) override
     {
         const quint64 id = requestId != 0 ? requestId : ++counter;
@@ -145,8 +155,8 @@ public:
         if (!suppressResponses) {
             SearchPage page;
             SearchResult item;
-            item.id = QStringLiteral("v1-paged-") + pageToken;
-            item.title = QStringLiteral("V1 Paged Result");
+            item.id = pageToken.isEmpty() ? QStringLiteral("v1-res-1") : (QStringLiteral("v1-paged-") + pageToken);
+            item.title = pageToken.isEmpty() ? (QStringLiteral("V1 Result for ") + query) : QStringLiteral("V1 Paged Result");
             page.results = {item};
             emit pageReady(id, page);
         }
@@ -508,11 +518,65 @@ private Q_SLOTS:
         const auto det = detailsSpy.first().at(1).value<SearchDetails>();
         QCOMPARE(det.result.id, QStringLiteral("v1-res-1"));
 
+        // Test cloning
+        auto *clonedAdapter = legacyAdapter.clone(this);
+        QVERIFY(clonedAdapter != nullptr);
+        QCOMPARE(clonedAdapter->id(), QStringLiteral("mock-v1"));
+        delete clonedAdapter;
+
+        // Test factory cloning
+        ProviderV1ToLegacyAdapter factoryAdapter([](QObject *p) { return new MockV1Provider(p); }, this);
+        auto *clonedFromFactory = factoryAdapter.clone(this);
+        QVERIFY(clonedFromFactory != nullptr);
+        QCOMPARE(clonedFromFactory->id(), QStringLiteral("mock-v1"));
+        delete clonedFromFactory;
+
         // Test cancel
         v1->suppressResponses = true;
         legacyAdapter.requestPage(QStringLiteral("plasma"), QStringLiteral("cancel-tok"), 202);
         legacyAdapter.cancelRequests();
         QVERIFY(v1->cancelledIds.contains(202));
+    }
+
+    void testSearchTabLifecycleWithV1Adapter()
+    {
+        // Prove ProviderV1ToLegacyAdapter genuinely works in the normal SearchTab lifecycle
+        ProviderV1ToLegacyAdapter templateAdapter([](QObject *p) { return new MockV1Provider(p); });
+
+        SearchTab tab(QStringLiteral("plasma"));
+
+        // Normal SearchTab startup clones the template
+        auto *tabProvider = templateAdapter.clone(&tab);
+        QVERIFY(tabProvider != nullptr);
+        tab.startProvider(tabProvider, nullptr);
+
+        auto *tree = tab.findChild<QTreeWidget *>();
+        QVERIFY(tree != nullptr);
+        QCOMPARE(tree->topLevelItemCount(), 1);
+
+        QTreeWidgetItem *group = tree->topLevelItem(0);
+        QCOMPARE(group->text(0), QStringLiteral("Mock V1"));
+        QVERIFY(group->childCount() >= 1);
+
+        QTreeWidgetItem *item = group->child(0);
+        QCOMPARE(item->text(0), QStringLiteral("V1 Result for plasma"));
+
+        // Click result to trigger details loading
+        emit tree->itemClicked(item, 0);
+
+        auto *detailsView = tab.findChild<QTextBrowser *>();
+        QVERIFY(detailsView != nullptr);
+        QVERIFY(detailsView->toHtml().contains(QStringLiteral("V1 Details")));
+
+        // Since MockV1Provider has separateContent = true, "Load more content" / nextToken is active
+        auto *loadBtn = tab.findChild<QPushButton *>(QStringLiteral("loadDetails"));
+        QVERIFY(loadBtn != nullptr);
+        QVERIFY(!loadBtn->isHidden());
+        QVERIFY(loadBtn->text().contains(QStringLiteral("Load more content")));
+
+        // Click "Load more content" to fetch separate content
+        emit loadBtn->clicked();
+        QVERIFY(detailsView->toHtml().contains(QStringLiteral("Rich Content")));
     }
 };
 

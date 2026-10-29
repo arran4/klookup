@@ -723,6 +723,17 @@ void LegacyProviderV1Adapter::onRequestFailed(quint64 reqId, const QString &erro
     }
 }
 
+ProviderV1 *LegacyProviderV1Adapter::clone(QObject *parent) const
+{
+    if (m_legacy) {
+        auto *clonedLegacy = m_legacy->clone(parent);
+        if (clonedLegacy) {
+            return new LegacyProviderV1Adapter(clonedLegacy, parent);
+        }
+    }
+    return nullptr;
+}
+
 // -----------------------------------------------------------------------------
 // ProviderV1ToLegacyAdapter
 // -----------------------------------------------------------------------------
@@ -730,6 +741,32 @@ void LegacyProviderV1Adapter::onRequestFailed(quint64 reqId, const QString &erro
 ProviderV1ToLegacyAdapter::ProviderV1ToLegacyAdapter(ProviderV1 *providerV1, QObject *parent)
     : SearchProvider(parent)
     , m_v1(providerV1)
+    , m_ownsV1(false)
+{
+    initV1Connections();
+}
+
+ProviderV1ToLegacyAdapter::ProviderV1ToLegacyAdapter(Factory factory, QObject *parent)
+    : SearchProvider(parent)
+    , m_factory(std::move(factory))
+    , m_ownsV1(true)
+{
+    if (m_factory) {
+        m_v1 = m_factory(this);
+    }
+    initV1Connections();
+}
+
+ProviderV1ToLegacyAdapter::~ProviderV1ToLegacyAdapter()
+{
+    cancelRequests();
+    if (m_ownsV1 && m_v1) {
+        delete m_v1;
+        m_v1 = nullptr;
+    }
+}
+
+void ProviderV1ToLegacyAdapter::initV1Connections()
 {
     if (m_v1) {
         connect(m_v1, &ProviderV1::pageReady, this, &ProviderV1ToLegacyAdapter::onPageReady);
@@ -739,10 +776,6 @@ ProviderV1ToLegacyAdapter::ProviderV1ToLegacyAdapter(ProviderV1 *providerV1, QOb
         connect(m_v1, &ProviderV1::contentReady, this, &ProviderV1ToLegacyAdapter::onContentReady);
         connect(m_v1, &ProviderV1::contentFailed, this, &ProviderV1ToLegacyAdapter::onContentFailed);
     }
-}
-
-ProviderV1ToLegacyAdapter::~ProviderV1ToLegacyAdapter()
-{
 }
 
 QString ProviderV1ToLegacyAdapter::id() const
@@ -765,7 +798,17 @@ void ProviderV1ToLegacyAdapter::search(const QString &query)
 
 SearchProvider *ProviderV1ToLegacyAdapter::clone(QObject *parent) const
 {
-    Q_UNUSED(parent);
+    if (m_factory) {
+        return new ProviderV1ToLegacyAdapter(m_factory, parent);
+    }
+    if (m_v1) {
+        auto *v1Clone = m_v1->clone(nullptr);
+        if (v1Clone) {
+            auto *adapter = new ProviderV1ToLegacyAdapter(v1Clone, parent);
+            adapter->m_ownsV1 = true;
+            return adapter;
+        }
+    }
     return nullptr;
 }
 
@@ -778,15 +821,21 @@ void ProviderV1ToLegacyAdapter::requestPage(const QString &query, const QString 
 
 bool ProviderV1ToLegacyAdapter::supportsDetails() const
 {
-    return m_v1 ? m_v1->capabilities().details : false;
+    return m_v1 ? (m_v1->capabilities().details || m_v1->capabilities().separateContent) : false;
 }
 
 void ProviderV1ToLegacyAdapter::requestDetails(const QString &resultId, const QString &token, quint64 requestId)
 {
-    Q_UNUSED(token);
     if (!m_v1) return;
     m_activeDetailsRequests.insert(requestId, resultId);
-    m_v1->getDetails(resultId, requestId);
+    if (token.startsWith(QStringLiteral("content:"))) {
+        const QString contentToken = token.mid(8);
+        m_v1->getContent(resultId, contentToken, requestId);
+    } else if (m_v1->capabilities().details) {
+        m_v1->getDetails(resultId, requestId);
+    } else if (m_v1->capabilities().separateContent) {
+        m_v1->getContent(resultId, token, requestId);
+    }
 }
 
 void ProviderV1ToLegacyAdapter::cancelRequests()
@@ -835,7 +884,11 @@ void ProviderV1ToLegacyAdapter::onDetailsReady(quint64 reqId, const QString &res
     Q_UNUSED(resultId);
     if (m_activeDetailsRequests.contains(reqId)) {
         m_activeDetailsRequests.remove(reqId);
-        emit detailsCompleted(reqId, details);
+        SearchDetails det = details;
+        if (det.nextToken.isEmpty() && m_v1 && m_v1->capabilities().separateContent) {
+            det.nextToken = QStringLiteral("content:");
+        }
+        emit detailsCompleted(reqId, det);
     }
 }
 
@@ -855,6 +908,12 @@ void ProviderV1ToLegacyAdapter::onContentReady(quint64 reqId, const ContentRespo
         SearchDetails det;
         det.result.id = response.resultId;
         det.content = response.content;
+        if (!response.nextContentToken.isEmpty()) {
+            det.nextToken = QStringLiteral("content:") + response.nextContentToken;
+        }
+        if (!response.attribution.isEmpty()) {
+            det.metadata.attribution.append(response.attribution);
+        }
         emit detailsCompleted(reqId, det);
     }
 }

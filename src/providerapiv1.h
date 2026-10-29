@@ -114,6 +114,12 @@ public:
     virtual quint64 getContent(const QString &resultId, const QString &contentToken = QString(), quint64 requestId = 0) = 0;
     virtual void cancel(quint64 requestId) = 0;
 
+    virtual ProviderV1 *clone(QObject *parent = nullptr) const
+    {
+        Q_UNUSED(parent);
+        return nullptr;
+    }
+
 signals:
     void pageReady(quint64 requestId, const SearchPage &page);
     void pageFailed(quint64 requestId, ErrorCode code, const QString &message);
@@ -143,6 +149,7 @@ public:
     quint64 getDetails(const QString &resultId, quint64 requestId = 0) override;
     quint64 getContent(const QString &resultId, const QString &contentToken = QString(), quint64 requestId = 0) override;
     void cancel(quint64 requestId) override;
+    ProviderV1 *clone(QObject *parent = nullptr) const override;
 
     SearchProvider *underlyingProvider() const { return m_legacy; }
 
@@ -179,7 +186,10 @@ class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderCo
     Q_OBJECT
     Q_INTERFACES(SearchProvider SearchProviderContinuation)
 public:
+    using Factory = std::function<ProviderV1 *(QObject *parent)>;
+
     explicit ProviderV1ToLegacyAdapter(ProviderV1 *providerV1, QObject *parent = nullptr);
+    explicit ProviderV1ToLegacyAdapter(Factory factory, QObject *parent = nullptr);
     ~ProviderV1ToLegacyAdapter() override;
 
     QString id() const override;
@@ -196,6 +206,7 @@ public:
     ProviderV1 *underlyingProvider() const { return m_v1; }
 
 private:
+    void initV1Connections();
     void onPageReady(quint64 reqId, const SearchPage &page);
     void onPageFailed(quint64 reqId, ErrorCode code, const QString &message);
     void onDetailsReady(quint64 reqId, const QString &resultId, const SearchDetails &details);
@@ -204,6 +215,8 @@ private:
     void onContentFailed(quint64 reqId, const QString &resultId, ErrorCode code, const QString &message);
 
     ProviderV1 *m_v1 = nullptr;
+    Factory m_factory;
+    bool m_ownsV1 = false;
     quint64 m_searchCounter = 0;
     quint64 m_activeSearchId = 0;
     QHash<quint64, QString> m_activePageRequests;

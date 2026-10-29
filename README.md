@@ -99,7 +99,7 @@ Find catalogue information through **Spotify** (after connecting it) or search f
 
 ## Search providers
 
-KLookup ships **14 specialised lookup providers**: 13 native C++ modules and TVMaze as an ECMAScript-module package (from the TVMaze hard cutover in [#106](https://github.com/arran4/klookup/issues/106)). Providers can be enabled or disabled independently.
+With the TVMaze cutover in [PR #111](https://github.com/arran4/klookup/pull/111), KLookup ships **14 lookup providers**: 13 native C++ modules and TVMaze as an ECMAScript-module package. **Merge this README after that cutover is complete.** Its installed-package activation and disabled/error states are still tracked in [#106](https://github.com/arran4/klookup/issues/106). Providers can be enabled or disabled independently.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |
@@ -293,7 +293,7 @@ From the checkout root:
 
 ```sh
 cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
-cmake --build build --target klookup_with_plugins
+cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ./build/src/klookup "KDE Plasma"
 ```
@@ -335,7 +335,7 @@ KLookup supports **both native C++ Qt plugins and scripted providers** using its
 
 TVMaze is shipped **only as a JavaScript provider**; obsolete native TVMaze shared libraries are ignored after the migration. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
 
-Scripts can provide lightweight search results, pagination, lazy details and rich Markdown/structured content. Network requests and credentials are mediated by the host's permissioned services. User-installed scripts require explicit approval before they execute; system-installed packages follow the distribution trust policy. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their requested origins/permissions. See [#103](https://github.com/arran4/klookup/issues/103)–[#106](https://github.com/arran4/klookup/issues/106). The previous custom HTTP configuration wizard was deliberately superseded ([#57](https://github.com/arran4/klookup/issues/57)); do not try to use the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor.
+Scripts can provide lightweight search results, pagination, lazy details and rich Markdown/structured content. Network requests use the host's permissioned services. Package approval/revocation and installed-system trust handling still need production integration ([#83](https://github.com/arran4/klookup/issues/83), [#106](https://github.com/arran4/klookup/issues/106)); user/custom packages are rejected unless explicitly trusted, but the Settings approval workflow is not yet available. Scripted KWallet provisioning/restoration is also incomplete ([#85](https://github.com/arran4/klookup/issues/85)); do not assume that native providers' credential support is already available to script packages. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their requested origins/permissions. See [#103](https://github.com/arran4/klookup/issues/103)–[#106](https://github.com/arran4/klookup/issues/106). The previous custom HTTP configuration wizard was deliberately superseded ([#57](https://github.com/arran4/klookup/issues/57)); do not try to use the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor.
 
 Relevant implementation guides:
 

@@ -120,7 +120,7 @@ KLookup currently builds **14 providers**. They are separate plugins, so enablin
 
 **Choosing sources:** Open **Settings → Providers** to enable or disable individual plugins and configure authentication where necessary. Providers are allowed to return different kinds of results. Some support pagination and deeper detail lookup, and some need credentials or may be subject to upstream service limits.
 
-**Local sources are not included yet.** Installed StarDict dictionaries, WordNet/dictd lexical data and local manual pages are planned independently of the existing online providers; see [Planned improvements](#planned-improvements).
+**Local sources are not included yet.** Installed StarDict dictionaries, WordNet/dictd lexical data, local man pages and GNU Info manuals are planned independently of the existing online providers; see [Planned improvements](#planned-improvements).
 
 ### What the results look like
 
@@ -195,11 +195,11 @@ Clipboard-derived recent activity recording and persistence are separately contr
 
 ### A future selected-text mode
 
-The StarDict-inspired workflow is to **highlight a word and get a small definition popup**, preferably from an installed local dictionary. This is **not implemented yet**. The planned model is:
+The StarDict-inspired workflow is to **highlight a word and get a small definition popup**, preferably from an installed local dictionary. This is **not implemented yet**. The proposed feature is **completely off by default**, even if ordinary search providers or clipboard settings are enabled. The planned model is:
 
-- A dedicated **user-configured hotkey** for deliberately selected text.
-- Optional automatic popup behaviour, only after an explicit opt-in.
-- **Local sources by default**; selected text is not silently sent to an online provider.
+- A dedicated **user-configured hotkey**, unassigned and disabled until the user opts in to selected-text lookup.
+- Optional automatic popup behaviour with a **separate, explicit opt-in**; enabling the hotkey must not enable passive monitoring.
+- **Local sources by default**, including future dictionary, man-page and Info plugins; no selection-triggered search occurs until the feature is enabled. Selected text is not silently sent to an online provider.
 - Remote provider access only with **express, provider-scoped authorisation**.
 - A safe fallback if your desktop does not expose the selection in a supported way, especially under Wayland.
 
@@ -230,10 +230,15 @@ These are **roadmap items, not available features**:
 | StarDict-style selection popup and new hotkey | Highlight a word, explicitly invoke (or opt into) a lightweight definition popup without switching contexts | [#88](https://github.com/arran4/klookup/issues/88) |
 | Local dictionary sources (StarDict, local DICT/dictd, WordNet) | Retrieve definitions from installed local data without sending queries online | [#86](https://github.com/arran4/klookup/issues/86) |
 | Local `man`-page provider | Look up locally installed Linux commands, system calls and manual sections without a browser | [#87](https://github.com/arran4/klookup/issues/87) |
+| Local GNU Info/Texinfo provider | Search installed Info manuals, index entries and navigable documentation nodes offline | [#90](https://github.com/arran4/klookup/issues/90) |
 | User-configurable HTTP sources | Add an HTTP/API lookup source without compiling a new C++ plugin | [#57](https://github.com/arran4/klookup/issues/57), [PR #82](https://github.com/arran4/klookup/pull/82) |
 | Optional start-on-login | Make KLookup ready in the tray when a Plasma session starts | [#70](https://github.com/arran4/klookup/issues/70), [PR #76](https://github.com/arran4/klookup/pull/76) |
 
 Why these matter: a desktop lookup tool is most useful when it can answer a small question immediately and, where possible, **locally**. The selection popup and local sources are part of that longer-term direction, rather than claims about KLookup's current capabilities.
+
+### Other local sources to consider
+
+Potential future providers (not yet committed features) include **KDE application help** via KHelpCenter, **Qt Help** collections (`.qch`/`.qhc`), **Zeal/Dash** offline developer docsets, **GTK-Doc/Devhelp** indexes, cached **tldr** command examples, locally installed package metadata, and user-chosen documentation directories. Any indexing of private files should require an explicit path opt-in, and search providers that generate documentation or execute arbitrary commands need additional security review. These are candidates for prioritisation rather than assertions that the application already supports them.
 
 ## Troubleshooting
 
@@ -247,7 +252,7 @@ Why these matter: a desktop lookup tool is most useful when it can answer a smal
 
 **Authentication stops working after restart.** Saved credentials are not automatically restored through a surprise wallet prompt. Open provider settings and explicitly restore/reconnect. The upstream provider may also require fresh authorisation.
 
-**I want dictionary definitions without internet access.** No dedicated offline dictionary or local man-page provider is currently included. Follow [#86](https://github.com/arran4/klookup/issues/86) and [#87](https://github.com/arran4/klookup/issues/87).
+**I want dictionary definitions without internet access.** No dedicated offline dictionary, local man-page or GNU Info provider is currently included. Follow [#86](https://github.com/arran4/klookup/issues/86), [#87](https://github.com/arran4/klookup/issues/87) and [#90](https://github.com/arran4/klookup/issues/90).
 
 **Reporting a bug:** Include the KDE/Qt version, which provider was enabled, steps to reproduce and relevant redacted diagnostics. **Never attach tokens, API keys or private copied text.** Use [Issues](https://github.com/arran4/klookup/issues) for bugs and [Discussions](https://github.com/arran4/klookup/discussions) for questions and proposals.
 

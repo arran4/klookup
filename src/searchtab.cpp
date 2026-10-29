@@ -92,6 +92,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) { onResultClicked(item, 0); });
     m_detailsView->setOpenExternalLinks(false);
     m_detailsView->setOpenLinks(false);
+    m_detailsView->document()->setResourceProvider([](const QUrl &) { return QVariant(QByteArray()); });
     connect(m_detailsView, &QTextBrowser::anchorClicked, this, [](const QUrl &url) {
         const auto safe = Metadata::safeWebUrl(url.toString(QUrl::FullyEncoded));
         if (!safe.isEmpty())

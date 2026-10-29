@@ -87,6 +87,7 @@ void ResultDetailWindow::setupUi(const QString &providerName, const ResultMetada
     m_detailsView = new QTextBrowser(central);
     m_detailsView->setOpenExternalLinks(false);
     m_detailsView->setOpenLinks(false);
+    m_detailsView->document()->setResourceProvider([](const QUrl &) { return QVariant(QByteArray()); });
     connect(m_detailsView, &QTextBrowser::anchorClicked, this, [](const QUrl &url) {
         const auto safe = Metadata::safeWebUrl(url.toString(QUrl::FullyEncoded));
         if (!safe.isEmpty()) {

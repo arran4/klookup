@@ -55,6 +55,10 @@ Q_DECLARE_METATYPE(ResultContent)
 
 namespace Content
 {
+struct RenderOptions {
+    bool allowRemoteImages = false;
+};
+
 struct Rendered {
     QString html;
     QString plainText;
@@ -62,10 +66,10 @@ struct Rendered {
 };
 
 // Render content into safe, isolated HTML and plain text
-Rendered render(const ResultContent &content);
+Rendered render(const ResultContent &content, const RenderOptions &options = RenderOptions());
 
 // Standardized unified HTML renderer for search results across SearchTab and ResultDetailWindow
-QString renderResultHtml(const SearchResult &result, const ResultContent &content, const QString &providerName = QString());
+QString renderResultHtml(const SearchResult &result, const ResultContent &content, const QString &providerName = QString(), const RenderOptions &options = RenderOptions());
 
 } // namespace Content
 

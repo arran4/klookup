@@ -12,6 +12,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextFragment>
+#include <QTextList>
 #include <QTextTable>
 
 namespace
@@ -26,103 +27,162 @@ protected:
 };
 } // namespace
 
-Content::Rendered Content::render(const ResultContent &content)
+Content::Rendered Content::render(const ResultContent &content, const RenderOptions &options)
 {
-    constexpr int inputLimit = 256 * 1024;
+    constexpr int kMaxInputLimit = 256 * 1024;
+    constexpr int kMaxTotalHtml = 1024 * 1024; // 1 MiB
+    constexpr int kMaxBlocks = 200;
+    constexpr int kMaxBlockTextLen = 64 * 1024;
+    constexpr int kMaxListItems = 500;
+    constexpr int kMaxTableRows = 200;
+    constexpr int kMaxTableCols = 30;
+    constexpr int kMaxCellLen = 4 * 1024;
+    constexpr int kMaxFieldItems = 200;
+    constexpr int kMaxFieldKeyLen = 1024;
+    constexpr int kMaxFieldValueLen = 16 * 1024;
+
     Rendered result;
 
     if (content.format == ResultContent::Format::StructuredBlocks) {
         QString html;
         QString plain;
+        int blockCount = 0;
         for (const auto &block : content.blocks) {
-            if (html.size() > 1024 * 1024) {
+            if (++blockCount > kMaxBlocks || html.size() >= kMaxTotalHtml) {
                 result.truncated = true;
                 break;
             }
+            QString blockHtml;
+            QString blockPlain;
             switch (block.type) {
             case ContentBlock::Type::Heading: {
                 int lvl = qBound(1, block.level, 6);
-                html += QStringLiteral("<h%1>%2</h%1>").arg(lvl).arg(block.text.toHtmlEscaped());
-                plain += block.text + QLatin1Char('\n');
+                const QString text = block.text.left(kMaxBlockTextLen);
+                blockHtml = QStringLiteral("<h%1>%2</h%1>").arg(lvl).arg(text.toHtmlEscaped());
+                blockPlain = text + QLatin1Char('\n');
                 break;
             }
             case ContentBlock::Type::Paragraph: {
-                html += QStringLiteral("<p>%1</p>").arg(block.text.toHtmlEscaped());
-                plain += block.text + QLatin1Char('\n');
+                const QString text = block.text.left(kMaxBlockTextLen);
+                blockHtml = QStringLiteral("<p>%1</p>").arg(text.toHtmlEscaped());
+                blockPlain = text + QLatin1Char('\n');
                 break;
             }
             case ContentBlock::Type::CodeBlock: {
-                QString langClass = block.language.isEmpty() ? QString() : QStringLiteral(" class=\"language-%1\"").arg(block.language.toHtmlEscaped());
-                html += QStringLiteral("<pre><code%1>%2</code></pre>").arg(langClass, block.text.toHtmlEscaped());
-                plain += block.text + QLatin1Char('\n');
+                const QString text = block.text.left(kMaxBlockTextLen);
+                const QString lang = block.language.left(64);
+                QString langClass = lang.isEmpty() ? QString() : QStringLiteral(" class=\"language-%1\"").arg(lang.toHtmlEscaped());
+                blockHtml = QStringLiteral("<pre><code%1>%2</code></pre>").arg(langClass, text.toHtmlEscaped());
+                blockPlain = text + QLatin1Char('\n');
                 break;
             }
             case ContentBlock::Type::List: {
-                html += QStringLiteral("<ul>");
+                blockHtml = QStringLiteral("<ul>");
+                int itemCount = 0;
                 for (const auto &it : block.items) {
-                    html += QStringLiteral("<li>%1</li>").arg(it.toHtmlEscaped());
-                    plain += QStringLiteral("- ") + it + QLatin1Char('\n');
+                    if (++itemCount > kMaxListItems) {
+                        result.truncated = true;
+                        break;
+                    }
+                    const QString itemText = it.left(kMaxBlockTextLen);
+                    blockHtml += QStringLiteral("<li>%1</li>").arg(itemText.toHtmlEscaped());
+                    blockPlain += QStringLiteral("- ") + itemText + QLatin1Char('\n');
                 }
-                html += QStringLiteral("</ul>");
+                blockHtml += QStringLiteral("</ul>");
                 break;
             }
             case ContentBlock::Type::Table: {
-                html += QStringLiteral("<table border=\"1\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
+                blockHtml = QStringLiteral("<table border=\"1\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
                 bool first = true;
+                int rowCount = 0;
                 for (const auto &row : block.tableRows) {
-                    html += QStringLiteral("<tr>");
-                    QString rowPlain;
-                    for (const auto &col : row) {
-                        if (first) {
-                            html += QStringLiteral("<th>%1</th>").arg(col.toHtmlEscaped());
-                        } else {
-                            html += QStringLiteral("<td>%1</td>").arg(col.toHtmlEscaped());
-                        }
-                        rowPlain += col + QStringLiteral(" | ");
+                    if (++rowCount > kMaxTableRows) {
+                        result.truncated = true;
+                        break;
                     }
-                    html += QStringLiteral("</tr>");
-                    plain += rowPlain + QLatin1Char('\n');
+                    blockHtml += QStringLiteral("<tr>");
+                    QString rowPlain;
+                    int colCount = 0;
+                    for (const auto &col : row) {
+                        if (++colCount > kMaxTableCols) {
+                            result.truncated = true;
+                            break;
+                        }
+                        const QString colText = col.left(kMaxCellLen);
+                        if (first) {
+                            blockHtml += QStringLiteral("<th>%1</th>").arg(colText.toHtmlEscaped());
+                        } else {
+                            blockHtml += QStringLiteral("<td>%1</td>").arg(colText.toHtmlEscaped());
+                        }
+                        rowPlain += colText + QStringLiteral(" | ");
+                    }
+                    blockHtml += QStringLiteral("</tr>");
+                    blockPlain += rowPlain + QLatin1Char('\n');
                     first = false;
                 }
-                html += QStringLiteral("</table>");
+                blockHtml += QStringLiteral("</table>");
                 break;
             }
             case ContentBlock::Type::FieldList: {
-                html += QStringLiteral("<table class=\"field-list\" cellpadding=\"2\">");
+                blockHtml = QStringLiteral("<table class=\"field-list\" cellpadding=\"2\">");
+                int fieldCount = 0;
                 for (const auto &field : block.fields) {
-                    html += QStringLiteral("<tr><th align=\"left\">%1:</th><td>%2</td></tr>")
-                                .arg(field.first.toHtmlEscaped(), field.second.toHtmlEscaped());
-                    plain += QStringLiteral("%1: %2\n").arg(field.first, field.second);
+                    if (++fieldCount > kMaxFieldItems) {
+                        result.truncated = true;
+                        break;
+                    }
+                    const QString key = field.first.left(kMaxFieldKeyLen);
+                    const QString val = field.second.left(kMaxFieldValueLen);
+                    blockHtml += QStringLiteral("<tr><th align=\"left\">%1:</th><td>%2</td></tr>")
+                                .arg(key.toHtmlEscaped(), val.toHtmlEscaped());
+                    blockPlain += QStringLiteral("%1: %2\n").arg(key, val);
                 }
-                html += QStringLiteral("</table>");
+                blockHtml += QStringLiteral("</table>");
                 break;
             }
             case ContentBlock::Type::Quote: {
-                html += QStringLiteral("<blockquote><p>%1</p></blockquote>").arg(block.text.toHtmlEscaped());
-                plain += QStringLiteral("> ") + block.text + QLatin1Char('\n');
+                const QString text = block.text.left(kMaxBlockTextLen);
+                blockHtml = QStringLiteral("<blockquote><p>%1</p></blockquote>").arg(text.toHtmlEscaped());
+                blockPlain = QStringLiteral("> ") + text + QLatin1Char('\n');
                 break;
             }
             case ContentBlock::Type::Image: {
                 const auto safeUrl = Metadata::safeWebUrl(block.imageUrl.toString(QUrl::FullyEncoded));
-                const QString caption = block.caption.isEmpty() ? QStringLiteral("Image") : block.caption;
+                const QString caption = block.caption.isEmpty() ? QStringLiteral("Image") : block.caption.left(1024);
                 if (!safeUrl.isEmpty()) {
-                    html += QStringLiteral("<p><a href=\"%1\"><img src=\"%1\" alt=\"%2\" style=\"max-width:100%; max-height:400px; height:auto;\" /></a><br/><i>%2</i></p>")
-                                .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped(), caption.toHtmlEscaped());
+                    if (options.allowRemoteImages) {
+                        blockHtml = QStringLiteral("<p><a href=\"%1\"><img src=\"%1\" alt=\"%2\" style=\"max-width:100%; max-height:400px; height:auto;\" /></a><br/><i>%2</i></p>")
+                                    .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped(), caption.toHtmlEscaped());
+                    } else {
+                        blockHtml = QStringLiteral("<p class=\"image-placeholder\"><i>[Image: <a href=\"%1\">%2</a>]</i></p>")
+                                    .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped(), caption.toHtmlEscaped());
+                    }
                 } else {
-                    html += QStringLiteral("<p><i>[%1]</i></p>").arg(caption.toHtmlEscaped());
+                    blockHtml = QStringLiteral("<p><i>[%1]</i></p>").arg(caption.toHtmlEscaped());
                 }
-                plain += QStringLiteral("[%1]\n").arg(caption);
+                blockPlain = QStringLiteral("[%1]\n").arg(caption);
                 break;
             }
             }
+
+            if (html.size() + blockHtml.size() > kMaxTotalHtml) {
+                result.truncated = true;
+                break;
+            }
+            html += blockHtml;
+            plain += blockPlain;
+        }
+
+        if (result.truncated) {
+            html += QStringLiteral("<p><i>[Content omitted at display limit]</i></p>");
         }
         result.html = html;
         result.plainText = plain;
         return result;
     }
 
-    result.truncated = content.description.size() > inputLimit;
-    const QString input = content.description.left(inputLimit);
+    result.truncated = content.description.size() > kMaxInputLimit;
+    const QString input = content.description.left(kMaxInputLimit);
 
     if (content.format == ResultContent::Format::PlainText) {
         result.html = QStringLiteral("<p>%1</p>").arg(input.toHtmlEscaped());
@@ -153,7 +213,12 @@ Content::Rendered Content::render(const ResultContent &content)
             lastIndex = match.capturedEnd();
         }
         safeMarkdown.append(input.mid(lastIndex));
-        document.setMarkdown(safeMarkdown, QTextDocument::MarkdownDialectGitHub);
+
+        // Use Qt's MarkdownNoHTML feature to explicitly disable parsing of raw HTML elements
+        const QTextDocument::MarkdownFeatures mdFeatures = QTextDocument::MarkdownFeatures::fromInt(
+            static_cast<int>(QTextDocument::MarkdownDialectGitHub) | static_cast<int>(QTextDocument::MarkdownNoHTML)
+        );
+        document.setMarkdown(safeMarkdown, mdFeatures);
     } else {
         document.setDefaultStyleSheet(QStringLiteral(".searchmatch { font-weight: bold; }"));
         document.setHtml(input);
@@ -163,9 +228,9 @@ Content::Rendered Content::render(const ResultContent &content)
 
     int runs = 0;
     int blocks = 0;
-    bool inList = false;
+    int currentListIndent = 0;
     for (auto block = document.begin(); block.isValid(); block = block.next()) {
-        if (++blocks > 4000 || runs >= 12000 || result.html.size() > 1024 * 1024) {
+        if (++blocks > 4000 || runs >= 12000 || result.html.size() > kMaxTotalHtml) {
             result.truncated = true;
             break;
         }
@@ -174,9 +239,9 @@ Content::Rendered Content::render(const ResultContent &content)
         QTextCursor cur(block);
         auto *table = cur.currentTable();
         if (table) {
-            if (inList) {
+            while (currentListIndent > 0) {
                 result.html += QStringLiteral("</ul>");
-                inList = false;
+                --currentListIndent;
             }
             result.html += QStringLiteral("<table border=\"1\" cellpadding=\"4\" style=\"border-collapse:collapse;\">");
             for (int r = 0; r < table->rows(); ++r) {
@@ -198,12 +263,22 @@ Content::Rendered Content::render(const ResultContent &content)
         }
 
         const bool isListItem = (block.textList() != nullptr);
-        if (isListItem && !inList) {
-            result.html += QStringLiteral("<ul>");
-            inList = true;
-        } else if (!isListItem && inList) {
-            result.html += QStringLiteral("</ul>");
-            inList = false;
+        if (isListItem) {
+            int listIndent = block.textList()->format().indent();
+            int targetIndent = qBound(1, listIndent > 0 ? listIndent : block.blockFormat().indent(), 6);
+            while (currentListIndent < targetIndent) {
+                result.html += QStringLiteral("<ul>");
+                ++currentListIndent;
+            }
+            while (currentListIndent > targetIndent) {
+                result.html += QStringLiteral("</ul>");
+                --currentListIndent;
+            }
+        } else {
+            while (currentListIndent > 0) {
+                result.html += QStringLiteral("</ul>");
+                --currentListIndent;
+            }
         }
 
         QString paragraph;
@@ -221,8 +296,13 @@ Content::Rendered Content::render(const ResultContent &content)
                 const QString imgSrc = imgFormat.name();
                 const auto safeUrl = Metadata::safeWebUrl(imgSrc);
                 if (!safeUrl.isEmpty()) {
-                    paragraph += QStringLiteral("<img src=\"%1\" alt=\"Image\" style=\"max-width:100%; max-height:400px;\" />")
-                                     .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped());
+                    if (options.allowRemoteImages) {
+                        paragraph += QStringLiteral("<img src=\"%1\" alt=\"Image\" style=\"max-width:100%; max-height:400px;\" />")
+                                         .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped());
+                    } else {
+                        paragraph += QStringLiteral("<i>[Image: <a href=\"%1\">%2</a>]</i>")
+                                         .arg(safeUrl.toString(QUrl::FullyEncoded).toHtmlEscaped(), QStringLiteral("Image"));
+                    }
                 } else {
                     paragraph += QStringLiteral("<i>[Image]</i>");
                 }
@@ -271,8 +351,9 @@ Content::Rendered Content::render(const ResultContent &content)
         }
     }
 
-    if (inList) {
+    while (currentListIndent > 0) {
         result.html += QStringLiteral("</ul>");
+        --currentListIndent;
     }
 
     if (result.truncated) {
@@ -282,7 +363,7 @@ Content::Rendered Content::render(const ResultContent &content)
     return result;
 }
 
-QString Content::renderResultHtml(const SearchResult &result, const ResultContent &content, const QString &providerName)
+QString Content::renderResultHtml(const SearchResult &result, const ResultContent &content, const QString &providerName, const RenderOptions &options)
 {
     QString html;
     if (!result.title.isEmpty()) {
@@ -301,7 +382,7 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
     }
 
     if (!content.description.isEmpty() || !content.blocks.isEmpty()) {
-        html += render(content).html;
+        html += render(content, options).html;
     } else if (!result.description.isEmpty()) {
         html += QStringLiteral("<p>%1</p>").arg(result.description.toHtmlEscaped());
     } else {
@@ -320,22 +401,33 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
 
     if (!result.additionalData.isEmpty()) {
         html += QStringLiteral("<h3>Additional Info</h3><ul>");
-        std::function<QString(const MetadataNode &)> renderNode = [&renderNode](const MetadataNode &entry) {
+        constexpr int kMaxTreeDepth = 10;
+        constexpr int kMaxTreeNodes = 500;
+        int totalNodes = 0;
+        std::function<QString(const MetadataNode &, int)> renderNode = [&](const MetadataNode &entry, int depth) -> QString {
+            if (++totalNodes > kMaxTreeNodes || depth > kMaxTreeDepth) {
+                return QStringLiteral("<li><i>[Additional info nested limit reached]</i></li>");
+            }
             QStringList values;
             for (const auto &value : entry.values)
                 values.append(value.text.toHtmlEscaped());
             QString text = QStringLiteral("<li><b>%1:</b> %2").arg(entry.label.toHtmlEscaped(), values.join(QStringLiteral(", ")));
-            if (!entry.children.isEmpty()) {
+            if (!entry.children.isEmpty() && depth < kMaxTreeDepth) {
                 text += QStringLiteral("<ul>");
-                for (const auto &child : entry.children)
-                    text += renderNode(child);
+                for (const auto &child : entry.children) {
+                    text += renderNode(child, depth + 1);
+                    if (totalNodes > kMaxTreeNodes)
+                        break;
+                }
                 text += QStringLiteral("</ul>");
             }
             return text + QStringLiteral("</li>");
         };
         for (auto it = result.additionalData.cbegin(), end = result.additionalData.cend(); it != end; ++it) {
+            if (totalNodes > kMaxTreeNodes)
+                break;
             const auto node = Metadata::fromVariant(it.key(), it.value());
-            html += renderNode(node);
+            html += renderNode(node, 1);
         }
         html += QStringLiteral("</ul>");
     }

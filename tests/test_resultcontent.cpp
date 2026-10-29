@@ -247,6 +247,143 @@ private slots:
         QVERIFY(tabHtml.contains(QStringLiteral("https://kde.org/docs/")));
         QVERIFY(windowHtml.contains(QStringLiteral("https://kde.org/docs/")));
     }
+
+    void testStructuredBlockBounds()
+    {
+        ResultContent content;
+        content.format = ResultContent::Format::StructuredBlocks;
+
+        // Add 500 blocks (exceeding kMaxBlocks = 200)
+        for (int i = 0; i < 500; ++i) {
+            ContentBlock p;
+            p.type = ContentBlock::Type::Paragraph;
+            p.text = QStringLiteral("Large paragraph text ").repeated(100);
+            content.blocks.append(p);
+        }
+
+        const auto rendered = Content::render(content);
+        QVERIFY(rendered.truncated);
+        QVERIFY(rendered.html.size() <= 1024 * 1024 + 1024);
+        QVERIFY(rendered.html.contains(QStringLiteral("display limit")));
+
+        // Test huge table bounds
+        ResultContent tableContent;
+        tableContent.format = ResultContent::Format::StructuredBlocks;
+        ContentBlock tbl;
+        tbl.type = ContentBlock::Type::Table;
+        for (int r = 0; r < 300; ++r) {
+            QStringList row;
+            for (int c = 0; c < 50; ++c) {
+                row.append(QStringLiteral("Cell content ").repeated(10));
+            }
+            tbl.tableRows.append(row);
+        }
+        tableContent.blocks.append(tbl);
+        const auto renderedTable = Content::render(tableContent);
+        QVERIFY(renderedTable.truncated);
+        QVERIFY(renderedTable.html.size() <= 1024 * 1024 + 1024);
+
+        // Test deep metadata recursion bounds in renderResultHtml
+        SearchResult res;
+        res.title = QStringLiteral("Deep Metadata Test");
+        QVariantMap root;
+        QVariantMap *current = &root;
+        for (int d = 0; d < 20; ++d) {
+            QVariantMap next;
+            (*current)[QStringLiteral("level_%1").arg(d)] = QStringLiteral("node_%1").arg(d);
+            (*current)[QStringLiteral("child")] = next;
+            current = &next;
+        }
+        res.additionalData = root;
+        const QString html = Content::renderResultHtml(res, ResultContent());
+        QVERIFY(!html.isEmpty());
+        QVERIFY(html.size() < 1024 * 1024);
+    }
+
+    void testNestedListsInMarkdown()
+    {
+        ResultContent content;
+        content.format = ResultContent::Format::Markdown;
+        content.description = QStringLiteral(
+            "- Level 1 A\n"
+            "  - Level 2 A1\n"
+            "  - Level 2 A2\n"
+            "    - Level 3 A2a\n"
+            "- Level 1 B\n"
+        );
+
+        const auto rendered = Content::render(content);
+        QVERIFY(!rendered.truncated);
+        QVERIFY(rendered.html.contains(QStringLiteral("Level 1 A")));
+        QVERIFY(rendered.html.contains(QStringLiteral("Level 2 A1")));
+        QVERIFY(rendered.html.contains(QStringLiteral("Level 3 A2a")));
+        QVERIFY(rendered.html.contains(QStringLiteral("Level 1 B")));
+
+        // Verify balanced ul tags
+        int openUl = rendered.html.count(QStringLiteral("<ul>"));
+        int closeUl = rendered.html.count(QStringLiteral("</ul>"));
+        QCOMPARE(openUl, closeUl);
+        QVERIFY(openUl >= 2);
+    }
+
+    void testHostControlledImagePolicy()
+    {
+        ResultContent content;
+        content.format = ResultContent::Format::StructuredBlocks;
+        ContentBlock img;
+        img.type = ContentBlock::Type::Image;
+        img.imageUrl = QUrl(QStringLiteral("https://kde.org/stuff/banner.png"));
+        img.caption = QStringLiteral("Banner Preview");
+        content.blocks.append(img);
+
+        // Default: allowRemoteImages is false
+        const auto defaultRender = Content::render(content);
+        QVERIFY(!defaultRender.html.contains(QStringLiteral("<img src=")));
+        QVERIFY(defaultRender.html.contains(QStringLiteral("Banner Preview")));
+        QVERIFY(defaultRender.html.contains(QStringLiteral("https://kde.org/stuff/banner.png")));
+
+        // Opt-in: allowRemoteImages is true
+        Content::RenderOptions optIn;
+        optIn.allowRemoteImages = true;
+        const auto optInRender = Content::render(content, optIn);
+        QVERIFY(optInRender.html.contains(QStringLiteral("<img src=\"https://kde.org/stuff/banner.png\"")));
+        QVERIFY(optInRender.html.contains(QStringLiteral("max-height:400px;")));
+
+        // Markdown image
+        ResultContent mdContent;
+        mdContent.format = ResultContent::Format::Markdown;
+        mdContent.description = QStringLiteral("![Alt text](https://kde.org/logo.png)");
+
+        const auto mdDefault = Content::render(mdContent);
+        QVERIFY(!mdDefault.html.contains(QStringLiteral("<img src=")));
+        QVERIFY(mdDefault.html.contains(QStringLiteral("https://kde.org/logo.png")));
+
+        const auto mdOptIn = Content::render(mdContent, optIn);
+        QVERIFY(mdOptIn.html.contains(QStringLiteral("<img src=\"https://kde.org/logo.png\"")));
+    }
+
+    void testAdversarialMarkdownNoHtmlMode()
+    {
+        ResultContent content;
+        content.format = ResultContent::Format::Markdown;
+        content.description = QStringLiteral(
+            "<div onclick=\"malicious()\">Click me</div>\n\n"
+            "<object data=\"data:text/html,<script>alert(1)</script>\"></object>\n\n"
+            "<embed src=\"evil.swf\">\n\n"
+            "<style>body { display: none; }</style>\n\n"
+            "<link rel=\"stylesheet\" href=\"http://evil.com/style.css\">\n\n"
+            "```html\n<div class=\"safe-code\">code block should be preserved</div>\n```"
+        );
+
+        const auto rendered = Content::render(content);
+        QVERIFY(!rendered.html.contains(QStringLiteral("<div onclick")));
+        QVERIFY(!rendered.html.contains(QStringLiteral("<object")));
+        QVERIFY(!rendered.html.contains(QStringLiteral("<embed")));
+        QVERIFY(!rendered.html.contains(QStringLiteral("<style>")));
+        QVERIFY(!rendered.html.contains(QStringLiteral("<link rel")));
+        // Fenced code block is safely escaped but readable
+        QVERIFY(rendered.html.contains(QStringLiteral("&lt;div class=&quot;safe-code&quot;&gt;")));
+    }
 };
 
 QTEST_MAIN(TestResultContent)

@@ -46,7 +46,6 @@ add_subdirectory(providers/wikipedia)
 add_subdirectory(providers/github)
 add_subdirectory(providers/mangaupdates)
 add_subdirectory(providers/anilist)
-add_subdirectory(providers/lyrics_ovh)
 add_subdirectory(providers/duckduckgo)
 add_subdirectory(providers/openlibrary)
 add_subdirectory(providers/themoviedb)
@@ -67,7 +66,6 @@ set(KLOOKUP_PROVIDERS
     provider_github
     provider_mangaupdates
     provider_anilist
-    provider_lyrics_ovh
     provider_duckduckgo
     provider_openlibrary
     provider_themoviedb

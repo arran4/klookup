@@ -1,0 +1,56 @@
+{
+  "query": "Björk 雪 & + / ?",
+  "valid": {
+    "data": [
+      {
+        "id": 123,
+        "title": "Fixture 雪",
+        "link": "https://www.deezer.com/track/123",
+        "artist": {
+          "name": "Björk fixture"
+        },
+        "album": {
+          "title": "Synthetic album"
+        }
+      }
+    ]
+  },
+  "empty": {
+    "data": []
+  },
+  "partial": {
+    "data": [
+      null,
+      {},
+      {
+        "id": 2,
+        "title": "bad link",
+        "link": "javascript:bad"
+      },
+      {
+        "id": 123,
+        "title": "Fixture 雪",
+        "link": "https://www.deezer.com/track/123",
+        "artist": {
+          "name": "Björk fixture"
+        },
+        "album": {
+          "title": "Synthetic album"
+        }
+      }
+    ]
+  },
+  "invalid": {
+    "error": "upstream failure"
+  },
+  "expected": {
+    "id": "123",
+    "title": "Fixture 雪",
+    "url": "https://www.deezer.com/track/123",
+    "type": "song",
+    "additionalData": {
+      "artist": "Björk fixture",
+      "album": "Synthetic album"
+    }
+  }
+}

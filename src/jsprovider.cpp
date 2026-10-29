@@ -179,7 +179,8 @@ public:
         opts.url = QUrl(url);
 
         if (options.isObject()) {
-            opts.method = options.property(QStringLiteral("method")).toString().toUpper();
+            if (!options.property(QStringLiteral("method")).isUndefined())
+                opts.method = options.property(QStringLiteral("method")).toString().toUpper();
             if (opts.method.isEmpty()) opts.method = QStringLiteral("GET");
 
             if (options.hasProperty(QStringLiteral("timeoutMs"))) {

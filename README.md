@@ -1,238 +1,139 @@
 # KLookup
 
-**KLookup** is a domain-specific, multi-provider lookup tool natively built for KDE Plasma environments utilizing Qt 6 and KDE Frameworks 6 (KF6).
+**Find information from multiple sources without jumping between websites.**
 
-Unlike generic web browsers or monolithic search engines, KLookup provides a **focused lookup silos** model. It enables users to rapidly query structured knowledge services—dictionaries, technical references, encyclopedias, media databases, and developer repositories—directly from a unified, keyboard-friendly desktop interface.
+KLookup is a native KDE Plasma 6 desktop application for looking things up in encyclopedias, books, software projects, music, film and TV, anime, and manga. Enter a question, title, or keyword once and explore results from the sources you choose, all in one place.
 
----
+Rather than trying to replace your web browser or act as a general-purpose search engine, KLookup brings **specialised information sources together** in a keyboard-friendly desktop interface. Open the original website whenever you need more.
 
-## Key Features
+## Why use KLookup?
 
-- **Multi-Provider Architecture**: Query data concurrently across specialized domain providers.
-- **Dynamic Tabs and Independent Windows**: Manage multiple active searches in non-blocking tabs or separate search windows, with detachable result details.
-- **Hierarchical Structured Metadata**: Inspect typed result details, nested category trees, and safe image links without third-party tracking.
-- **Asynchronous Continuation**: Transparent pagination for multi-page result sets and on-demand article/detail fetching.
-- **Recent Activity & Autocomplete**: Instant search dashboard completion with privacy controls.
-- **Plasma Desktop Integration**:
-  - Native **KRunner** search syntax (`:q: query`) with D-Bus activation.
-  - Global desktop shortcuts (`show_search` and `search_clipboard`).
-  - Per-user **XDG autostart-on-login** preference starting quietly in the system tray.
-  - Context menus, canonical URL copying, and native drag-and-drop links into browsers or bookmarks.
-- **Configurable Privacy & Clipboard Policies**: Granular, two-tier control over clipboard inspection and search triggers.
-- **Secure Credential Storage**: Native KDE Wallet (`KWallet`) integration and desktop OAuth 2.0 PKCE flow.
-- **Modular Plugin Engine**: Extensible C++ plugin architecture loaded dynamically via `QPluginLoader`.
+- **One search, several sources.** Look up a topic across enabled providers instead of repeating the same search on different websites.
+- **Results with context.** Browse results grouped by source, inspect descriptions and available details, then follow the original link if you want to read further.
+- **Keep your place.** Use tabs for different searches, open separate search or detail windows, and revisit recent activity.
+- **Quick access from Plasma.** Search from KRunner or configure your own global shortcuts without changing applications.
+- **Control what gets searched.** Choose your providers, decide whether KLookup may read the clipboard, and control when an automatic search happens.
 
----
+For example, you could research *Linux* using Wikipedia and GitHub, check a novel in Open Library, compare film and television listings, or find a series across anime and manga catalogues. The available results depend on which providers are enabled and whether a service requires credentials.
 
-## Supported Built-in Providers
+<!-- Screenshots: add a main search/results image here, followed by an optional
+     result-details image and a KRunner/Plasma integration image.
+     Keep images illustrative; do not add broken image links before assets exist. -->
 
-KLookup queries a wide variety of public and authenticated services. The application builds with 14 built-in provider plugins:
+## What can you look up?
 
-| Provider ID | Display Name | Domain / Service | Upstream API | Credentials Required? | Capabilities |
-|---|---|---|---|---|---|
-| `anilist` | AniList | Anime & Manga | `graphql.anilist.co` | No | Search |
-| `duckduckgo` | DuckDuckGo | General Web / Instant Answers | `api.duckduckgo.com` | No | Search, disambiguation |
-| `github` | GitHub | Code & Repositories | `api.github.com/search/repositories` | Optional (Personal Access Token) | Search, continuation |
-| `lyrics_ovh` | Lyrics (OVH) | Song Lyrics | `api.lyrics.ovh/suggest` | No | Search |
-| `mangadex` | MangaDex | Manga & Comics | `api.mangadex.org/manga` | No | Search, continuation, structured metadata |
-| `mangabaka` | MangaBaka | Manga, novels & comics | `api.mangabaka.org/v2/series/search` | No | Search, continuation, deferred details, format filters, structured metadata |
-| `mangaupdates` | MangaUpdates | Manga Database | `api.mangaupdates.com/v1/series/search` | No | Search, continuation |
-| `myanimelist` | MyAnimeList (Jikan) | Anime & Manga | `api.jikan.moe/v4/anime` | No | Search, continuation |
-| `omdb` | OMDb API | Film & Television | `www.omdbapi.com` | **Required** (API key) | Search, deferred details |
-| `openlibrary` | OpenLibrary | Books & Literature | `openlibrary.org/search.json` | No | Search, continuation |
-| `spotify` | Spotify | Music & Podcasts | `api.spotify.com/v1/search` | **Required** (OAuth 2.0 PKCE) | Search, deferred details, continuation |
-| `themoviedb` | The Movie Database (TMDb) | Film & Television | `api.themoviedb.org/3/search/multi` | **Required** (API read access token) | Search, deferred details, continuation |
-| `tvmaze` | TVMaze | Television Schedule & Shows | `api.tvmaze.com/search/shows` | No | Search |
-| `wikipedia` | Wikipedia | Encyclopedia | `en.wikipedia.org/w/api.php` | No | Search, Action API parse, safe HTML rendering |
+| Interest | Available sources |
+| --- | --- |
+| General knowledge and quick answers | Wikipedia, DuckDuckGo |
+| Software projects | GitHub repositories |
+| Books | Open Library |
+| Movies and television | TMDb, OMDb, TVMaze |
+| Music and lyrics | Spotify, Lyrics.ovh |
+| Anime and manga | AniList, MyAnimeList (via Jikan), MangaUpdates, MangaDex, MangaBaka |
 
-### Provider Implementation Notes & Roadmap
-- **MangaBaka and MangaDex**: These are separate providers with independent upstream APIs. The original substitution was resolved under [Issue #22](https://github.com/arran4/klookup/issues/22).
-- **DuckDuckGo Backend**: DuckDuckGo's generic backend is scheduled for specialized replacement under [Issue #14](https://github.com/arran4/klookup/issues/14).
-- **Game Lookup Backlogs**: Dedicated video game catalog providers are tracked under [Issue #15](https://github.com/arran4/klookup/issues/15).
+KLookup includes **14 built-in provider plugins**. You can enable or disable them in **Settings → Providers**. Not every service supports the same kind of information: some return brief matches, while others offer further details or more results on demand.
 
----
+Most sources work without an account. **OMDb and TMDb require API credentials; Spotify requires an OAuth connection.** GitHub can also use a personal access token. Configure these through the provider settings; you do not need to put secrets in a configuration file.
 
-## Authentication and Credential Security
+## Getting started
 
-KLookup supports both **Manual API Key/Token** authentication and desktop **OAuth 2.0 Authorization Code with PKCE**:
+KLookup is currently available from its source repository; there are no published GitHub release binaries yet. See [Build from source](#build-from-source) below to get started.
 
-- **KWallet Integration**: API keys and tokens entered in **Settings → Providers** are stored securely in the local KDE Wallet under folder `KLookup`.
-- **Session-Only Option**: Users can choose to use credentials only for the current session without persisting them to disk or KWallet.
-- **Never Plaintext Secrets**: Passwords, bearer tokens, and client secrets are never written to `klookuprc` or any other configuration files.
-- **OAuth 2.0 PKCE Loopback**: For OAuth-enabled providers such as Spotify, KLookup utilizes a local loopback listener (`http://127.0.0.1:<port>/callback`) and system browser authentication. No client secrets are bundled in the binary.
-- **Passive Startup**: Starting KLookup (including login autostart or global shortcuts) never raises unsolicited KWallet password dialogs. Credential restoration is explicit and user-directed.
+Once installed or built:
 
-For detailed developer setup, see the [Provider Authentication Guide](docs/provider-authentication.md) and [Spotify Setup Guide](docs/spotify-provider.md).
+1. **Open KLookup** from your application launcher, or run `klookup`.
+2. **Type a query** in the dashboard and choose **Search**. Matches appear grouped by provider.
+3. **Select a result** to inspect its description and available details. When supported, use **Load full details** or **Load more results** for additional information.
+4. **Open the original source** in your browser when you need the full website. Result context menus also offer actions such as copying a title or URL.
+5. **Start another search** to keep exploring in tabs, or use **Search in New Window** when you want two searches side by side.
 
----
+The dashboard also offers recent activity and search completion, making it easier to return to something you explored earlier. Recent-activity and clipboard-history options can be controlled separately in settings.
 
-## Clipboard Privacy and Search Policies
+## Works with your KDE desktop
 
-KLookup features a robust, two-tier clipboard privacy model configured in **Settings → General**:
+- **KRunner:** With KLookup and its runner plugin installed, open KRunner (usually **Alt+Space**) and enter `:q: KDE Plasma` to send a lookup to KLookup.
+- **Global shortcuts:** Assign keys for **Show/focus KLookup search** and **Search clipboard now** through **Settings → Configure Keyboard Shortcuts**. KLookup does not claim default key combinations.
+- **System tray:** Optionally keep KLookup available in the tray when you close its window.
+- **Result actions:** Open original links in a browser, copy source URLs or titles, or drag a source link into another application where supported.
+- **Multiple windows:** Open a search in a separate window or detach result details while keeping other searches available.
 
-1. **Content Eligibility (`ClipboardInput`)**:
-   - Only explicit `text/plain` MIME data up to 4,096 UTF-16 code units is accepted.
-   - Pure URLs, recognized URI schemes (`http`, `https`, `file`, `mailto`, `data`, etc.), and bare domain formats are strictly rejected from automatic processing.
-   - Internal MIME markers prevent KLookup's own copy actions from feeding back into search triggers.
+KLookup uses one application instance per desktop session, so sending it a new search normally reuses the running application.
 
-2. **Capture Policy (`ClipboardCaptureMode`)**:
-   - `Never` (default): Passive monitoring is disabled.
-   - `Visible`: Captures clipboard only when the main window is visible.
-   - `Focused`: Captures clipboard only when the window has active input focus.
-   - `Running`: Monitors clipboard while running (including background/tray).
+## Privacy and provider access
 
-3. **Search Trigger Policy (`ClipboardSearchTrigger`)**:
-   - `Never` (default): Quietly prepares the query input without searching.
-   - `Opened from tray`: Triggers search upon restoring window from tray.
-   - `When clipboard changes`: Triggers immediate search on eligible changes.
-   - `When window gains focus`: Triggers search when window becomes active.
-   - `When global shortcut is used`: Triggers search via global shortcut.
+**Clipboard monitoring is off by default.** You can leave it off, allow capture only while the window is visible or focused, or allow it while KLookup runs. Separately choose whether captured text merely fills the search field or triggers a search on an event such as a clipboard change. Automatic capture filters out URL-only text and other unsupported input; deliberate searches can still include URLs.
 
-For details of content classification and operational capture/search policies, see the [Clipboard Privacy and Search Policy](docs/clipboard-policy.md).
+In **Settings → General**, you can control recent activity and whether captured clipboard activity is recorded or saved between sessions. Clipboard activity recording and persistence are off by default.
+
+Some services require authentication. KLookup can use **KWallet** for saved credentials or keep them for the current session only. Connecting or restoring credentials is an explicit action. Your searches are still sent to whichever third-party providers you enable, under those services' own terms and privacy policies.
+
+See the [provider authentication guide](docs/provider-authentication.md) and [clipboard capture policy](docs/clipboard-trigger-policy.md) for further detail.
+
+## Help, feedback and contributing
+
+If a source returns no results, check that its provider is enabled and, if applicable, that its API key or connection has been configured. Some providers can be temporarily unavailable or rate-limited by their upstream services.
+
+For bugs, feature requests, or questions, use [GitHub Issues](https://github.com/arran4/klookup/issues) or [Discussions](https://github.com/arran4/klookup/discussions).
 
 ---
 
-## Desktop and Plasma Integration
+## For developers and packagers
 
-### Global Keyboard Shortcuts
-KLookup registers two global desktop actions via KDE's native `KGlobalAccel`:
-- **Show/Focus KLookup Search** (`show_search`): Opens or raises the search dashboard and focuses the query field.
-- **Search Clipboard Now** (`search_clipboard`): Immediately searches current plain-text clipboard contents (including URLs) on explicit user request.
+The sections below cover building, testing, internals and provider development. You do not need these details to use an installed KLookup application.
 
-Shortcuts can be configured via **Settings → Configure Keyboard Shortcuts** or Plasma System Settings. See [Global Shortcuts Guide](docs/global-shortcuts.md).
+### Build from source
 
-### KRunner Integration
-KLookup installs a D-Bus KRunner plugin (`org.kde.klookup`). Type `:q: <query>` in KRunner (`Alt` + `Space`) to execute a query directly into KLookup:
-```bash
-# Verify cold-start D-Bus activation:
-qdbus6 org.kde.klookup / org.kde.klookup.performSearch "KDE Plasma"
-```
+You will need CMake 3.16+, a C++17 compiler, Qt 6 (Core, GUI, Widgets, Network, D-Bus and QML), KDE Extra CMake Modules, and KDE Frameworks 6 (including Runner, GlobalAccel, Config, Wallet, Notifications, DBusAddons, CoreAddons, I18n, WidgetsAddons and XmlGui). Ninja is recommended.
 
-### Result Actions and Drag-and-Drop
-- Right-click any result row (or press `Menu` / `Shift+F10`) to **Open in Web Browser**, **Copy Canonical URL**, **Copy Title**, or **Refresh Details**.
-- The **Open in Browser** source button supports mouse dragging (`QDrag`) offering `text/uri-list` and `text/plain`. Drag links directly into browser tabs, bookmark bars, or desktop folders. See [Result Interactions](docs/result-interactions.md).
+With the development dependencies installed:
 
-### Independent Search and Result Windows
-Use **Search in New Window** from the dashboard or the tab context menu to open a search in its own window; select **Open Details in New Window** to detach a result's details. The application remains a single D-Bus instance. Use `klookup --new-window "search terms"` to open a query separately.
-
-### Autostart on Login
-An in-app preference in **Settings → General** allows enabling or disabling **Start KLookup when logging in**:
-- Installs/updates `~/.config/autostart/org.kde.klookup.desktop` following standard XDG desktop entry specifications.
-- Runs `klookup --background` (or `--hidden`) to initialize silently in the tray without stealing window focus or triggering wallet prompts at login.
-
----
-
-## Build Requirements
-
-- **CMake** 3.16 or higher
-- **C++17** compatible compiler (GCC or Clang)
-- **Ninja** build system (recommended)
-- **Qt 6** (Core, Gui, Widgets, Network, DBus, Qml, Test)
-- **KDE Frameworks 6 (KF6)**:
-  - `KF6CoreAddons`
-  - `KF6Config` (ConfigCore, ConfigGui)
-  - `KF6GlobalAccel`
-  - `KF6I18n`
-  - `KF6Runner`
-  - `KF6DBusAddons`
-  - `KF6WidgetsAddons`
-  - `KF6XmlGui`
-  - `KF6Wallet`
-  - `KF6Notifications`
-
----
-
-## Building and Testing
-
-### Recommended Containerized Development Workflow
-The repository provides a shared KDE/Qt development rootfs using `.jules/run.sh`. **Do not use Docker.** For initial environment setup and maintenance instructions, see [`AGENTS.md`](AGENTS.md).
-
-To build KLookup and all plugins using the shared environment:
-```bash
-.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
-.jules/run.sh cmake --build build --parallel
-.jules/run.sh ctest --test-dir build --output-on-failure
-```
-
-### Local Host Build
-If all required Qt 6 and KF6 development packages are installed locally:
-```bash
+```sh
 cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
 cmake --build build --target klookup_with_plugins
 ctest --test-dir build --output-on-failure
+./build/src/klookup "KDE Plasma"
 ```
 
-### Memory and Sanitizer Verification
-To build with AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan):
-```bash
-.jules/run.sh cmake -S . -B build-san -G Ninja -DBUILD_TESTING=ON -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer"
-.jules/run.sh cmake --build build-san --parallel
-.jules/run.sh ctest --test-dir build-san --output-on-failure
+The `klookup_with_plugins` target builds the application and included providers. To install KLookup and its desktop/KRunner components, use the normal CMake installation step appropriate to your distribution and install prefix. A fresh Plasma session may be needed for KRunner to pick up the installed plugin.
+
+Project-specific development environment instructions are in [AGENTS.md](AGENTS.md).
+
+### Command-line use
+
+```sh
+klookup                     # Open the dashboard
+klookup "Linux kernel"      # Run a lookup
+klookup --new-window "Qt"   # Open another search window
+klookup --show-search       # Show/focus search
+klookup --search-clipboard  # Explicitly search current clipboard text
+klookup --background        # Start without raising a window
 ```
 
----
+When running directly from the build tree, replace `klookup` with `./build/src/klookup`.
 
-## Running and CLI Usage
+### Provider architecture and diagnostics
 
-Launch KLookup from the build directory:
-```bash
-./build/src/klookup
-```
+Built-in sources are separate C++ plugins loaded by Qt. Additional providers can implement the `SearchProvider` interface, with optional pagination, detail fetching and authentication capabilities. Provider discovery supports both build-tree and installed plugin paths.
 
-Search directly from the command line:
-```bash
-./build/src/klookup "Free Software Foundation"
-```
+Useful implementation references:
 
-Start silently in the background / system tray:
-```bash
-./build/src/klookup --background
-# or
-./build/src/klookup --hidden
-```
+- [Provider pagination and continuation](docs/provider-continuation.md)
+- [Structured result metadata](docs/structured-metadata.md)
+- [Provider authentication](docs/provider-authentication.md)
+- [Global shortcuts](docs/global-shortcuts.md)
+- [Result actions](docs/result-actions.md)
+- [Source-link drag and drop](docs/source-link-drag.md)
 
-Explicitly search the clipboard without raising the window:
-```bash
-./build/src/klookup --search-clipboard
-```
+To inspect provider loading without logging credentials:
 
-Open a separate search window with:
-```bash
-./build/src/klookup --new-window "KDE Plasma"
-```
-
-### Plugin Discovery & Diagnostics
-Provider plugins are built as CMake `MODULE` libraries and output to `build/src/providers/`. At runtime, `klookup` searches for plugins in:
-1. The application's runtime directory (`./providers` or `../lib/klookup/providers`).
-2. Standard KDE library directories (`${KDE_INSTALL_PLUGINDIR}/klookup`).
-
-To enable verbose plugin loader diagnostics:
-```bash
+```sh
 QT_LOGGING_RULES="klookup.plugins.debug=true" ./build/src/klookup
 ```
 
----
+For KRunner activation diagnostics and manual verification, see [global shortcuts](docs/global-shortcuts.md) and the installed D-Bus service `org.kde.klookup`.
 
-## Extending KLookup (Plugin Interface)
+### Licensing and attribution
 
-KLookup features an extensible C++ plugin interface (`SearchProvider`, `org.kde.klookup.SearchProvider`). New backends inherit from `SearchProvider` and implement core methods:
-- `id()`: Unique identifier used in settings and persistence.
-- `name()`: User-visible display name.
-- `search(const QString &query)`: Executes asynchronous queries via `QNetworkAccessManager`.
-- `supportsContinuation()` / `fetchPage()`: Optional multi-page continuation support.
-- `supportsDetails()` / `fetchDetails()`: Optional on-demand record detail fetching.
+KLookup is free and open-source software. Its application, providers and tests are licensed under **GPL-3.0-or-later**; build and CI files use **BSD-2-Clause**, documentation **CC-BY-SA-4.0**, and original icons **CC0-1.0**. See [LICENSES/](LICENSES/), [REUSE.toml](REUSE.toml), and [LICENSE](LICENSE) for details.
 
-See the [Pagination and Continuation Contract](docs/provider-continuation.md) and [Structured Metadata Guide](docs/structured-metadata.md) for full implementation details.
-
----
-
-## License and REUSE Compliance
-
-KLookup is free and open-source software compliant with the [REUSE Specification 3.3](https://reuse.software/):
-
-- **Application Code, Plugins, Runner, Tests**: [GNU General Public License v3.0 or later (`GPL-3.0-or-later`)](LICENSES/GPL-3.0-or-later.txt).
-- **CMake Build Scripts & CI Definitions**: [BSD 2-Clause Simplified License (`BSD-2-Clause`)](LICENSES/BSD-2-Clause.txt).
-- **Documentation**: [Creative Commons Attribution-ShareAlike 4.0 International (`CC-BY-SA-4.0`)](LICENSES/CC-BY-SA-4.0.txt).
-- **Icons & Artwork**: [Creative Commons Zero v1.0 Universal (`CC0-1.0`)](LICENSES/CC0-1.0.txt).
-
-Machine-readable license declarations are maintained per-file and in [`REUSE.toml`](REUSE.toml). Canonical license texts are located in [`LICENSES/`](LICENSES/).
+Data provided by MangaBaka and other upstream services remains subject to their respective terms. See the [MangaBaka API documentation](https://mangabaka.org/data/api) for its attribution and data conditions; the project license does not relicense third-party content.

@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "getPage",
+  "params": {
+    "query": "Plasma 6",
+    "pageToken": "page-cursor-token-2"
+  }
+}

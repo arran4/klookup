@@ -1,0 +1,25 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "result": {
+      "id": "item-plasma6",
+      "title": "KDE Plasma 6",
+      "description": "Next-generation desktop environment by KDE",
+      "url": "https://kde.org/plasma-desktop/",
+      "type": "Desktop"
+    },
+    "metadata": {
+      "attribution": "KDE Community",
+      "sections": [
+        {
+          "label": "Release Info",
+          "values": [
+            { "text": "Version 6.0", "kind": "text" },
+            { "text": "Release Announcement", "url": "https://kde.org/announcements/megarelease/6/", "kind": "link" }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -8,6 +8,7 @@
 #include <QEvent>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -260,7 +261,7 @@ public:
 
     Q_INVOKABLE void log(const QString &msg)
     {
-        qDebug() << "[JS Provider]" << msg;
+        if (!m_hostService || !m_hostService->isDiagnosticMode()) qDebug() << "[JS Provider]" << msg;
     }
 
 private:
@@ -451,7 +452,8 @@ void JsProvider::emitFailure(quint64 id, quint64 token, Kind kind, const QString
                              ProviderApiV1::ErrorCode code, const QString &message)
 {
     postTerminal(id, token, [this, id, kind, resultId, code, message] {
-        if (kind == Kind::Page) emit pageFailed(id, code, message);
+        if (kind == Kind::Check) emit checkFailed(id, code);
+        else if (kind == Kind::Page) emit pageFailed(id, code, message);
         else if (kind == Kind::Details) emit detailsFailed(id, resultId, code, message);
         else emit contentFailed(id, resultId, code, message);
     });
@@ -581,6 +583,7 @@ bool JsProvider::initEngine()
                     return claim(nativeThen.call(this, bind(onResolved, token), bind(onRejected, token)), token);
                 }});
             return {
+                parseFixture: JSON.parse,
                 createDeferred: function() {
                     var resolve, reject;
                     var promise = new NativePromise(function(a, b) { resolve = a; reject = b; });
@@ -679,7 +682,10 @@ void JsProvider::complete(quint64 token, const QJSValue &value)
         return;
     }
     release(id);
-    if (kind == Kind::Page) {
+    if (kind == Kind::Check) {
+        const auto result = doc.object();
+        postTerminal(id, token, [this, id, result] { emit checkReady(id, result); });
+    } else if (kind == Kind::Page) {
         SearchPage page;
         if (doc.isArray()) for (const auto &item : doc.array()) {
             if (item.isObject()) page.results.append(ProviderApiV1::searchResultFromJson(item.toObject()));
@@ -696,6 +702,25 @@ void JsProvider::complete(quint64 token, const QJSValue &value)
         if (response.resultId.isEmpty()) response.resultId = resultId;
         postTerminal(id, token, [this, id, response] { emit contentReady(id, response); });
     }
+}
+
+bool JsProvider::hasCheck(bool live) const
+{
+    return m_loaded && m_module.property(live ? QStringLiteral("liveCheck") : QStringLiteral("selfTest")).isCallable();
+}
+
+quint64 JsProvider::check(bool live, quint64 requestId)
+{
+    QJSValue fixture;
+    if (!live && m_engine) {
+        QFile file(QDir(m_snapshot.path()).filePath(QStringLiteral("diagnostics.json")));
+        if (file.open(QIODevice::ReadOnly)) {
+            const auto document = QJsonDocument::fromJson(file.read(1024 * 1024 + 1));
+            if (document.isObject()) fixture = m_helpers.property(QStringLiteral("parseFixture")).call({QString::fromUtf8(document.toJson(QJsonDocument::Compact))});
+        }
+    }
+    return invoke(live ? QStringLiteral("liveCheck") : QStringLiteral("selfTest"),
+                  {fixture}, Kind::Check, {}, requestId);
 }
 
 quint64 JsProvider::search(const QString &query, quint64 requestId) { return invoke(QStringLiteral("search"), {query}, Kind::Page, {}, requestId); }

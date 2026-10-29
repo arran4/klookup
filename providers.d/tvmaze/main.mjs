@@ -13,7 +13,10 @@ function search(query) {
             throw new Error("TVMaze API error: HTTP " + resp.status);
         }
         return resp.json();
-    }).then(function(data) {
+    }).then(mapSearch);
+}
+
+function mapSearch(data) {
         if (!Array.isArray(data)) {
             throw new Error("TVMaze returned an invalid search response");
         }
@@ -47,7 +50,6 @@ function search(query) {
             });
         }
         return results;
-    });
 }
 
 function getDetails(resultId) {
@@ -124,3 +126,11 @@ function getContent(resultId, contentToken) {
 }
 
 export { search, getPage, getDetails, getContent };
+
+export function selfTest(fixture) {
+    if (!fixture || !Array.isArray(fixture.search)) throw new Error("Missing TVMaze diagnostic fixture");
+    var rows = mapSearch(fixture.search);
+    var rejected = false;
+    try { mapSearch({error: "wrong shape"}); } catch (_) { rejected = true; }
+    return {passed: rejected && mapSearch([]).length === 0 && rows.length === 1 && rows[0].id === "42" && rows[0].title === "Fixture 雪" && rows[0].additionalData.rating === 8};
+}

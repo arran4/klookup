@@ -1,0 +1,16 @@
+{
+  "search": [
+    {
+      "show": {
+        "id": 42,
+        "name": "Fixture 雪",
+        "summary": "<p>Example</p>",
+        "rating": {
+          "average": 8
+        },
+        "url": "https://www.tvmaze.com/shows/42"
+      }
+    },
+    null
+  ]
+}

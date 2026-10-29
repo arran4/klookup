@@ -1,4 +1,7 @@
 #include "settingsdialog.h"
+#include "providerdiagnostics.h"
+#include <QPlainTextEdit>
+#include <QJsonDocument>
 #include "autostartmanager.h"
 #include "searchprovider.h"
 #include "providerauthmanager.h"
@@ -192,6 +195,36 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; saveSettings(); });
     updatePackage(-1);
     addPage(packagePage, QStringLiteral("Script packages"));
+
+    auto *health = new QWidget(this);
+    auto *healthLayout = new QVBoxLayout(health);
+    auto *healthList = new QListWidget(health);
+    healthList->setObjectName(QStringLiteral("diagnosticProviders"));
+    const auto diagnosticSources = ProviderDiagnostics::forSettings(m_providers, m_packages);
+    for (const auto &source : diagnosticSources) healthList->addItem(source.id + QStringLiteral(" (") + source.type + QStringLiteral(")"));
+    healthLayout->addWidget(healthList);
+    auto *mode = new QComboBox(health);
+    mode->addItems({QStringLiteral("Passive preflight"), QStringLiteral("Offline fixtures (execute approved code)"), QStringLiteral("Live probes (allow network, no credentials)")});
+    mode->setObjectName(QStringLiteral("diagnosticMode"));
+    healthLayout->addWidget(mode);
+    auto *output = new QPlainTextEdit(health); output->setReadOnly(true);
+    output->setObjectName(QStringLiteral("diagnosticOutput")); healthLayout->addWidget(output);
+    auto *buttons = new QHBoxLayout;
+    auto *one = new QPushButton(QStringLiteral("Check selected / Retry"), health);
+    auto *all = new QPushButton(QStringLiteral("Check all providers"), health);
+    auto *stop = new QPushButton(QStringLiteral("Cancel checks"), health);
+    one->setObjectName(QStringLiteral("checkProvider")); all->setObjectName(QStringLiteral("checkAllProviders"));
+    buttons->addWidget(one); buttons->addWidget(all); buttons->addWidget(stop); healthLayout->addLayout(buttons);
+    auto *diagnostics = new ProviderDiagnostics(health);
+    connect(one, &QPushButton::clicked, this, [=] {
+        const int row = healthList->currentRow();
+        if (row >= 0 && row < diagnosticSources.size()) { output->clear(); diagnostics->run({diagnosticSources[row]}, static_cast<ProviderDiagnostics::Mode>(mode->currentIndex())); }
+    });
+    connect(all, &QPushButton::clicked, this, [=] { output->clear(); diagnostics->run(diagnosticSources, static_cast<ProviderDiagnostics::Mode>(mode->currentIndex())); });
+    connect(stop, &QPushButton::clicked, diagnostics, &ProviderDiagnostics::cancel);
+    connect(diagnostics, &ProviderDiagnostics::resultReady, health, [output](quint64, const QJsonObject &row) { output->appendPlainText(QString::fromUtf8(QJsonDocument(row).toJson(QJsonDocument::Compact))); });
+    addPage(health, QStringLiteral("Provider health"));
+
 
     // General Settings Tab
     QWidget *generalWidget = new QWidget(this);

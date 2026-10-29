@@ -4,6 +4,7 @@ add_library(klookup_core STATIC
     sourcelink.cpp
     resultcontent.cpp
     providerapiv1.cpp
+    providerdiagnostics.cpp
     providerpackage.cpp
     providerhostservice.cpp
     jsprovider.cpp
@@ -107,3 +108,7 @@ install(FILES klookupui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/klookup)
 install(FILES org.kde.klookup.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.klookup.service DESTINATION ${KDE_INSTALL_DBUSSERVICEDIR})
 
+
+add_executable(klookup-provider-check providercheckmain.cpp)
+target_link_libraries(klookup-provider-check klookup_core)
+install(TARGETS klookup-provider-check ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

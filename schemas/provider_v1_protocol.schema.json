@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KLookup Provider API v1 Protocol",
+  "description": "Versioned language-neutral provider contract schema for KLookup",
+  "type": "object",
+  "definitions": {
+    "JsonRpcRequest": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "method", "params"],
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": { "type": ["integer", "string"] },
+        "method": {
+          "type": "string",
+          "enum": ["search", "getPage", "getDetails", "getContent", "cancel"]
+        },
+        "params": { "type": "object" }
+      }
+    },
+    "JsonRpcSuccess": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "result"],
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": { "type": ["integer", "string"] },
+        "result": { "type": "object" }
+      }
+    },
+    "JsonRpcError": {
+      "type": "object",
+      "required": ["jsonrpc", "id", "error"],
+      "properties": {
+        "jsonrpc": { "type": "string", "const": "2.0" },
+        "id": { "type": ["integer", "string"] },
+        "error": {
+          "type": "object",
+          "required": ["code", "message"],
+          "properties": {
+            "code": { "type": "integer" },
+            "message": { "type": "string" },
+            "data": {}
+          }
+        }
+      }
+    },
+    "SearchResult": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "url": { "type": "string" },
+        "type": { "type": "string" },
+        "parentId": { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/SearchResult" }
+        },
+        "additionalData": { "type": "object" }
+      }
+    },
+    "SearchPage": {
+      "type": "object",
+      "required": ["results"],
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/SearchResult" }
+        },
+        "nextToken": { "type": "string" },
+        "content": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/definitions/ResultContent" }
+        }
+      }
+    },
+    "ContentBlock": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["heading", "paragraph", "code", "list", "table", "fields", "quote", "image"]
+        },
+        "text": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "language": { "type": "string" },
+        "items": { "type": "array", "items": { "type": "string" } },
+        "tableRows": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string" } }
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "value"],
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          }
+        },
+        "imageUrl": { "type": "string" },
+        "caption": { "type": "string" }
+      }
+    },
+    "ResultContent": {
+      "type": "object",
+      "properties": {
+        "description": { "type": "string" },
+        "format": {
+          "type": "string",
+          "enum": ["plainText", "limitedHtml", "markdown", "structuredBlocks"]
+        },
+        "baseUrl": { "type": "string" },
+        "blocks": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ContentBlock" }
+        }
+      }
+    },
+    "MetadataValue": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "url": { "type": "string" },
+        "kind": { "type": "string", "enum": ["text", "link", "image"] }
+      }
+    },
+    "MetadataNode": {
+      "type": "object",
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string" },
+        "values": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/MetadataValue" }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/MetadataNode" }
+        }
+      }
+    },
+    "ResultMetadata": {
+      "type": "object",
+      "properties": {
+        "attribution": { "type": "string" },
+        "sections": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/MetadataNode" }
+        }
+      }
+    },
+    "SearchDetails": {
+      "type": "object",
+      "required": ["result"],
+      "properties": {
+        "result": { "$ref": "#/definitions/SearchResult" },
+        "nextToken": { "type": "string" },
+        "metadata": { "$ref": "#/definitions/ResultMetadata" },
+        "content": { "$ref": "#/definitions/ResultContent" }
+      }
+    },
+    "ContentResponse": {
+      "type": "object",
+      "required": ["resultId", "content"],
+      "properties": {
+        "resultId": { "type": "string" },
+        "content": { "$ref": "#/definitions/ResultContent" },
+        "nextContentToken": { "type": "string" },
+        "attribution": { "type": "string" }
+      }
+    },
+    "Capabilities": {
+      "type": "object",
+      "properties": {
+        "pagination": { "type": "boolean" },
+        "details": { "type": "boolean" },
+        "separateContent": { "type": "boolean" },
+        "hierarchy": { "type": "boolean" },
+        "authentication": { "type": "boolean" },
+        "authType": { "type": "string" }
+      }
+    }
+  }
+}

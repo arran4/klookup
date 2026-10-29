@@ -29,8 +29,8 @@ jobs:
     - name: Configure CMake
       run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
 
-    - name: Build klookup_with_plugins
-      run: ./.jules/run.sh cmake --build build --target klookup_with_plugins --parallel
+    - name: Build klookup_with_plugins and tests
+      run: ./.jules/run.sh cmake --build build --parallel
 
     - name: Run CTest
       run: ./.jules/run.sh ctest --test-dir build --output-on-failure

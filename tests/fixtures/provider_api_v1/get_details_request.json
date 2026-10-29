@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "getDetails",
+  "params": {
+    "resultId": "item-plasma6"
+  }
+}

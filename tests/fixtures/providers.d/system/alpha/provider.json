@@ -1,0 +1,10 @@
+{
+  "id": "alpha",
+  "name": "Alpha System Provider",
+  "description": "System duplicate package should be overridden by user package",
+  "version": "0.9.0",
+  "author": "KLookup Tests",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs"
+}

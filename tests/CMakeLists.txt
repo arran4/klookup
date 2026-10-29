@@ -118,6 +118,25 @@ add_executable(test_autostart test_autostart.cpp)
 target_link_libraries(test_autostart Qt6::Test klookup_core KF6::ConfigCore)
 add_test(NAME test_autostart COMMAND test_autostart)
 
+add_executable(test_resultcontent test_resultcontent.cpp)
+target_link_libraries(test_resultcontent Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+add_test(NAME test_resultcontent COMMAND test_resultcontent)
+
+add_executable(test_providerapiv1 test_providerapiv1.cpp)
+target_link_libraries(test_providerapiv1 Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_providerapiv1 PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_providerapiv1 COMMAND test_providerapiv1)
+
+add_executable(test_providerdiscovery test_providerdiscovery.cpp)
+target_link_libraries(test_providerdiscovery Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_providerdiscovery PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_providerdiscovery COMMAND test_providerdiscovery)
+
+add_executable(test_jsprovider test_jsprovider.cpp)
+target_link_libraries(test_jsprovider Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus Qt6::Qml KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_jsprovider PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_jsprovider COMMAND test_jsprovider)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)

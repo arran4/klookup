@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "results": [
+      {
+        "id": "item-discover",
+        "title": "KDE Discover",
+        "description": "Software Center for KDE Plasma",
+        "url": "https://apps.kde.org/discover/",
+        "type": "Application",
+        "parentId": "item-plasma6"
+      }
+    ],
+    "nextToken": ""
+  }
+}

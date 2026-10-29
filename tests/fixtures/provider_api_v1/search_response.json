@@ -1,0 +1,38 @@
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "results": [
+      {
+        "id": "item-plasma6",
+        "title": "KDE Plasma 6",
+        "description": "Next-generation desktop environment by KDE",
+        "url": "https://kde.org/plasma-desktop/",
+        "type": "Desktop",
+        "children": [
+          {
+            "id": "item-kwin",
+            "title": "KWin Compositor",
+            "description": "Wayland window manager and compositor",
+            "url": "https://invent.kde.org/plasma/kwin",
+            "type": "Component",
+            "parentId": "item-plasma6"
+          }
+        ],
+        "additionalData": {
+          "license": "GPL-2.0-or-later",
+          "framework": "Qt 6 / KF6"
+        }
+      },
+      {
+        "id": "item-breeze",
+        "title": "Breeze Theme",
+        "description": "Visual style and icon theme for KDE Plasma",
+        "url": "https://invent.kde.org/plasma/breeze",
+        "type": "Theme",
+        "parentId": "item-plasma6"
+      }
+    ],
+    "nextToken": "page-cursor-token-2"
+  }
+}

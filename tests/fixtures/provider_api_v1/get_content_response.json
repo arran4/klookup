@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "result": {
+    "resultId": "item-plasma6",
+    "attribution": "KDE Documentation Team",
+    "nextContentToken": "",
+    "content": {
+      "format": "markdown",
+      "description": "# KDE Plasma 6\n\nPlasma 6 represents the state-of-the-art open source desktop.\n\n## Features\n\n- Wayland by default\n- HDR support\n- Floating panel\n\n| Component | Version |\n| --- | --- |\n| KWin | 6.0 |\n| Plasma Workspace | 6.0 |"
+    }
+  }
+}

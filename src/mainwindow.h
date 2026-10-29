@@ -7,6 +7,8 @@
 #include "searchprovider.h"
 #include "clipboardpolicy.h"
 #include "searchdashboard.h"
+#include "searchwindow.h"
+#include "resultdetailwindow.h"
 
 class QSystemTrayIcon;
 class QPluginLoader;
@@ -31,6 +33,14 @@ public slots:
     void searchClipboardNow();
     void notifyClipboardShortcutUsed();
     void restoreFromTray();
+
+    SearchWindow *openSearchInNewWindow(const QString &query);
+    ResultDetailWindow *openResultDetailsInNewWindow(const SearchResult &result,
+                                                    const QString &providerName = QString(),
+                                                    const ResultMetadata &metadata = ResultMetadata(),
+                                                    const QString &contentHtml = QString());
+    QList<SearchWindow *> searchWindows() const;
+    QList<ResultDetailWindow *> detailWindows() const;
 
     void restoreProviderState(SearchProvider* provider);
 
@@ -67,6 +77,8 @@ private:
     bool m_settingsSaved = false;
     ProviderAuthManager *m_authManager;
     GlobalShortcuts *m_globalShortcuts = nullptr;
+    QList<QPointer<SearchWindow>> m_searchWindows;
+    QList<QPointer<ResultDetailWindow>> m_detailWindows;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

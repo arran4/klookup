@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     aboutData.setupCommandLine(&parser);
     parser.addPositionalArgument(QStringLiteral("query"), i18n("Search query to execute"));
-    QCommandLineOption backgroundOption(QStringList() << QStringLiteral("b") << QStringLiteral("background"), i18n("Start in background."));
+    QCommandLineOption backgroundOption(QStringList() << QStringLiteral("b") << QStringLiteral("background") << QStringLiteral("hidden"), i18n("Start in background / hidden."));
     parser.addOption(backgroundOption);
     QCommandLineOption showSearchOption(QStringLiteral("show-search"), i18n("Show and focus search (global shortcut action)."));
     QCommandLineOption searchClipboardOption(QStringLiteral("search-clipboard"),

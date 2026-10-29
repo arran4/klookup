@@ -4,9 +4,11 @@
 #include <KPageDialog>
 #include <QListWidget>
 #include <QMap>
+#include <memory>
 
 class SearchProvider;
 class ProviderAuthManager;
+class AutostartManager;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -26,6 +28,9 @@ public:
 
     explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr);
     ~SettingsDialog();
+
+    AutostartManager *autostartManager() const;
+    void setAutostartManager(std::unique_ptr<AutostartManager> manager);
 
 signals:
     void settingsApplied();
@@ -69,6 +74,8 @@ private:
     QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;
+    QCheckBox *m_autostartCheck;
+    std::unique_ptr<AutostartManager> m_autostartManager;
     QComboBox *m_captureMode;
     QComboBox *m_searchTrigger;
     QCheckBox *m_showRecent;

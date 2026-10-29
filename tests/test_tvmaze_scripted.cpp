@@ -7,7 +7,6 @@
 #include "providerapiv1.h"
 #include "mainwindow.h"
 #include "searchtab.h"
-#include "../providers/tvmaze/provider_tvmaze.h"
 
 #include <QFile>
 #include <QDir>
@@ -107,7 +106,7 @@ private:
     QByteArray m_showData;
 };
 
-class TestTvMazeParity : public QObject
+class TestTvMazeScripted : public QObject
 {
     Q_OBJECT
 
@@ -137,96 +136,53 @@ private Q_SLOTS:
             "}");
     }
 
-    void testSearchParityNativeVsJs()
+    void testScriptedSearchUsesExpectedFixture()
     {
-        auto *mockNamNative = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
-        auto *mockNamJs = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
-
-        // 1. Run Native C++ TVMaze Provider
-        ProviderTvMaze nativeProvider(this, mockNamNative);
-        QCOMPARE(nativeProvider.id(), QStringLiteral("tvmaze"));
-        QCOMPARE(nativeProvider.name(), QStringLiteral("TVMaze"));
-
-        QSignalSpy nativeSpy(&nativeProvider, &SearchProvider::searchCompleted);
-        nativeProvider.search(QStringLiteral("girls"));
-        QVERIFY(nativeSpy.wait(1000));
-        QCOMPARE(nativeSpy.count(), 1);
-        const auto nativeResults = nativeSpy.first().at(1).value<QList<SearchResult>>();
-        QCOMPARE(nativeResults.size(), 2);
-
-        // 2. Run Scripted JS TVMaze Provider from providers.d/tvmaze
+        auto *mockNam = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
         const QString tvmazeDir = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze");
         auto pkg = ProviderPackage::fromDirectory(tvmazeDir);
         QVERIFY(pkg.isValid());
-        pkg.setTrusted(true); // explicit trust
-
-        auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNamJs);
-        JsProvider jsProvider(pkg, this, hostService);
-        QVERIFY(jsProvider.isLoaded());
-        QCOMPARE(jsProvider.id(), QStringLiteral("tvmaze"));
-        QCOMPARE(jsProvider.name(), QStringLiteral("TVMaze"));
-
-        QSignalSpy jsSpy(&jsProvider, &ProviderApiV1::ProviderV1::pageReady);
-        const quint64 jsReqId = jsProvider.search(QStringLiteral("girls"));
-        QVERIFY(jsSpy.wait(1000));
-        QCOMPARE(jsSpy.count(), 1);
-        QCOMPARE(jsSpy.first().at(0).toULongLong(), jsReqId);
-        const auto jsPage = jsSpy.first().at(1).value<SearchPage>();
-        QCOMPARE(jsPage.results.size(), 2);
-
-        // 3. Verify Exact Field-by-Field Parity Across Results
-        for (int i = 0; i < 2; ++i) {
-            const auto &nat = nativeResults[i];
-            const auto &js = jsPage.results[i];
-
-            QCOMPARE(js.id, nat.id);
-            QCOMPARE(js.title, nat.title);
-            QCOMPARE(js.description, nat.description);
-            QCOMPARE(js.url, nat.url);
-            QCOMPARE(js.type, nat.type);
-
-            QCOMPARE(js.additionalData.value(QStringLiteral("language")).toString(),
-                     nat.additionalData.value(QStringLiteral("language")).toString());
-            QCOMPARE(js.additionalData.value(QStringLiteral("premiered")).toString(),
-                     nat.additionalData.value(QStringLiteral("premiered")).toString());
-            QCOMPARE(js.additionalData.value(QStringLiteral("status")).toString(),
-                     nat.additionalData.value(QStringLiteral("status")).toString());
-
-            if (nat.additionalData.contains(QStringLiteral("rating"))) {
-                QVERIFY(js.additionalData.contains(QStringLiteral("rating")));
-                QCOMPARE(js.additionalData.value(QStringLiteral("rating")).toDouble(),
-                         nat.additionalData.value(QStringLiteral("rating")).toDouble());
-            }
-        }
-    }
-
-    void testCancellationParity()
-    {
-        auto *mockNamNative = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
-        mockNamNative->suppress = true;
-        ProviderTvMaze nativeProvider(this, mockNamNative);
-
-        QSignalSpy nativeSpy(&nativeProvider, &SearchProvider::searchCompleted);
-        nativeProvider.search(QStringLiteral("girls"));
-        // Abort / cancel by starting new search or destruction
-        nativeProvider.search(QStringLiteral("new_search"));
-        QTest::qWait(50);
-        QCOMPARE(nativeSpy.count(), 0);
-
-        // Scripted JS cancellation
-        auto *mockNamJs = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
-        mockNamJs->suppress = true;
-        const QString tvmazeDir = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze");
-        auto pkg = ProviderPackage::fromDirectory(tvmazeDir);
+        QVERIFY(!pkg.isTrusted());
         pkg.setTrusted(true);
 
-        auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNamJs);
-        JsProvider jsProvider(pkg, this, hostService);
-        QSignalSpy jsSpy(&jsProvider, &ProviderApiV1::ProviderV1::pageReady);
-        const quint64 id = jsProvider.search(QStringLiteral("girls"));
-        jsProvider.cancel(id);
+        auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNam);
+        JsProvider provider(pkg, this, hostService);
+        QVERIFY(provider.isLoaded());
+        QCOMPARE(provider.id(), QStringLiteral("tvmaze"));
+        QCOMPARE(provider.name(), QStringLiteral("TVMaze"));
+
+        QSignalSpy spy(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        const quint64 id = provider.search(QStringLiteral("girls"));
+        QVERIFY(spy.wait(1000));
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.first().at(0).toULongLong(), id);
+
+        const auto results = spy.first().at(1).value<SearchPage>().results;
+        QCOMPARE(results.size(), 2);
+        QCOMPARE(results.at(0).id, QStringLiteral("139"));
+        QCOMPARE(results.at(0).title, QStringLiteral("Girls"));
+        QCOMPARE(results.at(0).type, QStringLiteral("tvshow"));
+        QCOMPARE(results.at(0).url, QStringLiteral("https://www.tvmaze.com/shows/139/girls"));
+        QVERIFY(!results.at(0).description.contains(QLatin1Char('<')));
+        QVERIFY(results.at(0).additionalData.contains(QStringLiteral("language")));
+        QVERIFY(results.at(0).additionalData.contains(QStringLiteral("status")));
+    }
+
+    void testScriptedCancellation()
+    {
+        auto *mockNam = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
+        mockNam->suppress = true;
+        const QString tvmazeDir = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze");
+        auto pkg = ProviderPackage::fromDirectory(tvmazeDir);
+        QVERIFY(pkg.isValid());
+        pkg.setTrusted(true);
+        auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNam);
+        JsProvider provider(pkg, this, hostService);
+        QSignalSpy readySpy(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        const quint64 id = provider.search(QStringLiteral("girls"));
+        provider.cancel(id);
         QTest::qWait(50);
-        QCOMPARE(jsSpy.count(), 0);
+        QCOMPARE(readySpy.count(), 0);
     }
 
     void testScriptedDetailsAndSeparateContent()
@@ -267,7 +223,7 @@ private Q_SLOTS:
         QVERIFY(contentResp.content.description.contains(QStringLiteral("Young women navigating life in New York.")));
     }
 
-    void testDuplicateIdPrecedenceAndRollback()
+    void testScriptPackageDiscoveryAndDefaultUntrusted()
     {
         const QString tvmazeDir = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze");
         auto pkg = ProviderPackage::fromDirectory(tvmazeDir);
@@ -332,17 +288,15 @@ private Q_SLOTS:
             }
         }
 
-        // 6. Verify scripted TVMaze is active and has overridden native provider
+        // 6. Verify the only shipped TVMaze implementation is scripted
         auto *activeTvMaze = window.provider(QStringLiteral("tvmaze"));
         QVERIFY(activeTvMaze != nullptr);
         auto *v1Adapter = qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(activeTvMaze);
         QVERIFY(v1Adapter != nullptr);
         QCOMPARE(activeTvMaze->name(), QStringLiteral("TVMaze"));
 
-        // Verify native provider is retained as fallback
-        auto *fallback = window.fallbackProvider(QStringLiteral("tvmaze"));
-        QVERIFY(fallback != nullptr);
-        QCOMPARE(fallback->id(), QStringLiteral("tvmaze"));
+        // No duplicate native TVMaze plugin should be installed by this build.
+        QVERIFY(window.fallbackProvider(QStringLiteral("tvmaze")) == nullptr);
 
         window.clearSearchTabs();
 
@@ -398,34 +352,20 @@ private Q_SLOTS:
         v1Adapter->cancelRequests();
         QTest::qWait(50);
 
-        // 10. Test rollback / fallback to native TVMaze
+        // 10. Hard cutover: disabling the script does not resurrect a
+        // second, bundled native TVMaze implementation.
         mockNam->suppress = false;
-        QVERIFY(window.switchToFallback(QStringLiteral("tvmaze")));
-
-        auto *restoredProvider = window.provider(QStringLiteral("tvmaze"));
-        QVERIFY(restoredProvider != nullptr);
-        QCOMPARE(restoredProvider->id(), QStringLiteral("tvmaze"));
-        QCOMPARE(restoredProvider->name(), QStringLiteral("TVMaze"));
-        // Confirm it is no longer the scripted V1 adapter, but the native fallback
-        QVERIFY(qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(restoredProvider) == nullptr);
-
-        // Perform search through native fallback
-        window.performSearch(QStringLiteral("girls_native"));
-        auto nativeTabs = window.findChildren<SearchTab *>();
-        QVERIFY(!nativeTabs.isEmpty());
-        auto *nativeTab = nativeTabs.last();
-        auto *nativeTree = nativeTab->findChild<QTreeWidget *>();
-        QVERIFY(nativeTree != nullptr);
-        QTRY_VERIFY_WITH_TIMEOUT([&]() -> bool {
-            for (int i = 0; i < nativeTree->topLevelItemCount(); ++i) {
-                if (nativeTree->topLevelItem(i)->text(0) == QLatin1String("TVMaze")) {
-                    return true;
-                }
-            }
-            return false;
-        }(), 2000);
+        {
+            KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+            KConfigGroup providersGroup(config, QStringLiteral("Providers"));
+            providersGroup.writeEntry(QStringLiteral("tvmaze_Enabled"), false);
+            config->sync();
+        }
+        window.loadPlugins({xdgDataHome + QStringLiteral("/klookup/providers.d")}, {});
+        QVERIFY(window.provider(QStringLiteral("tvmaze")) == nullptr);
+        QVERIFY(window.fallbackProvider(QStringLiteral("tvmaze")) == nullptr);
     }
 };
 
-QTEST_MAIN(TestTvMazeParity)
-#include "test_tvmaze_parity.moc"
+QTEST_MAIN(TestTvMazeScripted)
+#include "test_tvmaze_scripted.moc"

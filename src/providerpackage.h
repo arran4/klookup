@@ -8,9 +8,13 @@
 
 #include <QByteArray>
 #include <QJsonObject>
+#include <QMap>
+
 #include <QString>
 #include <QStringList>
 #include <QUrl>
+
+class KConfigGroup;
 
 struct PackagePermissions {
     QStringList origins;
@@ -48,6 +52,12 @@ public:
     QString entryFilePath() const { return m_entryFilePath; }
     LocationType locationType() const { return m_locationType; }
     QByteArray contentHash() const { return m_contentHash; }
+    QByteArray approvalFingerprint() const;
+    QString provenance() const;
+    bool isDistributionPackage() const;
+    bool approved(const KConfigGroup &group) const;
+    void saveApproval(KConfigGroup &group, bool approve) const;
+    bool writeVerifiedSnapshot(const QString &destination, QString *error) const;
 
     bool isTrusted() const { return m_trusted; }
     void setTrusted(bool trusted) { m_trusted = trusted; }
@@ -66,6 +76,7 @@ private:
     QString m_entryFilePath;
     LocationType m_locationType = LocationType::User;
     QByteArray m_contentHash;
+    QMap<QString, QByteArray> m_files;
     bool m_valid = false;
     QString m_validationError;
     bool m_trusted = false;
@@ -77,6 +88,11 @@ public:
     static QStringList defaultSearchPaths();
     static QList<ProviderPackage> discoverPackages(const QStringList &customPaths = {});
     static bool isValidPackageId(const QString &id);
+};
+
+struct ProviderPackageStatus {
+    ProviderPackage package;
+    QString status;
 };
 
 #endif // PROVIDERPACKAGE_H

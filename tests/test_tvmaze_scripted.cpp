@@ -7,6 +7,11 @@
 #include "providerapiv1.h"
 #include "mainwindow.h"
 #include "searchtab.h"
+#include "settingsdialog.h"
+#include <QListWidget>
+#include <QDialogButtonBox>
+#include <QMessageBox>
+#include <QApplication>
 
 #include <QFile>
 #include <QDir>
@@ -27,15 +32,17 @@ class MockReply : public QNetworkReply
 {
     Q_OBJECT
 public:
-    MockReply(const QByteArray &data, QObject *parent = nullptr)
+    MockReply(const QByteArray &data, QObject *parent = nullptr, int status = 200, int delayMs = 0,
+              bool transportError = false, std::function<void()> onAbort = {})
         : QNetworkReply(parent)
         , m_data(data)
-        , m_offset(0)
+        , m_offset(0), m_onAbort(std::move(onAbort))
     {
         setOpenMode(QIODevice::ReadOnly);
-        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, 200);
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, status);
         setHeader(QNetworkRequest::ContentLengthHeader, data.size());
-        QTimer::singleShot(0, this, [this] {
+        if (delayMs >= 0) QTimer::singleShot(delayMs, this, [this, transportError] {
+            if (transportError) setError(QNetworkReply::RemoteHostClosedError, QStringLiteral("Transport closed"));
             setFinished(true);
             emit readyRead();
             emit finished();
@@ -44,6 +51,7 @@ public:
 
     void abort() override
     {
+        if (m_onAbort) m_onAbort();
         setError(QNetworkReply::OperationCanceledError, QStringLiteral("Operation canceled"));
         setFinished(true);
         emit finished();
@@ -67,6 +75,7 @@ protected:
 private:
     QByteArray m_data;
     qint64 m_offset;
+    std::function<void()> m_onAbort;
 };
 
 class MockTvMazeNam : public QNetworkAccessManager
@@ -81,24 +90,29 @@ public:
     }
 
     bool suppress = false;
+    int status = 200;
+    int delayMs = 0;
+    bool transportError = false;
+    int aborted = 0;
+    QList<QUrl> requests;
 
 protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest &req, QIODevice *outgoingData) override
     {
         Q_UNUSED(op);
         Q_UNUSED(outgoingData);
-        if (suppress) {
-            auto *rep = new MockReply(QByteArray(), this);
-            return rep;
-        }
+        requests.append(req.url());
+        auto reply = [this](const QByteArray &data) {
+            return new MockReply(data, this, status, suppress ? -1 : delayMs, transportError, [this] { ++aborted; });
+        };
 
         const QString url = req.url().toString();
         if (url.contains(QStringLiteral("/search/shows"))) {
-            return new MockReply(m_searchData, this);
+            return reply(m_searchData);
         } else if (url.contains(QStringLiteral("/shows/"))) {
-            return new MockReply(m_showData, this);
+            return reply(m_showData);
         }
-        return new MockReply(QByteArray(), this);
+        return reply(QByteArray());
     }
 
 private:
@@ -111,12 +125,14 @@ class TestTvMazeScripted : public QObject
     Q_OBJECT
 
 private:
+    QTemporaryDir m_configRoot;
     QByteArray m_searchFixture;
     QByteArray m_showFixture;
 
 private Q_SLOTS:
     void initTestCase()
     {
+        qputenv("XDG_CONFIG_HOME", m_configRoot.path().toUtf8());
         QFile searchFile(QStringLiteral(FIXTURES_DIR "/tvmaze_search_fixture.json"));
         QVERIFY(searchFile.open(QIODevice::ReadOnly));
         m_searchFixture = searchFile.readAll();
@@ -183,6 +199,7 @@ private Q_SLOTS:
         provider.cancel(id);
         QTest::qWait(50);
         QCOMPARE(readySpy.count(), 0);
+        QCOMPARE(mockNam->aborted, 1);
     }
 
     void testScriptedDetailsAndSeparateContent()
@@ -243,6 +260,216 @@ private Q_SLOTS:
         QVERIFY(found);
     }
 
+    void testSearchResponseFailures_data()
+    {
+        QTest::addColumn<QByteArray>("body");
+        QTest::addColumn<int>("status");
+        QTest::addColumn<bool>("transportError");
+        QTest::addColumn<bool>("success");
+        QTest::newRow("empty") << QByteArray("[]") << 200 << false << true;
+        QTest::newRow("malformed") << QByteArray("{") << 200 << false << false;
+        QTest::newRow("wrong-shape") << QByteArray("{}") << 200 << false << false;
+        QTest::newRow("partial") << QByteArray("[null,{}, {\"show\":null}]") << 200 << false << true;
+        QTest::newRow("rate-limit") << QByteArray("{}") << 429 << false << false;
+        QTest::newRow("http-error") << QByteArray("{}") << 503 << false << false;
+        QTest::newRow("transport") << QByteArray() << 0 << true << false;
+    }
+
+    void testSearchResponseFailures()
+    {
+        QFETCH(QByteArray, body);
+        QFETCH(int, status);
+        QFETCH(bool, transportError);
+        QFETCH(bool, success);
+        MockTvMazeNam nam(body, m_showFixture);
+        nam.status = status;
+        nam.transportError = transportError;
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze"));
+        pkg.setTrusted(true);
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, &host);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        provider.search(QString::fromUtf8("Björk & 東京/?"));
+        QTRY_COMPARE(ready.count() + failed.count(), 1);
+        QCOMPARE(ready.count(), success ? 1 : 0);
+        QCOMPARE(failed.count(), success ? 0 : 1);
+        QVERIFY(nam.requests.first().toEncoded().contains("Bj%C3%B6rk%20%26%20%E6%9D%B1%E4%BA%AC%2F%3F"));
+    }
+
+    void testOverlappingSearchesAndLateReply()
+    {
+        MockTvMazeNam nam(m_searchFixture, m_showFixture);
+        nam.delayMs = 20;
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze"));
+        pkg.setTrusted(true);
+        ProviderHost::ProviderHostService host(pkg, nullptr, &nam);
+        JsProvider provider(pkg, nullptr, &host);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+        const auto first = provider.search(QStringLiteral("first"));
+        const auto second = provider.search(QStringLiteral("second"));
+        provider.cancel(first);
+        QCOMPARE(nam.aborted, 1);
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(ready.first().first().toULongLong(), second);
+        QTest::qWait(30);
+        QCOMPARE(ready.count(), 1);
+        QCOMPARE(failed.count(), 0);
+    }
+
+    void testFreshInstalledDiscovery()
+    {
+        if (!qEnvironmentVariableIsSet("KLOOKUP_STAGED_INSTALL")) QSKIP("Exercised by test_staged_install in an isolated installed prefix");
+        MainWindow window;
+        auto *active = window.provider(QStringLiteral("tvmaze"));
+        QVERIFY(active);
+        QVERIFY(qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(active));
+        QVERIFY(!window.fallbackProvider(QStringLiteral("tvmaze")));
+        bool system = false;
+        QString installedRoot;
+        for (const auto &record : window.packages()) {
+            if (record.package.id() == QLatin1String("tvmaze")) {
+                QCOMPARE(record.package.locationType(), ProviderPackage::LocationType::System);
+                QVERIFY(record.package.isDistributionPackage());
+                QVERIFY(record.package.isTrusted());
+                installedRoot = record.package.packageDir();
+                system = true;
+            }
+        }
+        QVERIFY(system);
+        auto *nam = new MockTvMazeNam(m_searchFixture, m_showFixture, this);
+        window.setNetworkAccessManagerFactory([nam](QObject *) { return nam; });
+        window.loadPlugins();
+        for (auto *provider : window.providers()) provider->setEnabled(provider->id() == QLatin1String("tvmaze"));
+        window.clearSearchTabs();
+        window.performSearch(QStringLiteral("girls"));
+        auto *tree = window.findChildren<SearchTab *>().last()->findChild<QTreeWidget *>();
+        QVERIFY(tree);
+        QTRY_COMPARE(nam->requests.size(), 1);
+        QTRY_COMPARE(tree->topLevelItemCount(), 1);
+        QTRY_COMPARE(tree->topLevelItem(0)->childCount(), 3); // Two results and the standard completion status.
+        QCOMPARE(tree->topLevelItem(0)->child(0)->text(0), QStringLiteral("Girls"));
+        QCOMPARE(tree->topLevelItem(0)->child(2)->text(0), QStringLiteral("No more results"));
+        // A real XDG user override wins precedence without inheriting system approval.
+        const QString userRoot = qEnvironmentVariable("XDG_DATA_HOME") + QStringLiteral("/klookup/providers.d/tvmaze");
+        QVERIFY(QDir().mkpath(userRoot));
+        QVERIFY(QFile::copy(installedRoot + QStringLiteral("/provider.json"), userRoot + QStringLiteral("/provider.json")));
+        QVERIFY(QFile::copy(installedRoot + QStringLiteral("/main.mjs"), userRoot + QStringLiteral("/main.mjs")));
+        window.loadPlugins();
+        QVERIFY(!window.provider(QStringLiteral("tvmaze")));
+        bool userOverride = false;
+        for (const auto &record : window.packages()) if (record.package.id() == QLatin1String("tvmaze"))
+            userOverride = record.package.locationType() == ProviderPackage::LocationType::User;
+        QVERIFY(userOverride);
+        window.setPackageTrusted(QStringLiteral("tvmaze"), true);
+        window.loadPlugins();
+        QVERIFY(window.provider(QStringLiteral("tvmaze")));
+        QVERIFY(QDir(userRoot).removeRecursively());
+        window.loadPlugins();
+        QVERIFY(!window.provider(QStringLiteral("tvmaze"))); // Replacement path requires review again.
+        window.setPackageTrusted(QStringLiteral("tvmaze"), true);
+        window.loadPlugins();
+        QVERIFY(window.provider(QStringLiteral("tvmaze")));
+        QFile upgraded(installedRoot + QStringLiteral("/main.mjs"));
+        QVERIFY(upgraded.open(QIODevice::Append));
+        upgraded.write("\n// package upgrade\n");
+        upgraded.close();
+        window.loadPlugins();
+        QVERIFY(!window.provider(QStringLiteral("tvmaze"))); // Code changes invalidate system approval too.
+        window.setPackageTrusted(QStringLiteral("tvmaze"), true);
+        window.loadPlugins();
+        QVERIFY(window.provider(QStringLiteral("tvmaze")));
+        window.setPackageTrusted(QStringLiteral("tvmaze"), false);
+        window.loadPlugins();
+        QVERIFY(!window.provider(QStringLiteral("tvmaze")));
+        QVERIFY(!window.fallbackProvider(QStringLiteral("tvmaze")));
+        MainWindow restarted;
+        QVERIFY(!restarted.provider(QStringLiteral("tvmaze")));
+    }
+
+    void testApprovalReviewCancellationAndFailureStates()
+    {
+        QTemporaryDir temp;
+        const QString root = temp.path() + QStringLiteral("/tvmaze");
+        QVERIFY(QDir().mkpath(root));
+        const QString source = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze");
+        QVERIFY(QFile::copy(source + QStringLiteral("/provider.json"), root + QStringLiteral("/provider.json")));
+        QVERIFY(QFile::copy(source + QStringLiteral("/main.mjs"), root + QStringLiteral("/main.mjs")));
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+        group.writeEntry(QStringLiteral("tvmaze_Enabled"), true);
+        group.sync();
+        MainWindow window;
+        window.loadPlugins({temp.path()});
+        QVERIFY(!window.provider(QStringLiteral("tvmaze")));
+        SettingsDialog settings(window.providers(), nullptr, nullptr, window.packages());
+        auto *list = settings.findChild<QListWidget *>(QStringLiteral("scriptedPackages"));
+        QVERIFY(list);
+        int row = -1;
+        for (int i = 0; i < window.packages().size(); ++i)
+            if (window.packages()[i].package.id() == QLatin1String("tvmaze")) row = i;
+        QVERIFY(row >= 0);
+        list->setCurrentRow(row);
+        auto *approve = settings.findChild<QPushButton *>(QStringLiteral("approvePackage"));
+        QVERIFY(approve && approve->isEnabled());
+        QTimer::singleShot(0, [] {
+            auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            if (box) box->button(QMessageBox::Cancel)->click();
+        });
+        approve->click();
+        QVERIFY(!window.isPackageTrusted(QStringLiteral("tvmaze")));
+        // Even accepting the review is only a draft until Apply/OK.
+        QTimer::singleShot(0, [] {
+            auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget());
+            if (box) box->button(QMessageBox::Yes)->click();
+        });
+        approve->click();
+        settings.button(QDialogButtonBox::Cancel)->click();
+        QVERIFY(!window.isPackageTrusted(QStringLiteral("tvmaze")));
+        SettingsDialog approving(window.providers(), nullptr, nullptr, window.packages());
+        auto *approvalList = approving.findChild<QListWidget *>(QStringLiteral("scriptedPackages"));
+        approvalList->setCurrentRow(row);
+        QTimer::singleShot(0, [] {
+            if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) box->button(QMessageBox::Yes)->click();
+        });
+        approving.findChild<QPushButton *>(QStringLiteral("approvePackage"))->click();
+        approving.button(QDialogButtonBox::Apply)->click();
+        QVERIFY(window.isPackageTrusted(QStringLiteral("tvmaze")));
+        window.loadPlugins({temp.path()});
+        QVERIFY(window.provider(QStringLiteral("tvmaze")));
+        SettingsDialog revoking(window.providers(), nullptr, nullptr, window.packages());
+        revoking.findChild<QListWidget *>(QStringLiteral("scriptedPackages"))->setCurrentRow(row);
+        revoking.findChild<QPushButton *>(QStringLiteral("revokePackage"))->click();
+        revoking.button(QDialogButtonBox::Apply)->click();
+        window.loadPlugins({temp.path()});
+        QVERIFY(!window.provider(QStringLiteral("tvmaze")));
+        QVERIFY(!window.isPackageTrusted(QStringLiteral("tvmaze")));
+
+        for (const QByteArray &script : {QByteArray("export function search( {"),
+                                       QByteArray("throw new Error('broken module'); export function search() {}")}) {
+            QFile entry(root + QStringLiteral("/main.mjs"));
+            QVERIFY(entry.open(QIODevice::WriteOnly));
+            entry.write(script);
+            entry.close();
+            window.loadPlugins({temp.path()});
+            window.setPackageTrusted(QStringLiteral("tvmaze"), true);
+            window.loadPlugins({temp.path()});
+            QVERIFY(!window.provider(QStringLiteral("tvmaze")));
+            bool failed = false;
+            for (const auto &record : window.packages())
+                if (record.package.id() == QLatin1String("tvmaze")) failed = record.status.startsWith(QStringLiteral("Load failed:"));
+            QVERIFY(failed);
+        }
+        QVERIFY(QFile::remove(root + QStringLiteral("/main.mjs")));
+        window.loadPlugins({temp.path()});
+        bool missing = false;
+        for (const auto &record : window.packages())
+            if (record.package.id() == QLatin1String("tvmaze")) missing = !record.package.isValid() && record.status.contains(QStringLiteral("does not exist"));
+        QVERIFY(missing);
+    }
+
     void testEndToEndScriptedTvMazeDiscoveryAndSearch()
     {
         // 1. Create temporary directory structure replicating real XDG providers.d layout
@@ -260,7 +487,7 @@ private Q_SLOTS:
         // 3. Set XDG_DATA_HOME environment variable
         qputenv("XDG_DATA_HOME", xdgDataHome.toUtf8());
 
-        // 4. Set explicit trust and enablement in config
+        // 4. Enabled is independent of approval; legacy ID trust cannot activate code.
         {
             KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
             KConfigGroup providersGroup(config, QStringLiteral("Providers"));
@@ -280,6 +507,11 @@ private Q_SLOTS:
         // Trigger discovery on the directory layout and plugin paths
         window.loadPlugins({xdgDataHome + QStringLiteral("/klookup/providers.d")},
                            {QCoreApplication::applicationDirPath() + QStringLiteral("/../src/providers")});
+
+        QVERIFY(window.provider(QStringLiteral("tvmaze")) == nullptr);
+        QVERIFY(!window.packages().isEmpty());
+        window.setPackageTrusted(QStringLiteral("tvmaze"), true);
+        window.loadPlugins({xdgDataHome + QStringLiteral("/klookup/providers.d")}, {});
 
         // Ensure only tvmaze is active for this focused integration test
         for (SearchProvider *p : window.providers()) {
@@ -364,6 +596,26 @@ private Q_SLOTS:
         window.loadPlugins({xdgDataHome + QStringLiteral("/klookup/providers.d")}, {});
         QVERIFY(window.provider(QStringLiteral("tvmaze")) == nullptr);
         QVERIFY(window.fallbackProvider(QStringLiteral("tvmaze")) == nullptr);
+        // Disabled packages remain selectable after restart through normal Settings.
+        MainWindow restarted;
+        QVERIFY(restarted.provider(QStringLiteral("tvmaze")) == nullptr);
+        SettingsDialog settings(restarted.providers(), nullptr, nullptr, restarted.packages());
+        auto *list = settings.findChild<QListWidget *>(QStringLiteral("scriptedPackages"));
+        QVERIFY(list);
+        QVERIFY(list->count() > 0);
+        bool found = false;
+        for (int row = 0; row < list->count(); ++row) {
+            if (list->item(row)->text().startsWith(QStringLiteral("TVMaze"))) {
+                QCOMPARE(list->item(row)->checkState(), Qt::Unchecked);
+                list->item(row)->setCheckState(Qt::Checked);
+                found = true;
+            }
+        }
+        QVERIFY(found);
+        settings.button(QDialogButtonBox::Apply)->click();
+        restarted.setNetworkAccessManagerFactory([mockNam](QObject *) { return mockNam; });
+        restarted.loadPlugins();
+        QVERIFY(restarted.provider(QStringLiteral("tvmaze")));
     }
 };
 

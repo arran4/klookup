@@ -15,7 +15,7 @@ function search(query) {
         return resp.json();
     }).then(function(data) {
         if (!Array.isArray(data)) {
-            return [];
+            throw new Error("TVMaze returned an invalid search response");
         }
         var results = [];
         for (var i = 0; i < data.length; ++i) {

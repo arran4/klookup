@@ -14,6 +14,7 @@
 #include <QObject>
 #include <QSet>
 #include <QString>
+#include <QTemporaryDir>
 
 class JsHostBridge;
 
@@ -44,6 +45,7 @@ public:
     quint64 getDetails(const QString &resultId, quint64 requestId = 0) override;
     quint64 getContent(const QString &resultId, const QString &contentToken = QString(), quint64 requestId = 0) override;
     void cancel(quint64 requestId) override;
+    void invalidate();
     ProviderV1 *clone(QObject *parent = nullptr) const override;
 
     quint64 currentOperationId() const { return m_currentOperationId; }
@@ -55,6 +57,7 @@ private:
     quint64 nextRequestId();
 
     ProviderPackage m_package;
+    QTemporaryDir m_snapshot;
     ProviderHost::ProviderHostService *m_hostService = nullptr;
     bool m_ownsHostService = false;
 

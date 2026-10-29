@@ -154,3 +154,12 @@ if(DBUS_RUN_SESSION)
     add_dependencies(test_shortcut_activation klookup)
     add_test(NAME test_shortcut_activation COMMAND ${DBUS_RUN_SESSION} -- $<TARGET_FILE:test_shortcut_activation>)
 endif()
+
+add_library(provider_mock_tvmaze MODULE provider_mock_tvmaze.cpp)
+target_link_libraries(provider_mock_tvmaze klookup_core Qt6::Core)
+set_target_properties(provider_mock_tvmaze PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obsolete"
+    OUTPUT_NAME provider_tvmaze PREFIX "")
+add_dependencies(test_tvmaze_scripted provider_mock_tvmaze)
+add_test(NAME test_staged_install COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/check_staged_install.sh" "${CMAKE_BINARY_DIR}")
+set_tests_properties(test_staged_install PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)

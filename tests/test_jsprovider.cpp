@@ -119,7 +119,7 @@ private Q_SLOTS:
         pkg.setTrusted(true);
 
         JsProvider provider(pkg, this);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
         QCOMPARE(provider.id(), QStringLiteral("sample_js"));
         QCOMPARE(provider.name(), QStringLiteral("Sample JS Provider"));
 
@@ -143,7 +143,7 @@ private Q_SLOTS:
         pkg.setTrusted(true);
 
         JsProvider provider(pkg, this);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         QSignalSpy spy(&provider, &ProviderApiV1::ProviderV1::pageReady);
         const quint64 id = provider.getPage(QStringLiteral("query"), QStringLiteral("tok-123"));
@@ -164,7 +164,7 @@ private Q_SLOTS:
         pkg.setTrusted(true);
 
         JsProvider provider(pkg, this);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         // 1. Details
         QSignalSpy detailsSpy(&provider, &ProviderApiV1::ProviderV1::detailsReady);
@@ -198,7 +198,7 @@ private Q_SLOTS:
         pkg.setTrusted(true);
 
         JsProvider provider(pkg, this);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         QSignalSpy spy(&provider, &ProviderApiV1::ProviderV1::pageFailed);
         const quint64 id = provider.search(QStringLiteral("throw_error"));
@@ -216,7 +216,7 @@ private Q_SLOTS:
         pkg.setTrusted(true);
 
         JsProvider provider(pkg, this);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         QSignalSpy readySpy(&provider, &ProviderApiV1::ProviderV1::pageReady);
         const quint64 id = provider.search(QStringLiteral("Plasma"));
@@ -243,7 +243,7 @@ private Q_SLOTS:
 
         auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNam);
         JsProvider provider(pkg, this, hostService);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         QSignalSpy readySpy(&provider, &ProviderApiV1::ProviderV1::pageReady);
         const quint64 opId = provider.search(QStringLiteral("fetch_test"));
@@ -273,7 +273,7 @@ private Q_SLOTS:
 
         auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNam);
         JsProvider provider(pkg, this, hostService);
-        QVERIFY(provider.isLoaded());
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
 
         QSignalSpy readySpy(&provider, &ProviderApiV1::ProviderV1::pageReady);
 
@@ -326,10 +326,11 @@ private Q_SLOTS:
         auto pkg = ProviderPackage::fromDirectory(fixtureDir);
         pkg.setTrusted(true);
 
-        JsProvider master(pkg, this);
-        QVERIFY(master.isLoaded());
-
-        auto *cloned = master.clone(this);
+        auto master = std::make_unique<JsProvider>(pkg);
+        QVERIFY(master->isLoaded());
+        QPointer<ProviderHost::ProviderHostService> templateHost = master->findChild<ProviderHost::ProviderHostService *>();
+        QVERIFY(templateHost);
+        auto *cloned = master->clone(this);
         QVERIFY(cloned != nullptr);
         QCOMPARE(cloned->id(), QStringLiteral("sample_js"));
 
@@ -337,7 +338,12 @@ private Q_SLOTS:
         QVERIFY(clonedJs != nullptr);
         QVERIFY(clonedJs->isLoaded());
 
-        // Cloned instance can search independently
+        auto *cloneHost = clonedJs->findChild<ProviderHost::ProviderHostService *>();
+        QVERIFY(cloneHost);
+        QVERIFY(cloneHost->networkAccessManager() != templateHost->networkAccessManager());
+        master.reset();
+        QVERIFY(templateHost.isNull());
+        // A clone remains usable after its template and transport are destroyed.
         QSignalSpy spy(clonedJs, &ProviderApiV1::ProviderV1::pageReady);
         const quint64 id = clonedJs->search(QStringLiteral("Plasma"));
         QVERIFY(spy.wait(500));

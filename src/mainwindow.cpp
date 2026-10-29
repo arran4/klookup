@@ -296,9 +296,10 @@ void MainWindow::searchClipboardNow()
 
 void MainWindow::showSettingsDialog()
 {
-    SettingsDialog dialog(m_providers, this, m_authManager);
+    SettingsDialog dialog(m_providers, this, m_authManager, m_packages);
     connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
     dialog.exec();
+    loadPlugins(m_customPackagePaths, m_customPluginPaths);
 
     m_recent->reloadPolicy();
     // We re-check clipboard monitoring if settings change
@@ -378,6 +379,8 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
 
 void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStringList &customPluginPaths)
 {
+    // Retire operations held by open tabs/windows before replacing templates.
+    for (auto *adapter : m_scriptedAdapters) emit packageReloaded(adapter->id());
     // 1. Restore any native providers that were previously overridden
     for (auto it = m_fallbackProviders.cbegin(); it != m_fallbackProviders.cend(); ++it) {
         for (int i = 0; i < m_providers.size(); ++i) {
@@ -474,47 +477,42 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
     }
 
     // 3. Discover and instantiate scripted provider packages (XDG and custom paths)
-    QStringList packagePaths = customPackagePaths;
-    packagePaths.append(QCoreApplication::applicationDirPath() + QStringLiteral("/providers.d"));
-    packagePaths.append(QCoreApplication::applicationDirPath() + QStringLiteral("/../share/klookup/providers.d"));
-    const QString cwdProvidersD = QDir::currentPath() + QStringLiteral("/providers.d");
-    if (QDir(cwdProvidersD).exists() && !packagePaths.contains(cwdProvidersD)) {
-        packagePaths.append(cwdProvidersD);
-    }
-#ifdef PROJECT_SOURCE_DIR
-    const QString srcProvidersD = QStringLiteral(PROJECT_SOURCE_DIR "/providers.d");
-    if (QDir(srcProvidersD).exists() && !packagePaths.contains(srcProvidersD)) {
-        packagePaths.append(srcProvidersD);
-    }
-#endif
-
-    const auto packages = ProviderPackageDiscovery::discoverPackages(packagePaths);
+    m_customPackagePaths = customPackagePaths;
+    m_customPluginPaths = customPluginPaths;
+    const auto packages = ProviderPackageDiscovery::discoverPackages(customPackagePaths);
+    m_packages.clear();
     qCDebug(KLOOKUP_PLUGINS) << "Discovered scripted packages count:" << packages.size();
 
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
 
     for (auto pkg : packages) {
-        // Trust and enablement precedence:
-        // System packages are trusted by default. User/custom packages require explicit approval.
-        const bool defaultTrusted = (pkg.locationType() == ProviderPackage::LocationType::System);
-        const bool isTrusted = providersGroup.readEntry(pkg.id() + QStringLiteral("_Trusted"), defaultTrusted);
-        pkg.setTrusted(isTrusted);
-
+        pkg.setTrusted(pkg.approved(providersGroup));
+        if (pkg.isTrusted() && !providersGroup.hasKey(pkg.id() + QStringLiteral("_Approval")))
+            pkg.saveApproval(providersGroup, true);
         const bool isEnabled = providersGroup.readEntry(pkg.id() + QStringLiteral("_Enabled"), true);
-
-        if (!pkg.isTrusted() || !isEnabled) {
-            qCDebug(KLOOKUP_PLUGINS) << "Scripted package" << pkg.id()
-                                     << "is not active (trusted:" << pkg.isTrusted()
-                                     << "enabled:" << isEnabled << "). Native fallback retained if available.";
-            continue;
-        }
+        pkg.setEnabled(isEnabled);
+        providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastPath"), pkg.packageDir());
+        providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastProvenance"), pkg.provenance());
+        ProviderPackageStatus record{pkg, QStringLiteral("Ready")};
+        if (!pkg.isValid()) record.status = pkg.validationError();
+        else if (pkg.runtime() != QLatin1String("javascript")) record.status = QStringLiteral("Unsupported runtime: %1").arg(pkg.runtime());
+        else if (!isEnabled) record.status = QStringLiteral("Disabled");
+        else if (!pkg.isTrusted()) record.status = QStringLiteral("Approval required");
+        m_packages.append(record);
+        if (!pkg.isValid() || pkg.runtime() != QLatin1String("javascript") || !pkg.isTrusted() || !isEnabled) continue;
 
         auto namFactory = m_namFactory;
-        ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory](QObject *parent) -> ProviderApiV1::ProviderV1 * {
+        ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
             QNetworkAccessManager *nam = namFactory ? namFactory(parent) : nullptr;
             auto *hostService = new ProviderHost::ProviderHostService(pkg, parent, nam);
-            return new JsProvider(pkg, parent, hostService);
+            auto *provider = new JsProvider(pkg, parent, hostService);
+            hostService->setParent(provider);
+            if (window) connect(window, &MainWindow::packageReloaded, provider, [provider, pkg](const QString &id) {
+                if (id == pkg.id()) provider->invalidate();
+            });
+            if (nam && nam->parent() == parent) nam->setParent(hostService);
+            return provider;
         };
 
         auto *adapter = new ProviderApiV1::ProviderV1ToLegacyAdapter(factory, this);
@@ -522,6 +520,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         if (!jsInstance || !jsInstance->isLoaded()) {
             qCWarning(KLOOKUP_PLUGINS) << "Scripted provider" << pkg.id()
                                        << "failed to initialize:" << (jsInstance ? jsInstance->loadError() : QStringLiteral("null"));
+            m_packages.last().status = QStringLiteral("Load failed: %1").arg(jsInstance ? jsInstance->loadError() : QStringLiteral("No instance"));
             delete adapter;
             continue;
         }
@@ -549,6 +548,22 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
             qCDebug(KLOOKUP_PLUGINS) << "Loaded scripted provider:" << pkg.id();
         }
     }
+
+    for (const auto &key : providersGroup.keyList()) {
+        if (!key.endsWith(QStringLiteral("_LastPath"))) continue;
+        const QString id = key.chopped(9);
+        bool found = false;
+        for (const auto &record : m_packages) if (record.package.id() == id) found = true;
+        if (found) continue;
+        const QString oldPath = providersGroup.readEntry(key, QString());
+        const QString source = providersGroup.readEntry(id + QStringLiteral("_LastProvenance"), QStringLiteral("custom"));
+        const auto type = source == QLatin1String("system") ? ProviderPackage::LocationType::System :
+                          source == QLatin1String("user") ? ProviderPackage::LocationType::User : ProviderPackage::LocationType::Custom;
+        auto missing = ProviderPackage::fromDirectory(oldPath, type);
+        missing.setEnabled(providersGroup.readEntry(id + QStringLiteral("_Enabled"), true));
+        m_packages.append({missing, QStringLiteral("Package missing from discovery; reinstall or retry")});
+    }
+    providersGroup.sync();
 
     for (SearchProvider *provider : m_providers) {
         restoreProviderState(provider);
@@ -601,17 +616,23 @@ void MainWindow::setNetworkAccessManagerFactory(std::function<QNetworkAccessMana
 
 void MainWindow::setPackageTrusted(const QString &id, bool trusted)
 {
-    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
-    KConfigGroup providersGroup(config, QStringLiteral("Providers"));
-    providersGroup.writeEntry(id + QStringLiteral("_Trusted"), trusted);
-    config->sync();
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+    for (const auto &record : m_packages) {
+        if (record.package.id() == id) {
+            const auto current = ProviderPackage::fromDirectory(record.package.packageDir(), record.package.locationType());
+            // Never approve contents the caller has not reviewed.
+            if (!trusted || (current.isValid() && current.approvalFingerprint() == record.package.approvalFingerprint()))
+                record.package.saveApproval(group, trusted);
+            return;
+        }
+    }
 }
 
 bool MainWindow::isPackageTrusted(const QString &id) const
 {
-    KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
-    KConfigGroup providersGroup(config, QStringLiteral("Providers"));
-    return providersGroup.readEntry(id + QStringLiteral("_Trusted"), false);
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+    for (const auto &record : m_packages) if (record.package.id() == id) return record.package.approved(group);
+    return false;
 }
 
 void MainWindow::restoreProviderState(SearchProvider* provider)

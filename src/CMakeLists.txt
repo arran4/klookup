@@ -41,8 +41,15 @@ foreach(resource_target IN LISTS klookup_icon_resource_targets)
     set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
+set_source_files_properties(../third_party/acorn/acorn.js PROPERTIES QT_RESOURCE_ALIAS acorn.js)
+qt_add_resources(klookup_core "provider_parser" PREFIX "/klookup" OUTPUT_TARGETS parser_resource_targets
+    FILES ../third_party/acorn/acorn.js)
+foreach(resource_target IN LISTS parser_resource_targets)
+    set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endforeach()
+
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_compile_definitions(klookup_core PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(klookup_core PRIVATE KLOOKUP_PACKAGE_INSTALL_DIR="${KDE_INSTALL_FULL_DATADIR}/klookup/providers.d")
 
 target_link_libraries(klookup_core PUBLIC
     Qt6::Core

@@ -4,6 +4,7 @@
 #include "jsprovider.h"
 
 #include <QDebug>
+#include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -202,8 +203,19 @@ JsProvider::~JsProvider()
 
 ProviderApiV1::ProviderV1 *JsProvider::clone(QObject *parent) const
 {
-    auto *clonedHost = new ProviderHost::ProviderHostService(m_package, parent, m_hostService ? m_hostService->networkAccessManager() : nullptr);
-    return new JsProvider(m_package, parent, clonedHost);
+    // Each clone owns its host and transport. A template can be reloaded or
+    // destroyed before its tabs; sharing its QObject-owned NAM would dangle.
+    return new JsProvider(m_package, parent);
+}
+
+void JsProvider::invalidate()
+{
+    m_loaded = false;
+    m_loadError = QStringLiteral("Package was disabled, revoked or reloaded; start a new search");
+    const auto operations = m_opToNetIds.uniqueKeys();
+    for (quint64 id : operations) cancel(id);
+    m_package.setTrusted(false);
+    if (m_hostService) m_hostService->setPackage(m_package);
 }
 
 void JsProvider::registerNetworkRequest(quint64 opId, quint64 netId)
@@ -259,6 +271,7 @@ bool JsProvider::initEngine()
         return false;
     }
 
+    if (!m_snapshot.isValid() || !m_package.writeVerifiedSnapshot(m_snapshot.path(), &m_loadError)) return false;
     m_engine = new QJSEngine(this);
     m_bridge = new JsHostBridge(this, m_engine, m_hostService, this);
 
@@ -285,7 +298,7 @@ bool JsProvider::initEngine()
     }
 
     // Import ECMAScript module (.mjs)
-    m_module = m_engine->importModule(m_package.entryFilePath());
+    m_module = m_engine->importModule(QDir(m_snapshot.path()).filePath(QDir(m_package.packageDir()).relativeFilePath(m_package.entryFilePath())));
     if (m_module.isError()) {
         m_loadError = QStringLiteral("Error importing module '%1': %2")
                           .arg(m_package.entryFilePath(), m_module.toString());

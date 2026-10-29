@@ -5,6 +5,7 @@
 #include <QTabWidget>
 #include <functional>
 #include "searchprovider.h"
+#include "providerpackage.h"
 #include "clipboardpolicy.h"
 #include "searchdashboard.h"
 #include "searchwindow.h"
@@ -54,6 +55,10 @@ public slots:
     void setNetworkAccessManagerFactory(std::function<QNetworkAccessManager *(QObject *)> factory);
     void setPackageTrusted(const QString &id, bool trusted);
     bool isPackageTrusted(const QString &id) const;
+    const QList<ProviderPackageStatus> &packages() const { return m_packages; }
+
+signals:
+    void packageReloaded(const QString &id);
 
 protected:
     bool queryClose() override;
@@ -81,6 +86,9 @@ private:
     QList<SearchProvider*> m_providers;
     QHash<QString, SearchProvider *> m_fallbackProviders;
     QList<SearchProvider *> m_scriptedAdapters;
+    QList<ProviderPackageStatus> m_packages;
+    QStringList m_customPackagePaths;
+    QStringList m_customPluginPaths;
     std::function<QNetworkAccessManager *(QObject *)> m_namFactory;
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;

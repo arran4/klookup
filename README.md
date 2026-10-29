@@ -9,7 +9,7 @@ Unlike generic web browsers or monolithic search engines, KLookup provides a **f
 ## Key Features
 
 - **Multi-Provider Architecture**: Query data concurrently across specialized domain providers.
-- **Dynamic Tab Interface**: Manage multiple active searches in non-blocking tabs.
+- **Dynamic Tabs and Independent Windows**: Manage multiple active searches in non-blocking tabs or separate search windows, with detachable result details.
 - **Hierarchical Structured Metadata**: Inspect typed result details, nested category trees, and safe image links without third-party tracking.
 - **Asynchronous Continuation**: Transparent pagination for multi-page result sets and on-demand article/detail fetching.
 - **Recent Activity & Autocomplete**: Instant search dashboard completion with privacy controls.
@@ -26,7 +26,7 @@ Unlike generic web browsers or monolithic search engines, KLookup provides a **f
 
 ## Supported Built-in Providers
 
-KLookup queries a wide variety of public and authenticated services. The application builds with 13 built-in provider plugins:
+KLookup queries a wide variety of public and authenticated services. The application builds with 14 built-in provider plugins:
 
 | Provider ID | Display Name | Domain / Service | Upstream API | Credentials Required? | Capabilities |
 |---|---|---|---|---|---|
@@ -35,7 +35,7 @@ KLookup queries a wide variety of public and authenticated services. The applica
 | `github` | GitHub | Code & Repositories | `api.github.com/search/repositories` | Optional (Personal Access Token) | Search, continuation |
 | `lyrics_ovh` | Lyrics (OVH) | Song Lyrics | `api.lyrics.ovh/suggest` | No | Search |
 | `mangadex` | MangaDex | Manga & Comics | `api.mangadex.org/manga` | No | Search, continuation, structured metadata |
-| `mangabaka` | MangaDex (Baka alias) | Manga & Comics | `api.mangadex.org/manga` | No | Search, continuation, structured metadata |
+| `mangabaka` | MangaBaka | Manga, novels & comics | `api.mangabaka.org/v2/series/search` | No | Search, continuation, deferred details, format filters, structured metadata |
 | `mangaupdates` | MangaUpdates | Manga Database | `api.mangaupdates.com/v1/series/search` | No | Search, continuation |
 | `myanimelist` | MyAnimeList (Jikan) | Anime & Manga | `api.jikan.moe/v4/anime` | No | Search, continuation |
 | `omdb` | OMDb API | Film & Television | `www.omdbapi.com` | **Required** (API key) | Search, deferred details |
@@ -46,7 +46,7 @@ KLookup queries a wide variety of public and authenticated services. The applica
 | `wikipedia` | Wikipedia | Encyclopedia | `en.wikipedia.org/w/api.php` | No | Search, Action API parse, safe HTML rendering |
 
 ### Provider Implementation Notes & Roadmap
-- **MangaBaka / MangaDex Substitution**: The backend currently stored under `providers/mangabaka` provides a MangaDex-backed implementation. The real MangaBaka integration is tracked under [Issue #22](https://github.com/arran4/klookup/issues/22).
+- **MangaBaka and MangaDex**: These are separate providers with independent upstream APIs. The original substitution was resolved under [Issue #22](https://github.com/arran4/klookup/issues/22).
 - **DuckDuckGo Backend**: DuckDuckGo's generic backend is scheduled for specialized replacement under [Issue #14](https://github.com/arran4/klookup/issues/14).
 - **Game Lookup Backlogs**: Dedicated video game catalog providers are tracked under [Issue #15](https://github.com/arran4/klookup/issues/15).
 
@@ -88,7 +88,7 @@ KLookup features a robust, two-tier clipboard privacy model configured in **Sett
    - `When window gains focus`: Triggers search when window becomes active.
    - `When global shortcut is used`: Triggers search via global shortcut.
 
-For complete architectural details, see the [Clipboard Input Policy](docs/clipboard-input-policy.md) and [Clipboard Trigger Policy](docs/clipboard-trigger-policy.md).
+For details of content classification and operational capture/search policies, see the [Clipboard Privacy and Search Policy](docs/clipboard-policy.md).
 
 ---
 
@@ -110,7 +110,10 @@ qdbus6 org.kde.klookup / org.kde.klookup.performSearch "KDE Plasma"
 
 ### Result Actions and Drag-and-Drop
 - Right-click any result row (or press `Menu` / `Shift+F10`) to **Open in Web Browser**, **Copy Canonical URL**, **Copy Title**, or **Refresh Details**.
-- The **Open in Browser** source button supports mouse dragging (`QDrag`) offering `text/uri-list` and `text/plain`. Drag links directly into browser tabs, bookmark bars, or desktop folders. See [Result Actions](docs/result-actions.md) and [Source Link Dragging](docs/source-link-drag.md).
+- The **Open in Browser** source button supports mouse dragging (`QDrag`) offering `text/uri-list` and `text/plain`. Drag links directly into browser tabs, bookmark bars, or desktop folders. See [Result Interactions](docs/result-interactions.md).
+
+### Independent Search and Result Windows
+Use **Search in New Window** from the dashboard or the tab context menu to open a search in its own window; select **Open Details in New Window** to detach a result's details. The application remains a single D-Bus instance. Use `klookup --new-window "search terms"` to open a query separately.
 
 ### Autostart on Login
 An in-app preference in **Settings → General** allows enabling or disabling **Start KLookup when logging in**:
@@ -191,6 +194,11 @@ Start silently in the background / system tray:
 Explicitly search the clipboard without raising the window:
 ```bash
 ./build/src/klookup --search-clipboard
+```
+
+Open a separate search window with:
+```bash
+./build/src/klookup --new-window "KDE Plasma"
 ```
 
 ### Plugin Discovery & Diagnostics

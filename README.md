@@ -6,7 +6,7 @@
 
 **Look something up, not somewhere else.** KLookup brings specialised search sources together in a native **KDE Plasma 6** desktop application. Search once, explore results from multiple providers, read available details, and open a source website only when you need to.
 
-Find encyclopaedia articles, books, software projects, films, shows, music, anime and manga without repeating a search in a dozen browser tabs.
+Find encyclopaedia articles, books, software projects, films, shows, music, anime, manga and PC-game deals without repeating a search in a dozen browser tabs.
 
 KLookup is designed around **focused lookups**: rather than trying to become another browser or a full web search engine, it asks dedicated information sources for relevant results and presents them together.
 
@@ -95,30 +95,31 @@ Search **GitHub repositories** from KLookup and open the original repository whe
 
 ### Look up music
 
-Find catalogue information through **Spotify** (after connecting it) or search for lyrics-related matches from **Lyrics.ovh**. KLookup is a reference/lookup application, not an audio player.
+Find catalogue information through **Spotify** (after connecting it) or find song suggestions with artist/album metadata and Deezer links through **Lyrics.ovh**. KLookup is a reference/lookup application, not an audio player.
 
 ## Search providers
 
-With the TVMaze cutover in [PR #111](https://github.com/arran4/klookup/pull/111), KLookup ships **14 lookup providers**: 13 native C++ modules and TVMaze as an ECMAScript-module package. **Merge this README after that cutover is complete.** Its installed-package activation and disabled/error states are still tracked in [#106](https://github.com/arran4/klookup/issues/106). Providers can be enabled or disabled independently.
+After the selective JavaScript provider batch, KLookup ships **15 lookup providers**: **10 native C++ modules** and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Merge this README after the batch and its shared approval, lifecycle, transport and diagnostics PRs. Providers can be enabled or disabled independently.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |
 | Knowledge | Wikipedia | Encyclopaedia entries and available article details | No account |
 | General | DuckDuckGo | Instant answers and supported related information | No account |
 | Development | GitHub | Repositories | Public search; token optional |
+| Games | CheapShark | PC-game store/deal prices in USD and CheapShark deal links | No account |
 | Books | Open Library | Books and publication records | No account |
 | Film/TV | The Movie Database (TMDb) | Film and TV catalogue entries | API token required |
 | Film/TV | OMDb | Film and TV catalogue entries | API key required |
 | Television | TVMaze | Television series information | No account |
 | Music | Spotify | Artists, albums and other supported catalogue records | OAuth connection required |
-| Music | Lyrics.ovh | Lyrics-related matches | No account |
-| Anime/manga | AniList | Anime and manga catalogue entries | No account |
+| Music | Lyrics.ovh | Song suggestions, artist/album metadata and Deezer track links | No account |
+| Anime | AniList (unofficial) | Anime catalogue entries | No account |
 | Anime/manga | MyAnimeList (Jikan) | Anime and manga information exposed by Jikan | No account |
 | Manga | MangaUpdates | Series records | No account |
 | Manga | MangaDex | Manga and related metadata | No account |
 | Manga/novels | MangaBaka | Supported series, types and detail records | No account |
 
-**Choosing sources:** Open **Settings → Providers** to enable or disable individual plugins and configure authentication where necessary. Providers are allowed to return different kinds of results. Some support pagination and deeper detail lookup, and some need credentials or may be subject to upstream service limits.
+**Choosing sources:** Open **Settings → Providers** for native plugins and authentication, or **Settings → Script packages** to review package identity, source and permissions and approve/revoke/enable scripted sources. Disabled and failed packages remain visible; changing approved code or permissions requires review again. Providers are allowed to return different kinds of results. Some support pagination and deeper detail lookup, and some need credentials or may be subject to upstream service limits.
 
 **Local sources are not included yet.** Proposed local providers only read already-rendered **Markdown, HTML or plain-text** documents. Native StarDict files, WordNet/dictd databases, roff man pages, Info node files and other specialised formats are outside the agreed scope. See [Planned improvements](#planned-improvements).
 
@@ -282,6 +283,7 @@ KLookup is written in **C++17** using **Qt 6**, **KDE Frameworks 6** and **CMake
 - CMake **3.16+**, a C++17 compiler (GCC or Clang) and KDE Extra CMake Modules (ECM).
 - Qt 6: **Core, Gui, Widgets, Network, DBus, Qml**.
 - KF6: **CoreAddons, GlobalAccel, Config, I18n, Runner, DBusAddons, WidgetsAddons, XmlGui, Wallet, Notifications**.
+- zlib development headers/library (`zlib1g-dev` in the shared Debian development rootfs).
 - Ninja (recommended; another CMake-supported generator can be used).
 - Test tooling when building with `BUILD_TESTING=ON`.
 
@@ -333,12 +335,21 @@ KRunner activation and shortcut delivery must also be checked in a real desktop 
 
 KLookup supports **both native C++ Qt plugins and scripted providers** using its versioned Provider API v1. Native providers are loaded from KDE plugin directories. Scripted providers use ECMAScript modules (`.mjs`) and a `provider.json` manifest in `klookup/providers.d/`, discovered via XDG user/system data paths: `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d` and each directory in `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}/klookup/providers.d`.
 
-TVMaze is shipped **only as a JavaScript provider**; obsolete native TVMaze shared libraries are ignored after the migration. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
+TVMaze, Lyrics.ovh, Open Library and AniList are shipped **only as JavaScript providers**; obsolete native modules for those IDs are ignored after migration. CheapShark is also an ECMAScript package. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
 
-Scripts can provide lightweight search results, pagination, lazy details and rich Markdown/structured content. Network requests use the host's permissioned services. Package approval/revocation and installed-system trust handling still need production integration ([#83](https://github.com/arran4/klookup/issues/83), [#106](https://github.com/arran4/klookup/issues/106)); user/custom packages are rejected unless explicitly trusted, but the Settings approval workflow is not yet available. Scripted KWallet provisioning/restoration is also incomplete ([#85](https://github.com/arran4/klookup/issues/85)); do not assume that native providers' credential support is already available to script packages. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their requested origins/permissions. See [#103](https://github.com/arran4/klookup/issues/103)–[#106](https://github.com/arran4/klookup/issues/106). The previous custom HTTP configuration wizard was deliberately superseded ([#57](https://github.com/arran4/klookup/issues/57)); do not try to use the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor.
+Scripts can provide lightweight search results, supported pagination, lazy details and common structured content. Host services enforce declared origins and response limits; operations have deadlines and an execution-interruption strategy. Package approval binds to validated contents/assets, canonical source path, provenance and permissions. A first protected root-owned distribution installation may activate automatically; user/custom packages require deliberate approval. Explicit revocation and disablement persist, and changed packages require review. See [package approval](docs/provider-package-approval.md), [operation lifecycle](docs/script-provider-lifecycle.md) and [HTTP transport](docs/provider-http-transport.md).
+
+Build-tree runs do not silently load packages from the current directory or source checkout. Install the package assets under a normal XDG/install data prefix, then review user-owned packages in Script packages settings. Package managers should remove obsolete files belonging to their own earlier package versions; KLookup does not delete arbitrary files in users' prefixes.
+
+Scripted KWallet provisioning/restoration remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); the five shipped scripts require no credentials. Native providers' authentication continues separately. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their permissions. The old custom HTTP configuration wizard was superseded ([#57](https://github.com/arran4/klookup/issues/57)); the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor is not shipped.
 
 Relevant implementation guides:
 
+- [Provider diagnostics and offline checks](docs/provider-diagnostics.md)
+- [Lyrics.ovh suggestions](docs/provider-lyrics-ovh.md)
+- [Open Library books](docs/provider-openlibrary.md)
+- [AniList anime search](docs/provider-anilist.md)
+- [CheapShark PC-game deals](docs/provider-cheapshark.md)
 - [Provider continuation and pagination](docs/provider-continuation.md)
 - [Structured result metadata](docs/structured-metadata.md)
 - [Provider authentication](docs/provider-authentication.md)
@@ -351,6 +362,15 @@ Relevant implementation guides:
 - [Wikipedia result content](docs/wikipedia-content.md)
 
 ### Diagnostics and verification
+
+**Settings → Provider health** offers individual retry, Check all providers and cancellation. The dedicated tool emits versioned JSON:
+
+```sh
+klookup-provider-check --all                     # Passive preflight: no provider execution, HTTP or wallet
+klookup-provider-check --provider cheapshark --offline  # Explicit approved fixture check, network disabled
+```
+
+Optional checks that a provider does not implement report **unsupported**. `--live` explicitly permits only provider-exported live probes; no live probe runs at startup. See [diagnostics modes and limits](docs/provider-diagnostics.md).
 
 Turn on plugin-discovery diagnostics to inspect where modules are loaded from without exposing credentials:
 

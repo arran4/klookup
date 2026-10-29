@@ -130,7 +130,11 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
         return pkg;
     }
 
-    const QByteArray manifestBytes = manifestFile.readAll();
+    const QByteArray manifestBytes = manifestFile.read(1024 * 1024 + 1);
+    if (manifestBytes.size() > 1024 * 1024 || !manifestFile.atEnd() || manifestFile.error() != QFile::NoError) {
+        pkg.m_validationError = QStringLiteral("provider.json exceeds bounded read limit or cannot be read");
+        return pkg;
+    }
     manifestFile.close();
 
     QJsonParseError parseError;

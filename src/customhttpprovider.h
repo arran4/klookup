@@ -30,6 +30,9 @@ public:
     void requestPage(const QString &query, const QString &token, quint64 requestId) override;
     void cancelRequests() override;
 
+    bool supportsAuthentication() const override;
+    void setCredentials(const QString &username, const QString &password) override;
+
     CustomHttpSourceDefinition definition() const;
     void setDefinition(const CustomHttpSourceDefinition &definition);
     void setSecretToken(const QString &token);

@@ -138,6 +138,13 @@ void CustomSourceEditDialog::setupUi()
     testInputLayout->addWidget(new QLabel(QStringLiteral("Test Query:"), testTab));
     m_testQueryEdit = new QLineEdit(QStringLiteral("kde plasma"), testTab);
     testInputLayout->addWidget(m_testQueryEdit);
+
+    testInputLayout->addWidget(new QLabel(QStringLiteral("Secret Token:"), testTab));
+    m_testSecretEdit = new QLineEdit(testTab);
+    m_testSecretEdit->setEchoMode(QLineEdit::Password);
+    m_testSecretEdit->setPlaceholderText(QStringLiteral("Optional secret for {secret}"));
+    testInputLayout->addWidget(m_testSecretEdit);
+
     m_testBtn = new QPushButton(QIcon::fromTheme(QStringLiteral("media-playback-start")), QStringLiteral("Send Test Request"), testTab);
     connect(m_testBtn, &QPushButton::clicked, this, &CustomSourceEditDialog::onTestClicked);
     testInputLayout->addWidget(m_testBtn);
@@ -222,6 +229,9 @@ CustomHttpSourceDefinition CustomSourceEditDialog::definition() const
     def.mapping.descriptionField = m_descFieldEdit->text().trimmed();
     def.mapping.typeField = m_typeFieldEdit->text().trimmed();
 
+    def.trusted = true;
+    def.hasSecret = def.requiresSecret();
+
     return def;
 }
 
@@ -261,7 +271,8 @@ void CustomSourceEditDialog::onTestClicked()
     }
 
     m_testProvider = new CustomHttpProvider(def, this, m_nam);
-    m_testProvider->setSecretToken(def.authSecretToken);
+    const QString secret = !m_testSecretEdit->text().isEmpty() ? m_testSecretEdit->text() : def.authSecretToken;
+    m_testProvider->setSecretToken(secret);
 
     connect(m_testProvider, &SearchProvider::searchCompleted, this, [this](const QString &, const QList<SearchResult> &results) {
         m_testBtn->setEnabled(true);

@@ -36,8 +36,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
                                ProviderAuthManager *authentication,
                                CustomHttpSourceManager *sourceManager)
     : KPageDialog(parent), m_providers(providers), m_authentication(authentication)
-    , m_sourceManager(sourceManager)
     , m_autostartManager(std::make_unique<AutostartManager>())
+    , m_sourceManager(sourceManager)
 {
 
 
@@ -191,7 +191,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
     auto *customLayout = new QHBoxLayout(customWidget);
     m_customSourcesList = new QTreeWidget(customWidget);
     m_customSourcesList->setObjectName(QStringLiteral("customSourcesList"));
-    m_customSourcesList->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Method"), QStringLiteral("URL")});
+    m_customSourcesList->setHeaderLabels({QStringLiteral("Name"), QStringLiteral("Trust Status"), QStringLiteral("Method"), QStringLiteral("URL")});
     m_customSourcesList->setRootIsDecorated(false);
     m_customSourcesList->setSelectionMode(QAbstractItemView::SingleSelection);
     m_customSourcesList->header()->setStretchLastSection(true);
@@ -250,6 +250,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
         if (def.id.isEmpty()) return;
         def.id = QStringLiteral("%1-copy").arg(def.id);
         def.name = QStringLiteral("%1 (Copy)").arg(def.name);
+        def.trusted = false;
+        def.enabled = false;
         m_sourceManager->addOrUpdateSource(def);
         refreshCustomSourcesList();
     });
@@ -276,6 +278,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
                 QMessageBox::warning(this, QStringLiteral("Import Failed"), err);
             } else {
                 refreshCustomSourcesList();
+                QMessageBox::information(this, QStringLiteral("Sources Imported"),
+                                         QStringLiteral("Imported custom search sources successfully.\n\nAll imported sources are untrusted and disabled by default. Please review and trust them before enabling."));
             }
         }
     });
@@ -298,7 +302,46 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers,
     connect(m_customSourcesList, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem *item, int column) {
         if (!item || column != 0) return;
         const QString id = item->data(0, Qt::UserRole).toString();
-        m_sourceManager->setSourceEnabled(id, item->checkState(0) == Qt::Checked);
+        const auto def = m_sourceManager->source(id);
+        if (def.id.isEmpty()) return;
+
+        if (item->checkState(0) == Qt::Checked) {
+            if (!def.trusted) {
+                QMessageBox reviewBox(this);
+                reviewBox.setIcon(QMessageBox::Warning);
+                reviewBox.setWindowTitle(QStringLiteral("Review & Trust Custom Source"));
+                reviewBox.setText(QStringLiteral("Review External Request: %1").arg(def.name));
+                reviewBox.setInformativeText(QStringLiteral(
+                    "<b>Destination Origin:</b> %1<br/>"
+                    "<b>HTTP Method:</b> %2<br/>"
+                    "<b>URL Template:</b> %3<br/>"
+                    "<b>Headers:</b> %4<br/>"
+                    "<b>Requires Credentials:</b> %5<br/><br/>"
+                    "<b>Warning:</b> Enabling this source will transmit search queries to an external third-party destination. "
+                    "Do you trust this source and want to enable it?"
+                ).arg(def.originString().toHtmlEscaped(),
+                     def.method == CustomHttpSourceDefinition::Method::Post ? QStringLiteral("POST") : QStringLiteral("GET"),
+                     def.urlTemplate.toHtmlEscaped(),
+                     def.headers.isEmpty() ? QStringLiteral("None") : QStringLiteral("%1 custom header(s)").arg(def.headers.size()),
+                     def.requiresSecret() ? QStringLiteral("Yes") : QStringLiteral("No")));
+                reviewBox.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
+                reviewBox.button(QMessageBox::Yes)->setText(QStringLiteral("Trust and Enable"));
+                if (reviewBox.exec() == QMessageBox::Yes) {
+                    m_sourceManager->setSourceTrusted(id, true);
+                    m_sourceManager->setSourceEnabled(id, true);
+                } else {
+                    QSignalBlocker blocker(m_customSourcesList);
+                    item->setCheckState(0, Qt::Unchecked);
+                    m_sourceManager->setSourceEnabled(id, false);
+                }
+                refreshCustomSourcesList();
+                return;
+            }
+            m_sourceManager->setSourceEnabled(id, true);
+        } else {
+            m_sourceManager->setSourceEnabled(id, false);
+        }
+        refreshCustomSourcesList();
     });
 
     refreshCustomSourcesList();
@@ -448,16 +491,23 @@ void SettingsDialog::saveSettings()
 void SettingsDialog::refreshCustomSourcesList()
 {
     if (!m_customSourcesList || !m_sourceManager) return;
+    QSignalBlocker blocker(m_customSourcesList);
     m_customSourcesList->clear();
     for (const auto &def : m_sourceManager->sources()) {
         auto *item = new QTreeWidgetItem(m_customSourcesList);
         item->setText(0, def.name);
-        item->setText(1, def.method == CustomHttpSourceDefinition::Method::Post ? QStringLiteral("POST") : QStringLiteral("GET"));
-        item->setText(2, def.urlTemplate);
+        item->setText(1, !def.trusted ? QStringLiteral("Untrusted (Review Required)") : (def.enabled ? QStringLiteral("Enabled") : QStringLiteral("Disabled")));
+        item->setText(2, def.method == CustomHttpSourceDefinition::Method::Post ? QStringLiteral("POST") : QStringLiteral("GET"));
+        item->setText(3, def.urlTemplate);
         item->setData(0, Qt::UserRole, def.id);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, def.enabled ? Qt::Checked : Qt::Unchecked);
         item->setToolTip(0, def.description.isEmpty() ? def.urlTemplate : def.description);
+        if (!def.trusted) {
+            item->setForeground(1, QBrush(Qt::red));
+        } else {
+            item->setForeground(1, QBrush(Qt::darkGreen));
+        }
     }
 }
 

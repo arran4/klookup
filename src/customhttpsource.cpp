@@ -5,6 +5,7 @@
 #include "resultmetadata.h"
 #include "sourceurl.h"
 
+#include <QCryptographicHash>
 #include <QRegularExpression>
 
 QJsonObject CustomHttpFieldMapping::toJson() const
@@ -31,12 +32,97 @@ CustomHttpFieldMapping CustomHttpFieldMapping::fromJson(const QJsonObject &obj)
     return mapping;
 }
 
+static QString sanitizeSecretTemplate(const QString &input)
+{
+    static const QRegularExpression bearerRegex(QStringLiteral("Bearer\\s+[a-zA-Z0-9_\\-\\.]{16,}"), QRegularExpression::CaseInsensitiveOption);
+    QString result = input;
+    result.replace(bearerRegex, QStringLiteral("Bearer {secret}"));
+    return result;
+}
+
+bool CustomHttpSourceDefinition::requiresSecret() const
+{
+    if (hasSecret) {
+        return true;
+    }
+    if (!authHeader.trimmed().isEmpty()) {
+        return true;
+    }
+    if (urlTemplate.contains(QStringLiteral("{secret}"))) {
+        return true;
+    }
+    if (bodyTemplate.contains(QStringLiteral("{secret}"))) {
+        return true;
+    }
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        if (it.value().contains(QStringLiteral("{secret}"))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QString CustomHttpSourceDefinition::executionFingerprint() const
+{
+    QString data = QStringLiteral("%1|%2|%3|%4|%5|%6|")
+                       .arg(static_cast<int>(method))
+                       .arg(urlTemplate)
+                       .arg(postContentType)
+                       .arg(bodyTemplate)
+                       .arg(authHeader)
+                       .arg(authSecretToken);
+    QStringList sortedHeaders;
+    for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
+        sortedHeaders.append(QStringLiteral("%1:%2").arg(it.key(), it.value()));
+    }
+    sortedHeaders.sort();
+    data += sortedHeaders.join(QLatin1Char(';'));
+    return QString::fromLatin1(QCryptographicHash::hash(data.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+QString CustomHttpSourceDefinition::originString() const
+{
+    const QUrl url(urlTemplate);
+    if (!url.isValid()) {
+        return QString();
+    }
+    return QStringLiteral("%1://%2%3").arg(url.scheme(), url.host(), url.port() > 0 ? QStringLiteral(":%1").arg(url.port()) : QString());
+}
+
 bool CustomHttpSourceDefinition::isValid(QString *errorMsg) const
 {
     if (id.trimmed().isEmpty()) {
         if (errorMsg) *errorMsg = QStringLiteral("Provider ID cannot be empty.");
         return false;
     }
+
+    static const QStringList BuiltInProviderIds = {
+        QStringLiteral("wikipedia"),
+        QStringLiteral("duckduckgo"),
+        QStringLiteral("github"),
+        QStringLiteral("openlibrary"),
+        QStringLiteral("omdb"),
+        QStringLiteral("themoviedb"),
+        QStringLiteral("tvmaze"),
+        QStringLiteral("spotify"),
+        QStringLiteral("lyrics_ovh"),
+        QStringLiteral("anilist"),
+        QStringLiteral("myanimelist"),
+        QStringLiteral("mangaupdates"),
+        QStringLiteral("mangadex"),
+        QStringLiteral("mangabaka")
+    };
+    if (BuiltInProviderIds.contains(id.trimmed().toLower())) {
+        if (errorMsg) *errorMsg = QStringLiteral("Provider ID '%1' conflicts with a built-in provider.").arg(id);
+        return false;
+    }
+
+    static const QRegularExpression validIdRegex(QStringLiteral("^[a-zA-Z0-9_\\-]+$"));
+    if (!validIdRegex.match(id.trimmed()).hasMatch()) {
+        if (errorMsg) *errorMsg = QStringLiteral("Provider ID must only contain alphanumeric characters, underscores, or dashes.");
+        return false;
+    }
+
     if (name.trimmed().isEmpty()) {
         if (errorMsg) *errorMsg = QStringLiteral("Source name cannot be empty.");
         return false;
@@ -49,6 +135,10 @@ bool CustomHttpSourceDefinition::isValid(QString *errorMsg) const
     QUrl testUrl(urlTemplate);
     if (!testUrl.isValid() || (testUrl.scheme() != QStringLiteral("http") && testUrl.scheme() != QStringLiteral("https"))) {
         if (errorMsg) *errorMsg = QStringLiteral("URL template must start with http:// or https://");
+        return false;
+    }
+    if (testUrl.host().trimmed().isEmpty()) {
+        if (errorMsg) *errorMsg = QStringLiteral("URL template must include a valid host name.");
         return false;
     }
 
@@ -78,32 +168,41 @@ QJsonObject CustomHttpSourceDefinition::toJson(bool includeSecret) const
     obj[QStringLiteral("name")] = name;
     obj[QStringLiteral("description")] = description;
     obj[QStringLiteral("enabled")] = enabled;
+    obj[QStringLiteral("trusted")] = trusted;
+    obj[QStringLiteral("hasSecret")] = requiresSecret();
     obj[QStringLiteral("method")] = method == Method::Post ? QStringLiteral("POST") : QStringLiteral("GET");
-    obj[QStringLiteral("urlTemplate")] = urlTemplate;
+    obj[QStringLiteral("urlTemplate")] = includeSecret ? urlTemplate : sanitizeSecretTemplate(urlTemplate);
 
     QJsonObject headersObj;
     for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
-        headersObj[it.key()] = it.value();
+        headersObj[it.key()] = includeSecret ? it.value() : sanitizeSecretTemplate(it.value());
     }
     obj[QStringLiteral("headers")] = headersObj;
     obj[QStringLiteral("authHeader")] = authHeader;
-    if (includeSecret) {
+    if (includeSecret && !authSecretToken.isEmpty()) {
         obj[QStringLiteral("authSecretToken")] = authSecretToken;
     }
     obj[QStringLiteral("postContentType")] = postContentType;
-    obj[QStringLiteral("bodyTemplate")] = bodyTemplate;
+    obj[QStringLiteral("bodyTemplate")] = includeSecret ? bodyTemplate : sanitizeSecretTemplate(bodyTemplate);
     obj[QStringLiteral("mapping")] = mapping.toJson();
 
     return obj;
 }
 
-CustomHttpSourceDefinition CustomHttpSourceDefinition::fromJson(const QJsonObject &obj)
+CustomHttpSourceDefinition CustomHttpSourceDefinition::fromJson(const QJsonObject &obj, bool fromImport)
 {
     CustomHttpSourceDefinition def;
     def.id = obj.value(QStringLiteral("id")).toString();
     def.name = obj.value(QStringLiteral("name")).toString();
     def.description = obj.value(QStringLiteral("description")).toString();
-    def.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
+    if (fromImport) {
+        // Newly imported definitions MUST be disabled and untrusted by default
+        def.enabled = false;
+        def.trusted = false;
+    } else {
+        def.enabled = obj.value(QStringLiteral("enabled")).toBool(true);
+        def.trusted = obj.value(QStringLiteral("trusted")).toBool(true);
+    }
     const QString methodStr = obj.value(QStringLiteral("method")).toString();
     def.method = methodStr.compare(QStringLiteral("POST"), Qt::CaseInsensitive) == 0 ? Method::Post : Method::Get;
     def.urlTemplate = obj.value(QStringLiteral("urlTemplate")).toString();
@@ -115,6 +214,7 @@ CustomHttpSourceDefinition CustomHttpSourceDefinition::fromJson(const QJsonObjec
 
     def.authHeader = obj.value(QStringLiteral("authHeader")).toString();
     def.authSecretToken = obj.value(QStringLiteral("authSecretToken")).toString();
+    def.hasSecret = obj.value(QStringLiteral("hasSecret")).toBool(false) || def.requiresSecret();
     def.postContentType = obj.value(QStringLiteral("postContentType")).toString();
     def.bodyTemplate = obj.value(QStringLiteral("bodyTemplate")).toString();
     def.mapping = CustomHttpFieldMapping::fromJson(obj.value(QStringLiteral("mapping")).toObject());

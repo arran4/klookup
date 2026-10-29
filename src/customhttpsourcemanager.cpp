@@ -72,7 +72,15 @@ void CustomHttpSourceManager::addOrUpdateSource(const CustomHttpSourceDefinition
 {
     for (int i = 0; i < m_sources.size(); ++i) {
         if (m_sources.at(i).id == definition.id) {
-            m_sources[i] = definition;
+            auto updated = definition;
+            // If request semantics changed from trusted to modified, preserve or update trust safely
+            if (m_sources.at(i).trusted && m_sources.at(i).executionFingerprint() != definition.executionFingerprint()) {
+                if (!definition.trusted) {
+                    updated.trusted = false;
+                    updated.enabled = false;
+                }
+            }
+            m_sources[i] = updated;
             saveSources();
             emit sourcesChanged();
             return;
@@ -101,6 +109,20 @@ void CustomHttpSourceManager::setSourceEnabled(const QString &id, bool enabled)
         if (def.id == id) {
             if (def.enabled != enabled) {
                 def.enabled = enabled;
+                saveSources();
+                emit sourcesChanged();
+            }
+            return;
+        }
+    }
+}
+
+void CustomHttpSourceManager::setSourceTrusted(const QString &id, bool trusted)
+{
+    for (auto &def : m_sources) {
+        if (def.id == id) {
+            if (def.trusted != trusted) {
+                def.trusted = trusted;
                 saveSources();
                 emit sourcesChanged();
             }
@@ -142,7 +164,7 @@ bool CustomHttpSourceManager::importJson(const QString &jsonText, QString *error
         const QJsonArray arr = doc.array();
         for (const auto &val : arr) {
             if (val.isObject()) {
-                const auto def = CustomHttpSourceDefinition::fromJson(val.toObject());
+                const auto def = CustomHttpSourceDefinition::fromJson(val.toObject(), true);
                 QString valError;
                 if (!def.isValid(&valError)) {
                     if (errorMsg) *errorMsg = QStringLiteral("Invalid source '%1': %2").arg(def.name, valError);
@@ -152,7 +174,7 @@ bool CustomHttpSourceManager::importJson(const QString &jsonText, QString *error
             }
         }
     } else if (doc.isObject()) {
-        const auto def = CustomHttpSourceDefinition::fromJson(doc.object());
+        const auto def = CustomHttpSourceDefinition::fromJson(doc.object(), true);
         QString valError;
         if (!def.isValid(&valError)) {
             if (errorMsg) *errorMsg = QStringLiteral("Invalid source '%1': %2").arg(def.name, valError);

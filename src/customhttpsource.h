@@ -34,6 +34,8 @@ struct CustomHttpSourceDefinition {
     QString name;
     QString description;
     bool enabled = true;
+    bool trusted = true;            // Untrusted by default for imports or when origin changes
+    bool hasSecret = false;          // Whether this source requires secret credentials
     Method method = Method::Get;
     QString urlTemplate;            // e.g. "https://api.example.com/search?q={query}"
     QMap<QString, QString> headers; // Header name -> value/template
@@ -44,9 +46,13 @@ struct CustomHttpSourceDefinition {
 
     CustomHttpFieldMapping mapping;
 
+    bool requiresSecret() const;
+    QString executionFingerprint() const;
+    QString originString() const;
+
     bool isValid(QString *errorMsg = nullptr) const;
     QJsonObject toJson(bool includeSecret = false) const;
-    static CustomHttpSourceDefinition fromJson(const QJsonObject &obj);
+    static CustomHttpSourceDefinition fromJson(const QJsonObject &obj, bool fromImport = false);
 };
 
 namespace CustomHttpUtils {

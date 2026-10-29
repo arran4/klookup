@@ -27,6 +27,7 @@ public:
     void addOrUpdateSource(const CustomHttpSourceDefinition &definition);
     void removeSource(const QString &id);
     void setSourceEnabled(const QString &id, bool enabled);
+    void setSourceTrusted(const QString &id, bool trusted);
 
     QList<SearchProvider *> createProviders(QObject *parent = nullptr) const;
 

@@ -53,6 +53,7 @@ private:
     QLineEdit *m_typeFieldEdit = nullptr;
 
     QLineEdit *m_testQueryEdit = nullptr;
+    QLineEdit *m_testSecretEdit = nullptr;
     QPushButton *m_testBtn = nullptr;
     QTextBrowser *m_testOutput = nullptr;
 

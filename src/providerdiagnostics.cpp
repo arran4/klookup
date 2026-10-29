@@ -197,7 +197,7 @@ void ProviderDiagnostics::report(QString status, QString code, QString message, 
         {QStringLiteral("remediation"), remedy}, {QStringLiteral("durationMs"), double(m_elapsed.elapsed())},
         {QStringLiteral("timestamp"), QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
         {QStringLiteral("mode"), m_mode == Mode::Preflight ? QStringLiteral("preflight") : m_mode == Mode::Offline ? QStringLiteral("offline") : QStringLiteral("live")},
-        {QStringLiteral("capabilities"), ProviderApiV1::toJson(m_current.package.manifest().capabilities)},
+        {QStringLiteral("capabilities"), m_current.type == QLatin1String("javascript") ? QJsonValue(ProviderApiV1::toJson(m_current.package.manifest().capabilities)) : QJsonValue(QJsonValue::Null)},
         {QStringLiteral("dependencies"), QJsonObject{{QStringLiteral("qt"), QString::fromLatin1(qVersion())}, {QStringLiteral("protocol"), QString::fromLatin1(ProviderApiV1::ProtocolVersion)}}}};
     m_hasCurrent = false;
     m_results.append(row); emit resultReady(m_run, row);

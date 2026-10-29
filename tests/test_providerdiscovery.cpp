@@ -347,6 +347,36 @@ private Q_SLOTS:
         QVERIFY(response.first()[1].value<HttpResponse>().errorMessage.contains(QStringLiteral("no longer available")));
     }
 
+    void testPackageReadLimits()
+    {
+        QTemporaryDir temp;
+        QFile manifest(temp.filePath(QStringLiteral("provider.json")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"bounded\",\"name\":\"Bounded\"}");
+        manifest.close();
+        QFile entry(temp.filePath(QStringLiteral("main.mjs")));
+        QVERIFY(entry.open(QIODevice::WriteOnly));
+        entry.write("export function search() { return []; }");
+        entry.close();
+        QFile asset(temp.filePath(QStringLiteral("asset.bin")));
+        QVERIFY(asset.open(QIODevice::WriteOnly));
+        QVERIFY(asset.resize(5 * 1024 * 1024));
+        asset.close();
+        QVERIFY(ProviderPackage::fromDirectory(temp.path()).isValid());
+        QVERIFY(asset.open(QIODevice::WriteOnly | QIODevice::Append));
+        asset.write("x");
+        asset.close();
+        const auto oversizedAsset = ProviderPackage::fromDirectory(temp.path());
+        QVERIFY(!oversizedAsset.isValid());
+        QVERIFY(oversizedAsset.validationError().contains(QStringLiteral("size limit")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        QVERIFY(manifest.resize(1024 * 1024 + 1));
+        manifest.close();
+        const auto oversizedManifest = ProviderPackage::fromDirectory(temp.path());
+        QVERIFY(!oversizedManifest.isValid());
+        QVERIFY(oversizedManifest.validationError().contains(QStringLiteral("1 MiB")));
+    }
+
     void testDiscoveryPrecedence()
     {
         const QString fixtureDir = QStringLiteral(FIXTURES_DIR "/providers.d");

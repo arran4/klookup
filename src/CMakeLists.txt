@@ -6,6 +6,7 @@ add_library(klookup_core STATIC
     providerapiv1.cpp
     providerpackage.cpp
     providerhostservice.cpp
+    jsprovider.cpp
     searchprovider.cpp
     searchdashboard.cpp
     recentactivity.cpp
@@ -48,6 +49,7 @@ target_link_libraries(klookup_core PUBLIC
     Qt6::Widgets
     Qt6::Network
     Qt6::DBus
+    Qt6::Qml
     KF6::GlobalAccel
     KF6::CoreAddons
     KF6::ConfigCore

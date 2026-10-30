@@ -14,9 +14,14 @@ work/edition keys, selected fields, Unicode queries and pagination. The
 [usage guidelines](https://openlibrary.org/developers/api) prioritize human book
 lookup, request caching and application identification; default unidentified
 traffic is limited to one request per second. KLookup sends a descriptive
-User-Agent with its project URL, uses that default per-instance request spacing
-without claiming the higher identified/email quota, keeps a small one-minute
-query/page cache and honors HTTP 429 Retry-After. There is no background harvest,
+User-Agent with its project URL, uses application-wide one-request-per-second
+origin scheduling without claiming the higher identified/email quota, keeps a
+small per-instance one-minute query/page cache and honors HTTP 429 Retry-After.
+Spacing and cooldown live in the shared HTTP host, survive tab/host destruction
+and package reloads, and use monotonic time. A fresh tab cannot bypass them.
+Queued requests retain their normal deadline and can be cancelled without
+starting HTTP. Requests during a shared cooldown fail with an explicit retry
+message; they are not retried automatically. There is no background harvest,
 bulk synchronization, scraping or automatic retry loop. Attribution identifies
 Open Library / Internet Archive.
 

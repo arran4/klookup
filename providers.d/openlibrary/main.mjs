@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 var cache = Object.create(null);
-var nextRequestAt = 0;
-var retryAt = 0;
 var size = 10;
 function mapBooks(data, offset) {
     if (!data || !Array.isArray(data.docs)) throw new Error("Open Library returned an invalid book response");
@@ -22,17 +20,13 @@ function mapBooks(data, offset) {
 function fetchPage(query, offset) {
     if (typeof query !== "string" || !query.trim()) return {results: [], nextToken: ""};
     var key = JSON.stringify([query, offset]);
-    if (Date.now() < retryAt) throw new Error("Open Library rate limited; retry after " + Math.ceil((retryAt - Date.now()) / 1000) + " seconds");
     if (cache[key] && Date.now() - cache[key].at < 60000) return cache[key].page;
-    // Unidentified applications use the documented default one request/second.
-    if (Date.now() < nextRequestAt) throw new Error("Open Library: wait one second before another request");
-    nextRequestAt = Date.now() + 1000;
     var url = "https://openlibrary.org/search.json?q=" + encodeURIComponent(query) + "&limit=10&offset=" + offset + "&fields=key,title,author_name,first_publish_year";
-    return host.fetch(url, {headers: {"User-Agent": "KLookup/0.1 (https://github.com/arran4/klookup)"}}).then(function(response) {
+    // The host shares spacing and Retry-After across engines, tabs and reloads.
+    return host.fetch(url, {minimumIntervalMs: 1000, headers: {"User-Agent": "KLookup/0.1 (https://github.com/arran4/klookup)"}}).then(function(response) {
         if (response.status === 429) {
             var keys = Object.keys(response.headers || {}), seconds = 60;
             keys.forEach(function(key) { if (key.toLowerCase() === "retry-after") { var n = Number(response.headers[key]); if (isFinite(n) && n > 0) seconds = n; } });
-            retryAt = Date.now() + seconds * 1000;
             throw new Error("Open Library rate limited (HTTP 429); retry after " + Math.ceil(seconds) + " seconds");
         }
         if (!response.ok) throw new Error("Open Library API: HTTP " + response.status);

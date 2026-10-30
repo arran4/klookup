@@ -12,6 +12,9 @@
 #include <QDialogButtonBox>
 #include <QMessageBox>
 #include <QApplication>
+#include <QCheckBox>
+#include <QJsonDocument>
+#include <QJsonObject>
 
 #include <QFile>
 #include <QDir>
@@ -57,6 +60,13 @@ public:
         emit finished();
     }
 
+    void complete()
+    {
+        setFinished(true);
+        emit readyRead();
+        emit finished();
+    }
+
     qint64 bytesAvailable() const override
     {
         return m_data.size() - m_offset + QNetworkReply::bytesAvailable();
@@ -95,6 +105,7 @@ public:
     bool transportError = false;
     int aborted = 0;
     QList<QUrl> requests;
+    QList<QPointer<MockReply>> replies;
 
 protected:
     QNetworkReply *createRequest(Operation op, const QNetworkRequest &req, QIODevice *outgoingData) override
@@ -103,7 +114,9 @@ protected:
         Q_UNUSED(outgoingData);
         requests.append(req.url());
         auto reply = [this](const QByteArray &data) {
-            return new MockReply(data, this, status, suppress ? -1 : delayMs, transportError, [this] { ++aborted; });
+            auto *result = new MockReply(data, this, status, suppress ? -1 : delayMs, transportError, [this] { ++aborted; });
+            replies.append(result);
+            return result;
         };
 
         const QString url = req.url().toString();
@@ -468,6 +481,86 @@ private Q_SLOTS:
         for (const auto &record : window.packages())
             if (record.package.id() == QLatin1String("tvmaze")) missing = !record.package.isValid() && record.status.contains(QStringLiteral("does not exist"));
         QVERIFY(missing);
+    }
+
+    void testSettingsPreserveUnaffectedSearches_data()
+    {
+        QTest::addColumn<int>("action");
+        QTest::newRow("cancel") << 0;
+        QTest::newRow("ok-without-changes") << 1;
+        QTest::newRow("apply-general-then-cancel") << 2;
+        QTest::newRow("disable-one-package") << 3;
+    }
+
+    void testSettingsPreserveUnaffectedSearches()
+    {
+        QFETCH(int, action);
+        QTemporaryDir root;
+        for (const QString &id : {QStringLiteral("tvmaze"), QStringLiteral("other")}) {
+            const QString destination = root.path() + QLatin1Char('/') + id;
+            QVERIFY(QDir().mkpath(destination));
+            QFile manifest(QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze/provider.json"));
+            QVERIFY(manifest.open(QIODevice::ReadOnly));
+            auto object = QJsonDocument::fromJson(manifest.readAll()).object();
+            object.insert(QStringLiteral("id"), id);
+            QFile output(destination + QStringLiteral("/provider.json"));
+            QVERIFY(output.open(QIODevice::WriteOnly));
+            output.write(QJsonDocument(object).toJson());
+            output.close();
+            QVERIFY(QFile::copy(QStringLiteral(PROJECT_SOURCE_DIR "/providers.d/tvmaze/main.mjs"), destination + QStringLiteral("/main.mjs")));
+        }
+        MockTvMazeNam network(m_searchFixture, m_showFixture);
+        network.suppress = true;
+        MainWindow window;
+        window.setNetworkAccessManagerFactory([&network](QObject *) { return &network; });
+        window.loadPlugins({root.path()});
+        for (const QString &id : {QStringLiteral("tvmaze"), QStringLiteral("other")}) window.setPackageTrusted(id, true);
+        window.loadPlugins({root.path()});
+        auto clone = [&window](const QString &id) {
+            auto *adapter = qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(window.provider(id)->clone(&window));
+            return qobject_cast<JsProvider *>(adapter->underlyingProvider());
+        };
+        QVERIFY(window.provider(QStringLiteral("tvmaze")));
+        QVERIFY(window.provider(QStringLiteral("other")));
+        auto *tvmaze = clone(QStringLiteral("tvmaze"));
+        auto *other = clone(QStringLiteral("other"));
+        QVERIFY(tvmaze && other);
+        QSignalSpy tvmazeReady(tvmaze, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy otherReady(other, &ProviderApiV1::ProviderV1::pageReady);
+        QSignalSpy reloads(&window, &MainWindow::packageReloaded);
+        tvmaze->search(QStringLiteral("pending TVMaze"));
+        other->search(QStringLiteral("pending other"));
+        QTimer::singleShot(0, &window, [&] {
+            auto *dialog = qobject_cast<SettingsDialog *>(QApplication::activeModalWidget());
+            QVERIFY(dialog);
+            if (action == 3) {
+                auto *list = dialog->findChild<QListWidget *>(QStringLiteral("scriptedPackages"));
+                for (int row = 0; row < window.packages().size(); ++row)
+                    if (window.packages()[row].package.id() == QLatin1String("tvmaze")) list->item(row)->setCheckState(Qt::Unchecked);
+                dialog->button(QDialogButtonBox::Apply)->click();
+            } else if (action == 2) {
+                auto *setting = dialog->findChild<QCheckBox *>(QStringLiteral("showRecentActivity"));
+                QVERIFY(setting);
+                setting->setChecked(!setting->isChecked());
+                dialog->button(QDialogButtonBox::Apply)->click();
+                dialog->button(QDialogButtonBox::Cancel)->click();
+            } else dialog->button(action == 0 ? QDialogButtonBox::Cancel : QDialogButtonBox::Ok)->click();
+        });
+        QVERIFY(QMetaObject::invokeMethod(&window, "showSettingsDialog", Qt::DirectConnection));
+        QCOMPARE(reloads.count(), action == 3 ? 1 : 0);
+        if (action == 3) QCOMPARE(reloads.first().first().toString(), QStringLiteral("tvmaze"));
+        QCOMPARE(tvmaze->isLoaded(), action != 3);
+        QVERIFY(other->isLoaded());
+        QCOMPARE(network.aborted, action == 3 ? 1 : 0);
+        const auto pending = network.replies;
+        for (const auto &reply : pending) if (reply && !reply->isFinished()) reply->complete();
+        QTRY_COMPARE(otherReady.count(), 1);
+        if (action != 3) QTRY_COMPARE(tvmazeReady.count(), 1);
+        // A preserved tab can still load details after the dialog is closed.
+        network.suppress = false;
+        QSignalSpy details(other, &ProviderApiV1::ProviderV1::detailsReady);
+        other->getDetails(QStringLiteral("139"));
+        QTRY_COMPARE(details.count(), 1);
     }
 
     void testEndToEndScriptedTvMazeDiscoveryAndSearch()

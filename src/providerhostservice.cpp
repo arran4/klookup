@@ -390,7 +390,7 @@ void ProviderHostService::complete(const Request &state)
             const auto date = QDateTime::fromString(QString::fromLatin1(retryAfter), Qt::RFC2822Date);
             seconds = date.isValid() ? QDateTime::currentDateTimeUtc().secsTo(date) : 60;
         }
-        seconds = qBound<qint64>(1, seconds, 86400);
+        seconds = qBound(qint64(1), seconds, qint64(86400));
         auto &policies = originPolicies();
         QMutexLocker lock(&policies.mutex);
         auto &policy = policies.entries[originKey(state->options.url)];

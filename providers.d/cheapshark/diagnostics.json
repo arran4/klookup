@@ -1,0 +1,77 @@
+{
+  "query": "Björk 雪 & + / ?",
+  "stores": [
+    {
+      "storeID": "1",
+      "storeName": "Steam",
+      "isActive": 1
+    }
+  ],
+  "valid": [
+    {
+      "dealID": "abc%2Bdef%3D%3D",
+      "gameID": "42",
+      "storeID": "1",
+      "title": "Fixture 雪",
+      "salePrice": "8.99",
+      "normalPrice": "19.99",
+      "savings": "55.02",
+      "metacriticScore": "82",
+      "releaseDate": 1700000000
+    }
+  ],
+  "empty": [],
+  "partial": [
+    null,
+    {},
+    {
+      "dealID": "%invalid",
+      "gameID": "42",
+      "storeID": "1",
+      "title": "Fixture 雪",
+      "salePrice": "8.99",
+      "normalPrice": "19.99",
+      "savings": "55.02",
+      "metacriticScore": "82",
+      "releaseDate": 1700000000
+    },
+    {
+      "dealID": "abc%2Bdef%3D%3D",
+      "gameID": "42",
+      "storeID": "1",
+      "title": "Fixture 雪",
+      "salePrice": "8.99",
+      "normalPrice": "19.99",
+      "savings": "55.02",
+      "metacriticScore": "82",
+      "releaseDate": 1700000000
+    }
+  ],
+  "invalid": {
+    "error": "wrong shape"
+  },
+  "details": {
+    "gameInfo": {
+      "gameID": "42",
+      "storeID": "1",
+      "name": "Fixture 雪",
+      "salePrice": "8.99",
+      "retailPrice": "19.99"
+    },
+    "cheapestPrice": {
+      "price": "4.99",
+      "date": 1700000000
+    }
+  },
+  "expected": {
+    "id": "abc%2Bdef%3D%3D",
+    "title": "Fixture 雪",
+    "url": "https://www.cheapshark.com/redirect?dealID=abc%2Bdef%3D%3D",
+    "type": "game",
+    "additionalData": {
+      "store": "Steam",
+      "currency": "USD",
+      "sale_price_usd": 8.99
+    }
+  }
+}

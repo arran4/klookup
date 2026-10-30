@@ -66,17 +66,18 @@ public:
         setOpenMode(QIODevice::ReadOnly);
     }
 
-    void respondSuccess(int statusCode, const QByteArray &data, const QMap<QByteArray, QByteArray> &headers = {})
+    void respondSuccess(int statusCode, const QByteArray &data, const QMap<QByteArray, QByteArray> &headers = {}, bool ready = true, bool emptyReady = false)
     {
         setAttribute(QNetworkRequest::HttpStatusCodeAttribute, statusCode);
         for (auto it = headers.cbegin(); it != headers.cend(); ++it) {
             setRawHeader(it.key(), it.value());
         }
         m_data = data;
-        QTimer::singleShot(0, this, [this] {
+        QTimer::singleShot(0, this, [this, ready, emptyReady] {
             setFinished(true);
             emit metaDataChanged();
-            emit readyRead();
+            if (ready) emit readyRead();
+            if (emptyReady) emit readyRead();
             emit finished();
         });
     }
@@ -606,6 +607,31 @@ private Q_SLOTS:
         resp = spy.takeFirst().at(1).value<HttpResponse>();
         QVERIFY(!resp.success);
         QVERIFY(resp.errorMessage.contains(QStringLiteral("exceeded maximum of 5 hops")));
+    }
+
+    void testEmptyReadyReadAndCompletionTimeData()
+    {
+        auto pkg = ProviderPackage::fromDirectory(QStringLiteral(FIXTURES_DIR "/providers.d/user/alpha"));
+        pkg.setTrusted(true);
+        FakeNetworkAccessManager nam;
+        nam.handler = [&](const QNetworkRequest &request, QNetworkAccessManager::Operation) {
+            auto *reply = new FakeNetworkReply(request, &nam);
+            const bool emptyReady = request.url().path() == QLatin1String("/empty-ready");
+            const bool over = request.url().path() == QLatin1String("/finish-over");
+            reply->respondSuccess(200, QByteArray(5 * 1024 * 1024 + (over ? 1 : 0), 'x'), {}, emptyReady, emptyReady);
+            return reply;
+        };
+        ProviderHostService host(pkg, nullptr, &nam);
+        QSignalSpy response(&host, &ProviderHostService::httpResponseReady);
+        for (const auto &path : {QStringLiteral("/empty-ready"), QStringLiteral("/finish-only"), QStringLiteral("/finish-over")}) {
+            HttpRequestOptions options; options.url = QUrl(QStringLiteral("https://api.alpha.example.com") + path);
+            host.executeHttpRequest(options);
+            QTRY_COMPARE(response.count(), 1);
+            const auto result = response.takeFirst()[1].value<HttpResponse>();
+            QCOMPARE(result.success, path != QLatin1String("/finish-over"));
+            QCOMPARE(result.body.size(), result.success ? 5 * 1024 * 1024 : 0);
+            QCOMPARE(result.truncated, path == QLatin1String("/finish-over"));
+        }
     }
 
     void testStreamingChunkResponseBounds()

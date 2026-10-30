@@ -34,6 +34,7 @@ struct HttpRequestOptions {
 struct HttpResponse {
     quint64 requestId = 0;
     int statusCode = 0;
+    QString statusText;
     QMap<QString, QString> headers;
     QByteArray body;
     bool success = false;
@@ -51,7 +52,7 @@ public:
     ~ProviderHostService() override;
 
     const ProviderPackage &package() const { return m_package; }
-    void setPackage(const ProviderPackage &package) { m_package = package; }
+    void setPackage(const ProviderPackage &package);
     QNetworkAccessManager *networkAccessManager() const { return m_nam; }
 
     void setSecretResolver(std::function<QString(const QString &)> resolver)
@@ -73,27 +74,22 @@ signals:
     void httpResponseReady(quint64 requestId, const HttpResponse &response);
 
 private:
-    struct ActiveReply {
-        quint64 requestId = 0;
-        QUrl requestUrl;
-        HttpRequestOptions options;
-        int hops = 0;
-        QPointer<QNetworkReply> reply;
-        std::shared_ptr<QByteArray> buffer;
-        std::shared_ptr<bool> limitExceeded;
-    };
-
-    void startRequestInternal(quint64 reqId, const HttpRequestOptions &options, int hops, const QString &resolvedSecret);
+    struct ActiveRequest;
+    using Request = std::shared_ptr<ActiveRequest>;
+    bool current(const Request &request) const;
+    void startRequest(const Request &request, const HttpRequestOptions &options, int hops, const QString &secret);
+    bool drain(const Request &request);
+    void complete(const Request &request);
+    void finish(const Request &request, HttpResponse response);
+    void fail(const Request &request, const QString &message, bool truncated = false);
+    void retire(const Request &request);
 
     ProviderPackage m_package;
     QPointer<QNetworkAccessManager> m_nam;
-    bool m_ownsNam = false;
     quint64 m_requestCounter = 0;
     std::function<QString(const QString &)> m_secretResolver;
     QPointer<CredentialStore> m_credentialStore;
-    QHash<quint64, ActiveReply> m_activeRequests;
-    QHash<quint64, quint64> m_pendingCredentialReads;
-    quint64 m_credentialGeneration = 0;
+    QHash<quint64, Request> m_requests;
 };
 
 } // namespace ProviderHost

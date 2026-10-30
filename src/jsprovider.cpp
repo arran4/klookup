@@ -318,7 +318,7 @@ private:
             respObj.setProperty(QStringLiteral("then"), QJSValue(QJSValue::UndefinedValue));
             respObj.setProperty(QStringLiteral("status"), resp.statusCode);
             respObj.setProperty(QStringLiteral("ok"), resp.statusCode >= 200 && resp.statusCode < 300);
-            respObj.setProperty(QStringLiteral("statusText"), QStringLiteral("OK"));
+            respObj.setProperty(QStringLiteral("statusText"), resp.statusText);
             respObj.setProperty(QStringLiteral("body"), QString::fromUtf8(resp.body));
 
             QJSValue headersObj = m_engine->newObject();

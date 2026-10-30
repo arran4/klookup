@@ -2,315 +2,371 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "providerhostservice.h"
-
+#include <QDeadlineTimer>
 #include <QNetworkRequest>
+#include <QRegularExpression>
 #include <QTimer>
+#include <array>
+#include <zlib.h>
 
-namespace ProviderHost
+namespace ProviderHost {
+namespace {
+constexpr qint64 MaxResponseBytes = 5 * 1024 * 1024;
+constexpr qint64 ReadChunkBytes = 32 * 1024;
+
+bool sameOrigin(const QUrl &a, const QUrl &b)
 {
+    auto port = [](const QUrl &u) { return u.port(u.scheme() == QLatin1String("https") ? 443 : 80); };
+    return a.scheme().compare(b.scheme(), Qt::CaseInsensitive) == 0 &&
+           a.host().compare(b.host(), Qt::CaseInsensitive) == 0 && port(a) == port(b);
+}
 
-constexpr qint64 MaxResponseBytes = 5 * 1024 * 1024; // 5 MiB streaming limit
-
-ProviderHostService::ProviderHostService(const ProviderPackage &package,
-                                         QObject *parent,
-                                         QNetworkAccessManager *nam)
-    : QObject(parent)
-    , m_package(package)
-    , m_nam(nam)
+void removeHeader(QMap<QString, QString> &headers, const QString &name)
 {
-    if (!m_nam) {
-        m_nam = new QNetworkAccessManager(this);
-        m_ownsNam = true;
+    for (auto it = headers.begin(); it != headers.end();) {
+        if (it.key().compare(name, Qt::CaseInsensitive) == 0) it = headers.erase(it); else ++it;
     }
 }
 
-ProviderHostService::~ProviderHostService()
-{
-    cancelAllRequests();
-}
-
-void ProviderHostService::cancelRequest(quint64 requestId)
-{
-    m_pendingCredentialReads.remove(requestId);
-    if (m_activeRequests.contains(requestId)) {
-        auto active = m_activeRequests.take(requestId);
-        if (active.reply) {
-            active.reply->disconnect(this);
-            if (active.reply->isRunning()) {
-                active.reply->abort();
+class Decoder {
+public:
+    explicit Decoder(int windowBits) : m_windowBits(windowBits) { m_valid = inflateInit2(&m_stream, windowBits) == Z_OK; }
+    ~Decoder() { if (m_valid) inflateEnd(&m_stream); }
+    bool append(const QByteArray &input, QByteArray &output, QString &error, bool &oversized) {
+        if (!m_valid) { error = QStringLiteral("Cannot initialize response decompressor"); return false; }
+        m_stream.next_in = reinterpret_cast<Bytef *>(const_cast<char *>(input.constData()));
+        m_stream.avail_in = static_cast<uInt>(input.size());
+        std::array<char, ReadChunkBytes> chunk;
+        while (true) {
+            if (m_ended) {
+                if (!m_stream.avail_in) return true;
+                // RFC 1952 permits concatenated gzip members. Every byte still
+                // counts against the independent compressed limit.
+                auto *next = m_stream.next_in;
+                const auto available = m_stream.avail_in;
+                if (m_windowBits != 31 || inflateReset2(&m_stream, m_windowBits) != Z_OK) {
+                    error = QStringLiteral("Trailing data after compressed response"); return false;
+                }
+                m_stream.next_in = next;
+                m_stream.avail_in = available;
+                m_ended = false;
             }
-            active.reply->deleteLater();
+            const qint64 remaining = MaxResponseBytes - output.size();
+            const auto capacity = static_cast<uInt>(qMin<qint64>(chunk.size(), remaining + 1));
+            m_stream.next_out = reinterpret_cast<Bytef *>(chunk.data());
+            m_stream.avail_out = capacity;
+            const auto before = m_stream.avail_in;
+            const int result = inflate(&m_stream, Z_NO_FLUSH);
+            const qint64 produced = capacity - m_stream.avail_out;
+            if (produced > remaining) { oversized = true; output.clear(); return false; }
+            output.append(chunk.data(), produced);
+            if (result == Z_STREAM_END) { m_ended = true; continue; }
+            if (result != Z_OK && result != Z_BUF_ERROR) {
+                error = QStringLiteral("Invalid compressed response"); return false;
+            }
+            if (!m_stream.avail_in && m_stream.avail_out) return true;
+            if (before == m_stream.avail_in && !produced) {
+                error = QStringLiteral("Invalid compressed response stream"); return false;
+            }
         }
     }
+    bool ended() const { return m_ended; }
+private:
+    z_stream m_stream{};
+    int m_windowBits;
+    bool m_valid = false;
+    bool m_ended = false;
+};
+}
+
+struct ProviderHostService::ActiveRequest {
+    quint64 id = 0;
+    HttpRequestOptions options;
+    int hops = 0;
+    QString secret;
+    QPointer<QNetworkReply> reply;
+    QPointer<QTimer> timer;
+    QDeadlineTimer deadline;
+    qint64 wireBytes = 0;
+    QByteArray body;
+    std::unique_ptr<Decoder> decoder;
+    bool encodingInitialized = false;
+    bool finished = false;
+};
+
+ProviderHostService::ProviderHostService(const ProviderPackage &package, QObject *parent, QNetworkAccessManager *nam)
+    : QObject(parent), m_package(package), m_nam(nam)
+{
+    if (!m_nam) m_nam = new QNetworkAccessManager(this);
+    connect(m_nam, &QObject::destroyed, this, [this] {
+        const auto requests = m_requests.values();
+        for (const auto &request : requests) {
+            // The manager itself is destroying its replies. Do not reenter it.
+            request->reply = nullptr;
+            fail(request, QStringLiteral("Provider transport is no longer available"));
+        }
+    });
+}
+
+ProviderHostService::~ProviderHostService() { cancelAllRequests(); }
+
+void ProviderHostService::setPackage(const ProviderPackage &package)
+{
+    if (!package.isTrusted() || m_package.approvalFingerprint() != package.approvalFingerprint()) cancelAllRequests();
+    m_package = package;
+}
+
+bool ProviderHostService::current(const Request &request) const
+{
+    return m_requests.value(request->id) == request && !request->finished;
+}
+
+void ProviderHostService::retire(const Request &request)
+{
+    if (request->timer) { request->timer->stop(); request->timer->deleteLater(); request->timer = nullptr; }
+    if (request->reply) {
+        auto *reply = request->reply.data();
+        request->reply = nullptr;
+        reply->disconnect(this);
+        if (reply->isRunning()) reply->abort();
+        reply->deleteLater();
+    }
+    request->secret.clear();
+}
+
+void ProviderHostService::cancelRequest(quint64 id)
+{
+    if (auto request = m_requests.take(id)) { request->finished = true; retire(request); }
 }
 
 void ProviderHostService::cancelAllRequests()
 {
-    m_pendingCredentialReads.clear();
-    for (auto it = m_activeRequests.begin(); it != m_activeRequests.end(); ++it) {
-        if (it.value().reply) {
-            it.value().reply->disconnect(this);
-            if (it.value().reply->isRunning()) {
-                it.value().reply->abort();
-            }
-            it.value().reply->deleteLater();
-        }
-    }
-    m_activeRequests.clear();
+    const auto ids = m_requests.keys();
+    for (auto id : ids) cancelRequest(id);
+}
+
+void ProviderHostService::finish(const Request &request, HttpResponse response)
+{
+    if (!current(request)) return;
+    request->finished = true;
+    retire(request);
+    response.requestId = request->id;
+    QTimer::singleShot(0, this, [this, request, response = std::move(response)] {
+        if (m_requests.value(request->id) != request) return;
+        m_requests.remove(request->id);
+        emit httpResponseReady(request->id, response);
+    });
+}
+
+void ProviderHostService::fail(const Request &request, const QString &message, bool truncated)
+{
+    if (!current(request)) return;
+    HttpResponse response;
+    if (request->reply) response.statusCode = request->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    response.errorMessage = message;
+    response.truncated = truncated;
+    request->body.clear();
+    finish(request, response);
 }
 
 quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &options)
 {
-    const quint64 reqId = options.requestId != 0 ? options.requestId : ++m_requestCounter;
-    cancelRequest(reqId); // Reused IDs must not retain work or an older wallet callback.
-
-    // 1. Trust Check
-    if (!m_package.isTrusted()) {
-        HttpResponse errResp;
-        errResp.requestId = reqId;
-        errResp.success = false;
-        errResp.errorMessage = QStringLiteral("Untrusted provider package '%1' cannot make network requests.").arg(m_package.id());
-        QTimer::singleShot(0, this, [this, reqId, errResp] {
-            emit httpResponseReady(reqId, errResp);
-        });
-        return reqId;
+    quint64 id = options.requestId;
+    if (!id) { do { id = ++m_requestCounter; } while (m_requests.contains(id)); }
+    cancelRequest(id);
+    auto request = std::make_shared<ActiveRequest>();
+    request->id = id;
+    request->options = options;
+    const int timeout = qBound(1, options.timeoutMs > 0 ? options.timeoutMs : 10000, 30000);
+    request->deadline = QDeadlineTimer(timeout);
+    request->timer = new QTimer(this);
+    request->timer->setSingleShot(true);
+    m_requests.insert(id, request);
+    connect(request->timer, &QTimer::timeout, this, [this, request] {
+        fail(request, QStringLiteral("Provider HTTP request timed out"));
+    });
+    request->timer->start(timeout);
+    if (!m_package.isValid() || !m_package.isTrusted()) {
+        fail(request, QStringLiteral("Untrusted provider package '%1' cannot make network requests.").arg(m_package.id())); return id;
     }
-
-    // 2. URL Scheme Check
-    if (!options.url.isValid() || (options.url.scheme() != QStringLiteral("https") && options.url.scheme() != QStringLiteral("http"))) {
-        HttpResponse errResp;
-        errResp.requestId = reqId;
-        errResp.success = false;
-        errResp.errorMessage = QStringLiteral("Invalid or unsupported URL scheme: %1").arg(options.url.scheme());
-        QTimer::singleShot(0, this, [this, reqId, errResp] {
-            emit httpResponseReady(reqId, errResp);
-        });
-        return reqId;
+    if (!options.url.isValid() || !options.url.userInfo().isEmpty() ||
+        (options.url.scheme() != QLatin1String("http") && options.url.scheme() != QLatin1String("https"))) {
+        fail(request, QStringLiteral("Invalid or unsupported URL scheme or credentials")); return id;
     }
-
-    // 3. Origin Permission Check
     if (!m_package.isOriginAllowed(options.url)) {
-        HttpResponse errResp;
-        errResp.requestId = reqId;
-        errResp.success = false;
-        errResp.errorMessage = QStringLiteral("Target origin '%1' is not declared in package manifest permissions.")
-                                   .arg(options.url.host());
-        QTimer::singleShot(0, this, [this, reqId, errResp] {
-            emit httpResponseReady(reqId, errResp);
-        });
-        return reqId;
+        fail(request, QStringLiteral("Target origin '%1' is not declared in package manifest permissions.").arg(options.url.host())); return id;
     }
-
-    // 4. Secret Permission & Resolution Check
     if (!options.secretKey.isEmpty()) {
         if (!m_package.isSecretAllowed(options.secretKey)) {
-            HttpResponse errResp;
-            errResp.requestId = reqId;
-            errResp.success = false;
-            errResp.errorMessage = QStringLiteral("Secret '%1' is not declared in package manifest permissions.")
-                                       .arg(options.secretKey);
-            QTimer::singleShot(0, this, [this, reqId, errResp] {
-                emit httpResponseReady(reqId, errResp);
-            });
-            return reqId;
+            fail(request, QStringLiteral("Secret '%1' is not declared in package manifest permissions.").arg(options.secretKey)); return id;
         }
-
-        // Asynchronous resolution via CredentialStore (KWallet)
         if (m_credentialStore) {
-            const QString storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
-            const quint64 generation = ++m_credentialGeneration;
-            m_pendingCredentialReads.insert(reqId, generation);
+            const auto storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
             QPointer<ProviderHostService> guard(this);
-            m_credentialStore->read(storeKey, true, [guard, reqId, generation, options](const CredentialStoreResult &res) {
-                if (!guard || guard->m_pendingCredentialReads.value(reqId) != generation) return;
-                guard->m_pendingCredentialReads.remove(reqId);
-                if (!guard->m_package.isTrusted() || !guard->m_package.isOriginAllowed(options.url) ||
-                    !guard->m_package.isSecretAllowed(options.secretKey)) return;
-                const QString secretVal = res.ok ? res.value : QString();
-                guard->startRequestInternal(reqId, options, 0, secretVal);
+            m_credentialStore->read(storeKey, true, [guard, request, options](const CredentialStoreResult &result) {
+                if (!guard || !guard->current(request)) return;
+                guard->startRequest(request, options, 0, result.ok ? result.value : QString());
             });
-            return reqId;
+            return id;
         }
-
         if (m_secretResolver) {
-            const QString secretVal = m_secretResolver(options.secretKey);
-            startRequestInternal(reqId, options, 0, secretVal);
-            return reqId;
+            const auto secret = m_secretResolver(options.secretKey);
+            if (current(request)) startRequest(request, options, 0, secret);
+            return id;
         }
     }
-
-    startRequestInternal(reqId, options, 0, QString());
-    return reqId;
+    startRequest(request, options, 0, {});
+    return id;
 }
 
-void ProviderHostService::startRequestInternal(quint64 reqId, const HttpRequestOptions &options, int hops, const QString &resolvedSecret)
+void ProviderHostService::startRequest(const Request &state, const HttpRequestOptions &options, int hops, const QString &secret)
 {
-    if (!m_nam) {
-        HttpResponse response;
-        response.requestId = reqId;
-        response.errorMessage = QStringLiteral("Provider transport is no longer available");
-        QTimer::singleShot(0, this, [this, reqId, response] { emit httpResponseReady(reqId, response); });
-        return;
+    if (!current(state)) return;
+    if (state->deadline.hasExpired()) { fail(state, QStringLiteral("Provider HTTP request timed out")); return; }
+    if (!m_nam) { fail(state, QStringLiteral("Provider transport is no longer available")); return; }
+    if (!m_package.isTrusted() || !m_package.isOriginAllowed(options.url) ||
+        (!options.secretKey.isEmpty() && !m_package.isSecretAllowed(options.secretKey))) {
+        fail(state, QStringLiteral("Package permission changed while request was pending")); return;
     }
-    QUrl requestUrl = options.url;
-    QNetworkRequest request(requestUrl);
+    const auto method = options.method.trimmed().toUpper();
+    if (method != QLatin1String("GET") && method != QLatin1String("POST")) {
+        fail(state, QStringLiteral("Unsupported HTTP method")); return;
+    }
+    QNetworkRequest request(options.url);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup/1.0 (XDG Provider Package)"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
-
+    request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
+    request.setAttribute(QNetworkRequest::CookieSaveControlAttribute, QNetworkRequest::Manual);
+    request.setAttribute(QNetworkRequest::AuthenticationReuseAttribute, QNetworkRequest::Manual);
+    static const QRegularExpression headerName(QStringLiteral("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$"));
     for (auto it = options.headers.cbegin(); it != options.headers.cend(); ++it) {
-        request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
+        const auto name = it.key().toLower();
+        if (!headerName.match(name).hasMatch() || it.value().contains(QLatin1Char('\r')) ||
+            it.value().contains(QLatin1Char('\n')) || it.value().contains(QChar::Null) ||
+            name == QLatin1String("host") || name == QLatin1String("content-length") ||
+            name == QLatin1String("transfer-encoding") || name == QLatin1String("connection") ||
+            name == QLatin1String("proxy-authorization")) {
+            fail(state, QStringLiteral("Invalid or transport-controlled HTTP header")); return;
+        }
+        if (name != QLatin1String("accept-encoding")) request.setRawHeader(it.key().toUtf8(), it.value().toUtf8());
     }
-
-    if (!resolvedSecret.isEmpty() && !options.secretHeader.isEmpty()) {
-        request.setRawHeader(options.secretHeader.toUtf8(), resolvedSecret.toUtf8());
+    // Explicit Accept-Encoding disables Qt's transparent decompressor, letting
+    // us enforce independent wire/decompressed limits while streaming both.
+    request.setRawHeader("Accept-Encoding", "gzip, deflate");
+    if (!secret.isEmpty() && !options.secretHeader.isEmpty()) {
+        const auto name = options.secretHeader.toLower();
+        if (!headerName.match(options.secretHeader).hasMatch() || secret.contains(QLatin1Char('\r')) || secret.contains(QLatin1Char('\n')) ||
+            secret.contains(QChar::Null) || name == QLatin1String("host") || name == QLatin1String("content-length") ||
+            name == QLatin1String("transfer-encoding") || name == QLatin1String("connection") ||
+            name == QLatin1String("proxy-authorization") || name == QLatin1String("accept-encoding")) {
+            fail(state, QStringLiteral("Invalid or transport-controlled secret header")); return;
+        }
+        request.setRawHeader(options.secretHeader.toUtf8(), secret.toUtf8());
     }
-
-    QNetworkReply *reply = nullptr;
-    if (options.method.toUpper() == QStringLiteral("POST")) {
-        reply = m_nam->post(request, options.body);
-    } else {
-        reply = m_nam->get(request);
-    }
-
-    auto buffer = std::make_shared<QByteArray>();
-    auto limitExceeded = std::make_shared<bool>(false);
-
-    ActiveReply active;
-    active.requestId = reqId;
-    active.requestUrl = requestUrl;
-    active.options = options;
-    active.hops = hops;
-    active.reply = reply;
-    active.buffer = buffer;
-    active.limitExceeded = limitExceeded;
-    m_activeRequests.insert(reqId, active);
-
-    // Fast-path: Content-Length check
-    connect(reply, &QNetworkReply::metaDataChanged, this, [this, reqId, reply, limitExceeded] {
-        if (!m_activeRequests.contains(reqId) || *limitExceeded || !reply) return;
-        const QVariant lengthVar = reply->header(QNetworkRequest::ContentLengthHeader);
-        if (lengthVar.isValid()) {
-            const qint64 length = lengthVar.toLongLong();
-            if (length > MaxResponseBytes) {
-                *limitExceeded = true;
-                reply->abort();
-            }
-        }
+    state->options = options;
+    state->hops = hops;
+    state->secret = secret;
+    state->wireBytes = 0;
+    state->body.clear();
+    state->decoder.reset();
+    state->encodingInitialized = false;
+    auto *reply = method == QLatin1String("POST") ? m_nam->post(request, options.body) : m_nam->get(request);
+    reply->setReadBufferSize(64 * 1024);
+    state->reply = reply;
+    connect(reply, &QNetworkReply::metaDataChanged, this, [this, state] {
+        if (!current(state) || !state->reply) return;
+        if (state->reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > MaxResponseBytes)
+            fail(state, QStringLiteral("Response exceeded maximum streaming limit of 5 MiB (compressed/wire bytes)"), true);
     });
-
-    // Streaming accumulation bound: read strictly bounded chunks, immediately aborting without buffer bloat
-    connect(reply, &QIODevice::readyRead, this, [this, reqId, reply, buffer, limitExceeded] {
-        if (!m_activeRequests.contains(reqId) || *limitExceeded || !reply) return;
-        const qint64 remaining = MaxResponseBytes - buffer->size();
-        if (remaining <= 0) {
-            *limitExceeded = true;
-            buffer->clear();
-            reply->abort();
-            return;
-        }
-        const qint64 available = reply->bytesAvailable();
-        if (available > remaining) {
-            *limitExceeded = true;
-            buffer->clear();
-            reply->abort();
-            return;
-        }
-        buffer->append(reply->read(available));
-    });
-
-    // Timeout timer
-    const int timeout = options.timeoutMs > 0 ? options.timeoutMs : 10000;
-    auto *timer = new QTimer(reply);
-    timer->setSingleShot(true);
-    connect(timer, &QTimer::timeout, reply, [reply] {
-        if (reply && reply->isRunning()) {
-            reply->abort();
-        }
-    });
-    timer->start(timeout);
-
-    // Completion handler
-    connect(reply, &QNetworkReply::finished, this, [this, reqId, reply, buffer, limitExceeded, options, hops, resolvedSecret] {
-        if (!m_activeRequests.contains(reqId)) {
-            reply->deleteLater();
-            return;
-        }
-        m_activeRequests.remove(reqId);
-        reply->deleteLater();
-
-        HttpResponse resp;
-        resp.requestId = reqId;
-
-        if (*limitExceeded) {
-            resp.success = false;
-            resp.truncated = true;
-            resp.errorMessage = QStringLiteral("Response exceeded maximum streaming limit of 5 MiB.");
-            emit httpResponseReady(reqId, resp);
-            return;
-        }
-
-        // Bounded and permission-rechecked redirect handling (up to 5 hops)
-        const QVariant redirectTarget = reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
-        if (redirectTarget.isValid()) {
-            if (hops >= 5) {
-                resp.success = false;
-                resp.errorMessage = QStringLiteral("Too many redirects: exceeded maximum of 5 hops.");
-                emit httpResponseReady(reqId, resp);
-                return;
-            }
-            const QUrl targetUrl = options.url.resolved(redirectTarget.toUrl());
-            if (!targetUrl.isValid()) {
-                resp.success = false;
-                resp.errorMessage = QStringLiteral("Invalid redirect target URL.");
-                emit httpResponseReady(reqId, resp);
-                return;
-            }
-            // Enforce no HTTPS -> HTTP scheme downgrade
-            if (options.url.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 &&
-                targetUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0) {
-                resp.success = false;
-                resp.errorMessage = QStringLiteral("Insecure redirect from HTTPS to HTTP blocked.");
-                emit httpResponseReady(reqId, resp);
-                return;
-            }
-            // Permission check on redirected target
-            if (!m_package.isOriginAllowed(targetUrl)) {
-                resp.success = false;
-                resp.errorMessage = QStringLiteral("Redirect to undeclared origin '%1' blocked by package policy.")
-                                        .arg(targetUrl.host());
-                emit httpResponseReady(reqId, resp);
-                return;
-            }
-            // If cross-origin redirect, strip secrets
-            HttpRequestOptions nextOptions = options;
-            nextOptions.url = targetUrl;
-            QString nextSecret = resolvedSecret;
-            if (targetUrl.host().compare(options.url.host(), Qt::CaseInsensitive) != 0) {
-                nextSecret.clear();
-                nextOptions.secretKey.clear();
-                nextOptions.secretHeader.clear();
-            }
-            startRequestInternal(reqId, nextOptions, hops + 1, nextSecret);
-            return;
-        }
-
-        if (reply->error() != QNetworkReply::NoError) {
-            resp.success = false;
-            resp.errorMessage = reply->errorString();
-            resp.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-            emit httpResponseReady(reqId, resp);
-            return;
-        }
-
-        resp.success = true;
-        resp.statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        resp.body = *buffer;
-        for (const auto &pair : reply->rawHeaderPairs()) {
-            resp.headers.insert(QString::fromUtf8(pair.first), QString::fromUtf8(pair.second));
-        }
-
-        emit httpResponseReady(reqId, resp);
-    });
+    connect(reply, &QIODevice::readyRead, this, [this, state] { drain(state); });
+    connect(reply, &QNetworkReply::finished, this, [this, state] { complete(state); });
+    if (reply->isFinished()) QTimer::singleShot(0, this, [this, state] { complete(state); });
 }
 
-} // namespace ProviderHost
+bool ProviderHostService::drain(const Request &state)
+{
+    if (!current(state) || !state->reply) return false;
+    auto *reply = state->reply.data();
+    if (reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > MaxResponseBytes) {
+        fail(state, QStringLiteral("Response exceeded maximum streaming limit of 5 MiB (compressed/wire bytes)"), true); return false;
+    }
+    if (!state->encodingInitialized) {
+        const auto encoding = reply->rawHeader("Content-Encoding").trimmed().toLower();
+        if (encoding == "gzip" || encoding == "x-gzip") state->decoder = std::make_unique<Decoder>(31);
+        else if (encoding == "deflate") state->decoder = std::make_unique<Decoder>(15);
+        else if (!encoding.isEmpty() && encoding != "identity") {
+            fail(state, QStringLiteral("Unsupported response content encoding")); return false;
+        }
+        state->encodingInitialized = true;
+    }
+    while (reply->bytesAvailable() > 0) {
+        const qint64 remaining = MaxResponseBytes - state->wireBytes;
+        const auto chunk = reply->read(qMin(ReadChunkBytes, remaining + 1));
+        if (chunk.isEmpty()) break;
+        state->wireBytes += chunk.size();
+        if (state->wireBytes > MaxResponseBytes) {
+            fail(state, QStringLiteral("Response exceeded maximum streaming limit of 5 MiB (compressed/wire bytes)"), true); return false;
+        }
+        if (state->decoder) {
+            QString error;
+            bool oversized = false;
+            if (!state->decoder->append(chunk, state->body, error, oversized)) {
+                fail(state, oversized ? QStringLiteral("Response exceeded maximum streaming limit of 5 MiB (decompressed bytes)") : error, oversized);
+                return false;
+            }
+        } else state->body.append(chunk);
+    }
+    return current(state);
+}
+
+void ProviderHostService::complete(const Request &state)
+{
+    if (!drain(state) || !state->reply) return;
+    auto *reply = state->reply.data();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const auto redirect = reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
+    if (redirect.isValid()) {
+        if (state->hops >= 5) { fail(state, QStringLiteral("Too many redirects: exceeded maximum of 5 hops.")); return; }
+        const auto target = state->options.url.resolved(redirect.toUrl());
+        if (state->options.url.scheme() == QLatin1String("https") && target.scheme() != QLatin1String("https")) {
+            fail(state, QStringLiteral("Insecure redirect from HTTPS to HTTP blocked.")); return;
+        }
+        if (!target.isValid() || !target.userInfo().isEmpty() || !m_package.isOriginAllowed(target)) {
+            fail(state, QStringLiteral("Redirect to undeclared origin '%1' blocked by package policy.").arg(target.host())); return;
+        }
+        auto next = state->options;
+        next.url = target;
+        auto nextSecret = state->secret;
+        if (!sameOrigin(state->options.url, target)) {
+            const auto injected = next.secretHeader;
+            for (auto it = next.headers.begin(); it != next.headers.end();) {
+                const auto name = it.key().toLower();
+                if ((name != QLatin1String("accept") && name != QLatin1String("content-type") && name != QLatin1String("user-agent")) ||
+                    it.key().compare(injected, Qt::CaseInsensitive) == 0) it = next.headers.erase(it); else ++it;
+            }
+            next.secretKey.clear(); next.secretHeader.clear(); nextSecret.clear();
+        }
+        if (status == 303 || ((status == 301 || status == 302) && next.method.compare(QStringLiteral("POST"), Qt::CaseInsensitive) == 0)) {
+            next.method = QStringLiteral("GET"); next.body.clear(); removeHeader(next.headers, QStringLiteral("Content-Type"));
+        }
+        reply->disconnect(this);
+        reply->deleteLater();
+        state->reply = nullptr;
+        startRequest(state, next, state->hops + 1, nextSecret);
+        return;
+    }
+    const auto error = reply->error();
+    const bool httpError = status >= 400 &&
+        ((error >= QNetworkReply::ContentAccessDenied && error <= QNetworkReply::UnknownContentError) ||
+         (error >= QNetworkReply::InternalServerError && error <= QNetworkReply::UnknownServerError));
+    if (error != QNetworkReply::NoError && !httpError) { fail(state, QStringLiteral("HTTP transport failed: %1").arg(reply->errorString())); return; }
+    if (state->decoder && !state->decoder->ended()) { fail(state, QStringLiteral("Truncated compressed response")); return; }
+    HttpResponse response;
+    response.statusCode = status;
+    response.statusText = reply->attribute(QNetworkRequest::HttpReasonPhraseAttribute).toString();
+    response.success = true; // Completed HTTP, including 4xx/5xx; JS response.ok remains false.
+    response.body = std::move(state->body);
+    for (const auto &header : reply->rawHeaderPairs()) response.headers.insert(QString::fromUtf8(header.first), QString::fromUtf8(header.second));
+    finish(state, std::move(response));
+}
+}

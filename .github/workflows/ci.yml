@@ -11,7 +11,7 @@ on:
     types: [opened, synchronize]
   workflow_dispatch:
   schedule:
-    - cron: '0 19 1 * *' # Monthly verification (02:00 AEDT / 05:00 AEST)
+    - cron: '0 19 1 * *' # Monthly verification (05:00 AEST / 06:00 AEDT on day 2)
 
 permissions:
   contents: read

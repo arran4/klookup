@@ -34,3 +34,20 @@ jobs:
 
     - name: Run CTest
       run: ./.jules/run.sh ctest --test-dir build --output-on-failure
+
+    - name: Configure sanitizer build
+      run: |
+        ./.jules/run.sh cmake -S . -B build-san -G Ninja -DBUILD_TESTING=ON \
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+          -DCMAKE_MODULE_LINKER_FLAGS="-fsanitize=address,undefined" \
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+
+    - name: Build sanitizer targets
+      run: ./.jules/run.sh cmake --build build-san --parallel
+
+    - name: Run sanitizer CTest with leak detection
+      env:
+        ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+        UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      run: ./.jules/run.sh ctest --test-dir build-san --output-on-failure

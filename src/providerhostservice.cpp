@@ -6,13 +6,38 @@
 #include <QNetworkRequest>
 #include <QRegularExpression>
 #include <QTimer>
+#include <QDateTime>
+#include <QMutex>
+#include <QMutexLocker>
 #include <array>
+#include <chrono>
 #include <zlib.h>
 
 namespace ProviderHost {
 namespace {
 constexpr qint64 MaxResponseBytes = 5 * 1024 * 1024;
 constexpr qint64 ReadChunkBytes = 32 * 1024;
+
+// Application-wide origin policy: tabs own independent engines/hosts, but an
+// upstream quota and Retry-After apply to their combined traffic. This state
+// intentionally outlives individual hosts and stores no queries or responses.
+struct OriginPolicy {
+    qint64 lastStarted = 0;
+    qint64 retryAt = 0;
+    int intervalMs = 0;
+};
+struct OriginPolicies {
+    QMutex mutex;
+    QHash<QString, OriginPolicy> entries;
+};
+OriginPolicies &originPolicies() { static OriginPolicies policies; return policies; }
+qint64 monotonicMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+QString originKey(const QUrl &url) {
+    return QStringLiteral("%1://%2:%3").arg(url.scheme().toLower(), url.host().toLower())
+        .arg(url.port(url.scheme() == QLatin1String("https") ? 443 : 80));
+}
 
 bool sameOrigin(const QUrl &a, const QUrl &b)
 {
@@ -86,6 +111,7 @@ struct ProviderHostService::ActiveRequest {
     QString secret;
     QPointer<QNetworkReply> reply;
     QPointer<QTimer> timer;
+    QPointer<QTimer> pacingTimer;
     QDeadlineTimer deadline;
     qint64 wireBytes = 0;
     QByteArray body;
@@ -124,6 +150,7 @@ bool ProviderHostService::current(const Request &request) const
 void ProviderHostService::retire(const Request &request)
 {
     if (request->timer) { request->timer->stop(); request->timer->deleteLater(); request->timer = nullptr; }
+    if (request->pacingTimer) { request->pacingTimer->stop(); request->pacingTimer->deleteLater(); request->pacingTimer = nullptr; }
     if (request->reply) {
         auto *reply = request->reply.data();
         request->reply = nullptr;
@@ -269,6 +296,34 @@ void ProviderHostService::startRequest(const Request &state, const HttpRequestOp
     state->options = options;
     state->hops = hops;
     state->secret = secret;
+    if (options.minimumIntervalMs > 0) {
+        qint64 delay = 0;
+        qint64 cooldown = 0;
+        {
+            auto &policies = originPolicies();
+            QMutexLocker lock(&policies.mutex);
+            auto &policy = policies.entries[originKey(options.url)];
+            policy.intervalMs = qMax(policy.intervalMs, qBound(1, options.minimumIntervalMs, 60000));
+            const auto now = monotonicMs();
+            cooldown = policy.retryAt - now;
+            delay = policy.lastStarted + policy.intervalMs - now;
+            if (cooldown <= 0 && delay <= 0) policy.lastStarted = now;
+        }
+        if (cooldown > 0) {
+            fail(state, QStringLiteral("Provider origin rate limited; retry after %1 seconds").arg((cooldown + 999) / 1000));
+            return;
+        }
+        if (delay > 0) {
+            state->pacingTimer = new QTimer(this);
+            state->pacingTimer->setSingleShot(true);
+            connect(state->pacingTimer, &QTimer::timeout, this, [this, state] {
+                if (state->pacingTimer) { state->pacingTimer->deleteLater(); state->pacingTimer = nullptr; }
+                startRequest(state, state->options, state->hops, state->secret);
+            });
+            state->pacingTimer->start(int(qMin(delay, state->deadline.remainingTime())));
+            return;
+        }
+    }
     state->wireBytes = 0;
     state->body.clear();
     state->decoder.reset();
@@ -327,6 +382,20 @@ void ProviderHostService::complete(const Request &state)
     if (!drain(state) || !state->reply) return;
     auto *reply = state->reply.data();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (status == 429 && state->options.minimumIntervalMs > 0) {
+        const auto retryAfter = reply->rawHeader("Retry-After").trimmed();
+        bool numeric = false;
+        qint64 seconds = retryAfter.toLongLong(&numeric);
+        if (!numeric) {
+            const auto date = QDateTime::fromString(QString::fromLatin1(retryAfter), Qt::RFC2822Date);
+            seconds = date.isValid() ? QDateTime::currentDateTimeUtc().secsTo(date) : 60;
+        }
+        seconds = qBound<qint64>(1, seconds, 86400);
+        auto &policies = originPolicies();
+        QMutexLocker lock(&policies.mutex);
+        auto &policy = policies.entries[originKey(state->options.url)];
+        policy.retryAt = qMax(policy.retryAt, monotonicMs() + seconds * 1000);
+    }
     const auto redirect = reply->attribute(QNetworkRequest::RedirectionTargetAttribute);
     if (redirect.isValid()) {
         if (state->hops >= 5) { fail(state, QStringLiteral("Too many redirects: exceeded maximum of 5 hops.")); return; }

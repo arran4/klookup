@@ -51,7 +51,8 @@ public slots:
     SearchProvider *provider(const QString &id) const;
     SearchProvider *fallbackProvider(const QString &id) const;
     bool switchToFallback(const QString &id);
-    void loadPlugins(const QStringList &customPackagePaths = {}, const QStringList &customPluginPaths = {});
+    void loadPlugins(const QStringList &customPackagePaths = {}, const QStringList &customPluginPaths = {},
+                     const QStringList &packageIdsToInvalidate = {});
     void setNetworkAccessManagerFactory(std::function<QNetworkAccessManager *(QObject *)> factory);
     void setPackageTrusted(const QString &id, bool trusted);
     bool isPackageTrusted(const QString &id) const;

@@ -9,12 +9,33 @@ Thank you for your interest in contributing to KLookup! KLookup is an extensible
 
 ## Development Environment
 
-KLookup uses a containerised/chrooted KDE 6 development rootfs to ensure reproducible builds across different Linux distributions.
+KLookup is built with standard modern C++ (C++17), CMake, Qt 6, and KDE Frameworks 6 (KF6).
 
-> [!IMPORTANT]
-> **Do not use Docker directly.** All development commands run through the repository's `.jules` runner scripts.
+### 1. Universal Project Requirements
 
-### 1. Provision the Environment
+To build KLookup, your environment requires:
+- C++17 compatible compiler (GCC or Clang)
+- CMake >= 3.16 and Ninja (or Make)
+- Qt 6 (Core, Gui, Widgets, Network, DBus, Qml; Test when BUILD_TESTING is enabled)
+- KDE Frameworks 6 (CoreAddons, Config, I18n, WidgetsAddons, XmlGui, Notifications, Wallet, GlobalAccel, Runner, DBusAddons)
+
+### 2. Supported Workflows
+
+Developers can build KLookup either:
+1. **Natively** on distributions providing Qt 6 and KF6 development packages (e.g., Debian testing/unstable, Arch Linux, Fedora, openSUSE).
+2. **Via the provided rootfs helper scripts** (`.jules/bootstrap.sh` and `.jules/run.sh`), which provision a reproducible Debian trixie/forky rootfs with all required dependencies.
+
+> [!NOTE]
+> **Jules-managed environments:** When running in a Jules-managed environment, use the repository's `.jules` runners and follow that environment's container restrictions. Outside Jules, developers may build natively or use another compatible container environment. The project's Qt/KF6/CMake requirements are independent of the agent or runner.
+
+> [!NOTE]
+> **Continuous Integration (CI):** GitHub Actions uses `.jules/bootstrap.sh` and `.jules/run.sh` to run builds and test suites against the shared development rootfs.
+
+### 3. Rootfs-based Development Workflow
+
+If using the chrooted development rootfs:
+
+#### Step 1: Provision the Environment
 
 Bootstrap the shared KDE 6 rootfs:
 
@@ -23,7 +44,7 @@ sudo apt-get update && sudo apt-get install -y zstd
 ./.jules/bootstrap.sh
 ```
 
-### 2. Install Required Build Dependencies
+#### Step 2: Install Required Build Dependencies
 
 Inside the rootfs, install the required KDE development headers:
 
@@ -32,22 +53,22 @@ Inside the rootfs, install the required KDE development headers:
 .jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev cmake ninja-build build-essential g++
 ```
 
-### 3. Build and Test
+#### Step 3: Build and Test
 
-Configure and compile the project using CMake and Ninja:
+Configure and compile the project using CMake and Ninja (prefix with `.jules/run.sh` when using the rootfs, or run directly for native builds):
 
 ```bash
 # Configure with tests enabled
-.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
 
 # Compile in parallel
-.jules/run.sh cmake --build build --parallel
+cmake --build build --parallel
 
 # Run all test suites
-.jules/run.sh ctest --test-dir build --output-on-failure
+ctest --test-dir build --output-on-failure
 ```
 
-### 4. Sanitizer Auditing (ASan & UBSan)
+#### Step 4: Sanitizer Auditing (ASan & UBSan)
 
 We maintain strict memory and type safety. Before submitting significant changes, verify your code under sanitizers:
 

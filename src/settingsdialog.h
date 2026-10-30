@@ -35,6 +35,7 @@ public:
 
 signals:
     void settingsApplied();
+    void packageChangesApplied(const QStringList &ids);
 
 protected:
     virtual bool isWalletAvailable() const;
@@ -63,6 +64,7 @@ private:
     QListWidget *m_packageList = nullptr;
     QMap<QString, bool> m_approvalDrafts;
     bool m_packagesChanged = false;
+    bool m_retryPackages = false;
     ProviderAuthManager *m_authentication = nullptr;
     QMap<QString, QString> m_clientDrafts;
     QString m_authProviderId;

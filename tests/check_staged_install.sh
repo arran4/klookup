@@ -31,3 +31,12 @@ if [ -x "$build_dir/tests/test_scripted_lyrics" ]; then
     XDG_DATA_HOME="$stage/empty-user" XDG_DATA_DIRS="$stage/share" XDG_CONFIG_HOME="$stage/config-lyrics" \
         KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-lyrics" normalDiscoveryApprovalAndEnablement
 fi
+
+if [ -x "$build_dir/tests/test_scripted_openlibrary" ]; then
+    test -f "$stage/share/klookup/providers.d/openlibrary/provider.json"
+    test -f "$stage/share/klookup/providers.d/openlibrary/main.mjs"
+    cp "$build_dir/tests/obsolete/provider_openlibrary.so" "$stage/lib/plugins/klookup/"
+    cp "$build_dir/tests/test_scripted_openlibrary" "$stage/bin/test-installed-openlibrary"
+    XDG_DATA_HOME="$stage/empty-user" XDG_DATA_DIRS="$stage/share" XDG_CONFIG_HOME="$stage/config-openlibrary" \
+        KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-openlibrary" normalDiscoveryApprovalAndEnablement
+fi

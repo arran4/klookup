@@ -224,6 +224,8 @@ public:
             if (options.hasProperty(QStringLiteral("timeoutMs"))) {
                 opts.timeoutMs = options.property(QStringLiteral("timeoutMs")).toInt();
             }
+            if (options.hasProperty(QStringLiteral("minimumIntervalMs")))
+                opts.minimumIntervalMs = qBound(0, options.property(QStringLiteral("minimumIntervalMs")).toInt(), 60000);
 
             if (options.hasProperty(QStringLiteral("headers"))) {
                 const QJSValue headersVal = options.property(QStringLiteral("headers"));

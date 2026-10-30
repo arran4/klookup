@@ -1,0 +1,21 @@
+{
+  "id": "anilist",
+  "name": "AniList (unofficial)",
+  "description": "Anime search and metadata from the AniList GraphQL API",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "https://graphql.anilist.co"
+    ]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": false,
+    "separateContent": false,
+    "authentication": false
+  }
+}

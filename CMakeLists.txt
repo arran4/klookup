@@ -45,7 +45,6 @@ add_subdirectory(src)
 add_subdirectory(providers/wikipedia)
 add_subdirectory(providers/github)
 add_subdirectory(providers/mangaupdates)
-add_subdirectory(providers/anilist)
 add_subdirectory(providers/duckduckgo)
 add_subdirectory(providers/themoviedb)
 add_subdirectory(providers/omdb)
@@ -64,7 +63,6 @@ set(KLOOKUP_PROVIDERS
     provider_wikipedia
     provider_github
     provider_mangaupdates
-    provider_anilist
     provider_duckduckgo
     provider_themoviedb
     provider_omdb

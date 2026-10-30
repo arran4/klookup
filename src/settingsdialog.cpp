@@ -189,7 +189,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         m_packagesChanged = true;
         m_packageList->item(row)->setText(m_packages[row].package.name() + QStringLiteral(" — Revocation pending Apply"));
     });
-    connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; saveSettings(); });
+    connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; m_retryPackages = true; saveSettings(); });
     updatePackage(-1);
     addPage(packagePage, QStringLiteral("Script packages"));
 
@@ -355,9 +355,13 @@ void SettingsDialog::saveSettings()
         }
     }
 
+    QStringList changedPackages;
     for (int row = 0; row < m_packages.size(); ++row) {
         const auto &pkg = m_packages[row].package;
         const bool enabled = m_packageList->item(row)->checkState() == Qt::Checked;
+        const bool changedEnablement = enabled != providersGroup.readEntry(pkg.id() + QStringLiteral("_Enabled"), true);
+        const QByteArray oldApproval = providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray());
+        const bool oldRevoked = providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false);
         providersGroup.writeEntry(pkg.id() + QStringLiteral("_Enabled"), enabled);
         if (m_approvalDrafts.contains(pkg.id())) {
             const bool approve = m_approvalDrafts.value(pkg.id());
@@ -368,6 +372,10 @@ void SettingsDialog::saveSettings()
             }
             pkg.saveApproval(providersGroup, approve);
         }
+        if (m_retryPackages || changedEnablement ||
+            oldApproval != providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray()) ||
+            oldRevoked != providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false))
+            changedPackages.append(pkg.id());
         for (auto *provider : m_providers) if (provider->id() == pkg.id())
             provider->setEnabled(enabled && (!m_approvalDrafts.contains(pkg.id()) || m_approvalDrafts.value(pkg.id())));
     }
@@ -390,6 +398,7 @@ void SettingsDialog::saveSettings()
         m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());
     }
     emit settingsApplied();
+    if (m_retryPackages || !changedPackages.isEmpty()) emit packageChangesApplied(changedPackages);
     if (m_packagesChanged) accept(); // Recreate packages only after widgets release their provider references.
 }
 

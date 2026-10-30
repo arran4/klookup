@@ -104,6 +104,7 @@ public:
     int delayMs = 0;
     bool transportError = false;
     int aborted = 0;
+    std::function<void()> onAbort;
     QList<QUrl> requests;
     QList<QPointer<MockReply>> replies;
 
@@ -114,7 +115,7 @@ protected:
         Q_UNUSED(outgoingData);
         requests.append(req.url());
         auto reply = [this](const QByteArray &data) {
-            auto *result = new MockReply(data, this, status, suppress ? -1 : delayMs, transportError, [this] { ++aborted; });
+            auto *result = new MockReply(data, this, status, suppress ? -1 : delayMs, transportError, [this] { ++aborted; if (onAbort) onAbort(); });
             replies.append(result);
             return result;
         };
@@ -401,6 +402,44 @@ private Q_SLOTS:
         QVERIFY(!window.fallbackProvider(QStringLiteral("tvmaze")));
         MainWindow restarted;
         QVERIFY(!restarted.provider(QStringLiteral("tvmaze")));
+    }
+
+    void testTabClosureReloadAndTemplateDestruction()
+    {
+        int aborted = 0;
+        auto window = std::make_unique<MainWindow>();
+        const QStringList paths{QStringLiteral(PROJECT_SOURCE_DIR "/providers.d")};
+        window->loadPlugins(paths);
+        window->setPackageTrusted(QStringLiteral("tvmaze"), true);
+        window->setNetworkAccessManagerFactory([&](QObject *parent) {
+            auto *nam = new MockTvMazeNam(m_searchFixture, m_showFixture, parent);
+            nam->suppress = true;
+            nam->onAbort = [&] { ++aborted; };
+            return nam;
+        });
+        window->loadPlugins(paths);
+        QVERIFY(window->provider(QStringLiteral("tvmaze")));
+        for (auto *provider : window->providers()) provider->setEnabled(provider->id() == QLatin1String("tvmaze"));
+        window->performSearch(QStringLiteral("girls"));
+        QPointer<SearchWindow> detached = window->openSearchInNewWindow(QStringLiteral("girls"));
+        QVERIFY(detached);
+        window->clearSearchTabs();
+        QTRY_COMPARE(aborted, 1);
+        window->loadPlugins(paths);
+        QTRY_COMPARE(aborted, 2);
+        QVERIFY(detached->searchTab());
+        for (auto *provider : window->providers()) provider->setEnabled(provider->id() == QLatin1String("tvmaze"));
+        QPointer<SearchWindow> surviving = window->openSearchInNewWindow(QStringLiteral("girls"));
+        QVERIFY(surviving);
+        QPointer<JsProvider> clone = surviving->findChild<JsProvider *>();
+        QVERIFY(clone && clone->activeOperationCount() == 1);
+        window.reset();
+        QVERIFY(clone && clone->isLoaded());
+        QCOMPARE(clone->activeOperationCount(), 1);
+        surviving->close();
+        detached->close();
+        QTRY_VERIFY(surviving.isNull() && detached.isNull());
+        QCOMPARE(aborted, 3);
     }
 
     void testApprovalReviewCancellationAndFailureStates()

@@ -78,7 +78,7 @@ private:
         QUrl requestUrl;
         HttpRequestOptions options;
         int hops = 0;
-        QNetworkReply *reply = nullptr;
+        QPointer<QNetworkReply> reply;
         std::shared_ptr<QByteArray> buffer;
         std::shared_ptr<bool> limitExceeded;
     };
@@ -86,12 +86,14 @@ private:
     void startRequestInternal(quint64 reqId, const HttpRequestOptions &options, int hops, const QString &resolvedSecret);
 
     ProviderPackage m_package;
-    QNetworkAccessManager *m_nam = nullptr;
+    QPointer<QNetworkAccessManager> m_nam;
     bool m_ownsNam = false;
     quint64 m_requestCounter = 0;
     std::function<QString(const QString &)> m_secretResolver;
     QPointer<CredentialStore> m_credentialStore;
     QHash<quint64, ActiveReply> m_activeRequests;
+    QHash<quint64, quint64> m_pendingCredentialReads;
+    quint64 m_credentialGeneration = 0;
 };
 
 } // namespace ProviderHost

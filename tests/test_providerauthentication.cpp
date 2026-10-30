@@ -257,7 +257,7 @@ private slots:
         AuthTestProvider provider;
         ProviderAuthManager manager(nullptr);
         SettingsDialog dialog({&provider}, nullptr, &manager);
-        auto *list = dialog.findChild<QListWidget *>();
+        auto *list = dialog.findChild<QListWidget *>(QStringLiteral("nativeProviders"));
         list->setCurrentRow(0);
         auto *mode = dialog.findChild<QLabel *>(QStringLiteral("providerAuthMode"));
         QVERIFY(mode && mode->text().contains(QStringLiteral("PKCE")));

@@ -1,0 +1,21 @@
+{
+  "id": "lyrics_ovh",
+  "name": "Lyrics (OVH)",
+  "description": "Song suggestions from Lyrics.ovh, with Deezer artist, album and track links. No full lyrics.",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "https://api.lyrics.ovh"
+    ]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": false,
+    "separateContent": false,
+    "authentication": false
+  }
+}

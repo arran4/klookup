@@ -38,16 +38,14 @@ find_package(KF6 REQUIRED COMPONENTS
     Notifications
 )
 
+find_package(ZLIB REQUIRED)
+
 add_subdirectory(icons)
 add_subdirectory(src)
 add_subdirectory(providers/wikipedia)
 add_subdirectory(providers/github)
 add_subdirectory(providers/mangaupdates)
-add_subdirectory(providers/anilist)
-add_subdirectory(providers/tvmaze)
-add_subdirectory(providers/lyrics_ovh)
 add_subdirectory(providers/duckduckgo)
-add_subdirectory(providers/openlibrary)
 add_subdirectory(providers/themoviedb)
 add_subdirectory(providers/omdb)
 add_subdirectory(providers/myanimelist)
@@ -65,11 +63,7 @@ set(KLOOKUP_PROVIDERS
     provider_wikipedia
     provider_github
     provider_mangaupdates
-    provider_anilist
-    provider_tvmaze
-    provider_lyrics_ovh
     provider_duckduckgo
-    provider_openlibrary
     provider_themoviedb
     provider_omdb
     provider_myanimelist
@@ -77,6 +71,9 @@ set(KLOOKUP_PROVIDERS
     provider_mangabaka
     provider_spotify
 )
+
+string(REPLACE ";" "," builtin_native_ids "${KLOOKUP_PROVIDERS}")
+target_compile_definitions(klookup_core PRIVATE KLOOKUP_BUILTIN_NATIVE_IDS="${builtin_native_ids}")
 
 foreach(provider ${KLOOKUP_PROVIDERS})
     set_target_properties(${provider} PROPERTIES
@@ -93,12 +90,28 @@ add_custom_target(klookup_with_plugins ALL
 )
 
 if(BUILD_TESTING)
-    add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_globalshortcuts test_recentactivity test_provider_spotify test_provider_wikipedia)
-    add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
-    add_dependencies(klookup_with_plugins test_resultactions test_sourcelink)
-    if(TARGET test_shortcut_activation)
-        add_dependencies(klookup_with_plugins test_shortcut_activation)
-    endif()
+    get_property(test_targets DIRECTORY tests PROPERTY BUILDSYSTEM_TARGETS)
+    get_property(registered_tests DIRECTORY tests PROPERTY TESTS)
+    set(covered_test_sources)
+    foreach(test_target IN LISTS test_targets)
+        get_target_property(test_type ${test_target} TYPE)
+        if(test_type STREQUAL "EXECUTABLE")
+            add_dependencies(klookup_with_plugins ${test_target})
+            if(test_target MATCHES "^test_" AND NOT test_target MATCHES "_helper$" AND NOT test_target IN_LIST registered_tests)
+                message(FATAL_ERROR "Test executable omitted from CTest: ${test_target}")
+            endif()
+            get_target_property(test_sources ${test_target} SOURCES)
+            list(APPEND covered_test_sources ${test_sources})
+        endif()
+    endforeach()
+    file(GLOB expected_test_sources RELATIVE "${CMAKE_SOURCE_DIR}/tests" CONFIGURE_DEPENDS "tests/test_*.cpp")
+    foreach(test_source IN LISTS expected_test_sources)
+        if(NOT test_source IN_LIST covered_test_sources)
+            message(FATAL_ERROR "Test source omitted from executable targets: ${test_source}")
+        endif()
+    endforeach()
 endif()
+
+install(DIRECTORY providers.d/ DESTINATION ${KDE_INSTALL_DATADIR}/klookup/providers.d)
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

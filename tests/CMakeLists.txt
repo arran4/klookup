@@ -118,6 +118,34 @@ add_executable(test_autostart test_autostart.cpp)
 target_link_libraries(test_autostart Qt6::Test klookup_core KF6::ConfigCore)
 add_test(NAME test_autostart COMMAND test_autostart)
 
+add_executable(test_resultcontent test_resultcontent.cpp)
+target_link_libraries(test_resultcontent Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+add_test(NAME test_resultcontent COMMAND test_resultcontent)
+
+add_executable(test_providerapiv1 test_providerapiv1.cpp)
+target_link_libraries(test_providerapiv1 Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_providerapiv1 PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_providerapiv1 COMMAND test_providerapiv1)
+
+add_executable(test_providerdiscovery test_providerdiscovery.cpp)
+target_link_libraries(test_providerdiscovery Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_providerdiscovery PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_providerdiscovery COMMAND test_providerdiscovery)
+
+add_executable(test_jsprovider test_jsprovider.cpp)
+target_link_libraries(test_jsprovider Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus Qt6::Qml KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_jsprovider PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+add_test(NAME test_jsprovider COMMAND test_jsprovider)
+
+add_executable(test_tvmaze_scripted test_tvmaze_scripted.cpp)
+target_link_libraries(test_tvmaze_scripted Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus Qt6::Qml KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_include_directories(test_tvmaze_scripted PRIVATE ${CMAKE_SOURCE_DIR}/src )
+target_compile_definitions(test_tvmaze_scripted PRIVATE
+    FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_tvmaze_scripted COMMAND test_tvmaze_scripted)
+
 find_program(DBUS_RUN_SESSION dbus-run-session)
 if(DBUS_RUN_SESSION)
     add_executable(test_shortcut_activation test_shortcut_activation.cpp)
@@ -126,3 +154,68 @@ if(DBUS_RUN_SESSION)
     add_dependencies(test_shortcut_activation klookup)
     add_test(NAME test_shortcut_activation COMMAND ${DBUS_RUN_SESSION} -- $<TARGET_FILE:test_shortcut_activation>)
 endif()
+
+add_library(provider_mock_tvmaze MODULE provider_mock_tvmaze.cpp)
+target_link_libraries(provider_mock_tvmaze klookup_core Qt6::Core)
+set_target_properties(provider_mock_tvmaze PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obsolete"
+    OUTPUT_NAME provider_tvmaze PREFIX "")
+add_dependencies(test_tvmaze_scripted provider_mock_tvmaze)
+add_test(NAME test_staged_install COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/check_staged_install.sh" "${CMAKE_BINARY_DIR}")
+set_tests_properties(test_staged_install PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)
+
+add_executable(test_providerhost_transport test_providerhost_transport.cpp)
+target_link_libraries(test_providerhost_transport Qt6::Test klookup_core ZLIB::ZLIB)
+add_test(NAME test_providerhost_transport COMMAND test_providerhost_transport)
+
+add_executable(test_providerdiagnostics test_providerdiagnostics.cpp)
+target_link_libraries(test_providerdiagnostics Qt6::Test klookup_core)
+target_compile_definitions(test_providerdiagnostics PRIVATE
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    NATIVE_GITHUB="$<TARGET_FILE:provider_github>"
+    CHECK_BINARY="$<TARGET_FILE:klookup-provider-check>")
+add_dependencies(test_providerdiagnostics provider_github klookup-provider-check)
+add_test(NAME test_providerdiagnostics COMMAND test_providerdiagnostics)
+add_test(NAME test_test_target_coverage COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/check_test_coverage.py" "${CMAKE_SOURCE_DIR}")
+
+add_executable(check_builtin_script check_builtin_script.cpp)
+target_link_libraries(check_builtin_script klookup_core)
+file(GLOB builtin_manifests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/providers.d/*/provider.json")
+foreach(manifest IN LISTS builtin_manifests)
+    get_filename_component(package_dir "${manifest}" DIRECTORY)
+    get_filename_component(package_id "${package_dir}" NAME)
+    if(NOT EXISTS "${package_dir}/diagnostics.json")
+        message(FATAL_ERROR "Builtin script provider ${package_id} has no dedicated diagnostic fixture")
+    endif()
+    add_test(NAME "test_builtin_script_${package_id}" COMMAND check_builtin_script "${package_dir}")
+endforeach()
+
+add_executable(test_scripted_lyrics test_scripted_lyrics.cpp)
+target_link_libraries(test_scripted_lyrics Qt6::Test klookup_core)
+target_compile_definitions(test_scripted_lyrics PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_scripted_lyrics COMMAND test_scripted_lyrics)
+add_library(provider_mock_lyrics MODULE provider_mock_lyrics.cpp)
+target_link_libraries(provider_mock_lyrics klookup_core)
+set_target_properties(provider_mock_lyrics PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obsolete" OUTPUT_NAME provider_lyrics_ovh PREFIX "")
+add_dependencies(test_scripted_lyrics provider_mock_lyrics)
+target_compile_definitions(test_scripted_lyrics PRIVATE OBSOLETE_DIR="$<TARGET_FILE_DIR:provider_mock_lyrics>")
+
+add_executable(test_scripted_openlibrary test_scripted_openlibrary.cpp)
+target_link_libraries(test_scripted_openlibrary Qt6::Test klookup_core)
+target_compile_definitions(test_scripted_openlibrary PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_scripted_openlibrary COMMAND test_scripted_openlibrary)
+add_library(provider_mock_openlibrary MODULE provider_mock_openlibrary.cpp)
+target_link_libraries(provider_mock_openlibrary klookup_core)
+set_target_properties(provider_mock_openlibrary PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obsolete" OUTPUT_NAME provider_openlibrary PREFIX "")
+add_dependencies(test_scripted_openlibrary provider_mock_openlibrary)
+target_compile_definitions(test_scripted_openlibrary PRIVATE OBSOLETE_DIR="$<TARGET_FILE_DIR:provider_mock_openlibrary>")
+
+add_executable(test_scripted_anilist test_scripted_anilist.cpp)
+target_link_libraries(test_scripted_anilist Qt6::Test klookup_core)
+target_compile_definitions(test_scripted_anilist PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_scripted_anilist COMMAND test_scripted_anilist)
+add_library(provider_mock_anilist MODULE provider_mock_anilist.cpp)
+target_link_libraries(provider_mock_anilist klookup_core)
+set_target_properties(provider_mock_anilist PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/obsolete" OUTPUT_NAME provider_anilist PREFIX "")
+add_dependencies(test_scripted_anilist provider_mock_anilist)
+target_compile_definitions(test_scripted_anilist PRIVATE OBSOLETE_DIR="$<TARGET_FILE_DIR:provider_mock_anilist>")

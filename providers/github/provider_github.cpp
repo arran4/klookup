@@ -85,36 +85,44 @@ void ProviderGithub::onReplyFinished(QNetworkReply *reply)
 
     QByteArray data = reply->readAll();
 
-    QJsonParseError error;
-    QJsonDocument doc = QJsonDocument::fromJson(data, &error);
-
-    if (error.error != QJsonParseError::NoError) {
-        emit searchFailed(id(), QStringLiteral("Failed to parse JSON response"));
-        return;
-    }
-
-    QJsonObject root = doc.object();
-    QJsonArray searchArray = root.value(QStringLiteral("items")).toArray();
-
-    QList<SearchResult> results;
-    for (const QJsonValue &val : searchArray) {
-        QJsonObject obj = val.toObject();
-        SearchResult res;
-        res.id = QString::number(obj.value(QStringLiteral("id")).toInt());
-        res.title = obj.value(QStringLiteral("full_name")).toString();
-        res.description = obj.value(QStringLiteral("description")).toString();
-        res.url = obj.value(QStringLiteral("html_url")).toString();
-        res.type = QStringLiteral("repository");
-
-        QVariantMap additional;
-        additional[QStringLiteral("stars")] = obj.value(QStringLiteral("stargazers_count")).toInt();
-        additional[QStringLiteral("language")] = obj.value(QStringLiteral("language")).toString();
-        res.additionalData = additional;
-
-        results.append(res);
-    }
-
+    bool ok = false;
+    const auto results = parseResponse(data, &ok);
+    if (!ok) { emit searchFailed(id(), QStringLiteral("Invalid repository response")); return; }
     emit searchCompleted(id(), results);
+}
+
+QList<SearchResult> ProviderGithub::parseResponse(const QByteArray &data, bool *ok)
+{
+    *ok = false;
+    QJsonParseError error;
+    const auto doc = QJsonDocument::fromJson(data, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject() || !doc.object().value(QStringLiteral("items")).isArray()) return {};
+    QList<SearchResult> results;
+    for (const auto &value : doc.object().value(QStringLiteral("items")).toArray()) {
+        const auto obj = value.toObject();
+        if (!obj.value(QStringLiteral("id")).isDouble() || obj.value(QStringLiteral("full_name")).toString().isEmpty()) continue;
+        SearchResult result;
+        result.id = QString::number(obj.value(QStringLiteral("id")).toInteger());
+        result.title = obj.value(QStringLiteral("full_name")).toString();
+        result.description = obj.value(QStringLiteral("description")).toString();
+        result.url = obj.value(QStringLiteral("html_url")).toString();
+        result.type = QStringLiteral("repository");
+        result.additionalData = {{QStringLiteral("stars"), obj.value(QStringLiteral("stargazers_count")).toInt()}, {QStringLiteral("language"), obj.value(QStringLiteral("language")).toString()}};
+        results.append(result);
+    }
+    *ok = true; return results;
+}
+
+QJsonObject ProviderGithub::selfTestV1() const
+{
+    // Synthetic public metadata, never a credential or private repository.
+    bool ok = false;
+    const auto results = parseResponse(R"({"items":[{"id":42,"full_name":"fixture/雪","description":"Example","html_url":"https://github.com/fixture/example","stargazers_count":7,"language":"C++"},null]})", &ok);
+    bool passed = ok && results.size() == 1 && results.first().id == QLatin1String("42") && results.first().title == QString::fromUtf8("fixture/雪") && results.first().additionalData.value(QStringLiteral("stars")).toInt() == 7;
+    passed = passed && parseResponse(R"({"items":[]})", &ok).isEmpty() && ok;
+    parseResponse("{", &ok); passed = passed && !ok;
+    parseResponse(R"({"message":"rate limited"})", &ok); passed = passed && !ok;
+    return {{QStringLiteral("passed"), passed}};
 }
 
 SearchProvider* ProviderGithub::clone(QObject *parent) const

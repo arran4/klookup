@@ -3,6 +3,11 @@ add_library(klookup_core STATIC
     resultactions.cpp
     sourcelink.cpp
     resultcontent.cpp
+    providerapiv1.cpp
+    providerdiagnostics.cpp
+    providerpackage.cpp
+    providerhostservice.cpp
+    jsprovider.cpp
     searchprovider.cpp
     searchdashboard.cpp
     recentactivity.cpp
@@ -37,14 +42,27 @@ foreach(resource_target IN LISTS klookup_icon_resource_targets)
     set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
+set_source_files_properties(../third_party/acorn/acorn.js PROPERTIES QT_RESOURCE_ALIAS acorn.js)
+qt_add_resources(klookup_core "provider_parser" PREFIX "/klookup" OUTPUT_TARGETS parser_resource_targets
+    FILES ../third_party/acorn/acorn.js)
+foreach(resource_target IN LISTS parser_resource_targets)
+    set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endforeach()
+
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_definitions(klookup_core PRIVATE KLOOKUP_PACKAGE_INSTALL_DIR="${KDE_INSTALL_FULL_DATADIR}/klookup/providers.d")
+
+find_package(Threads REQUIRED)
 
 target_link_libraries(klookup_core PUBLIC
+    Threads::Threads
+    ZLIB::ZLIB
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
     Qt6::Network
     Qt6::DBus
+    Qt6::Qml
     KF6::GlobalAccel
     KF6::CoreAddons
     KF6::ConfigCore
@@ -90,3 +108,7 @@ install(FILES klookupui.rc DESTINATION ${KDE_INSTALL_KXMLGUIDIR}/klookup)
 install(FILES org.kde.klookup.notifyrc DESTINATION ${KDE_INSTALL_KNOTIFYRCDIR})
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/org.kde.klookup.service DESTINATION ${KDE_INSTALL_DBUSSERVICEDIR})
 
+
+add_executable(klookup-provider-check providercheckmain.cpp)
+target_link_libraries(klookup-provider-check klookup_core)
+install(TARGETS klookup-provider-check ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

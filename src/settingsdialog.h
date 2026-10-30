@@ -2,6 +2,7 @@
 #define SETTINGSDIALOG_H
 
 #include <KPageDialog>
+#include "providerpackage.h"
 #include <QListWidget>
 #include <QMap>
 #include <memory>
@@ -26,7 +27,7 @@ class SettingsDialog : public KPageDialog
 public:
     enum class PersistResult { Success, Unavailable, OpenFailed, FolderFailed, WriteFailed };
 
-    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr);
+    explicit SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent = nullptr, ProviderAuthManager *authentication = nullptr, const QList<ProviderPackageStatus> &packages = {});
     ~SettingsDialog();
 
     AutostartManager *autostartManager() const;
@@ -34,6 +35,7 @@ public:
 
 signals:
     void settingsApplied();
+    void packageChangesApplied(const QStringList &ids);
 
 protected:
     virtual bool isWalletAvailable() const;
@@ -58,6 +60,11 @@ private slots:
 
 private:
     QList<SearchProvider*> m_providers;
+    QList<ProviderPackageStatus> m_packages;
+    QListWidget *m_packageList = nullptr;
+    QMap<QString, bool> m_approvalDrafts;
+    bool m_packagesChanged = false;
+    bool m_retryPackages = false;
     ProviderAuthManager *m_authentication = nullptr;
     QMap<QString, QString> m_clientDrafts;
     QString m_authProviderId;

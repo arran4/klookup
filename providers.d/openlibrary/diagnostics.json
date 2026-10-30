@@ -1,0 +1,55 @@
+{
+  "query": "Björk 雪 & + / ?",
+  "valid": {
+    "docs": [
+      {
+        "key": "/works/OL42W",
+        "title": "Fixture 雪",
+        "author_name": [
+          "Author 雪"
+        ],
+        "first_publish_year": 1984
+      }
+    ],
+    "numFound": 1,
+    "start": 0
+  },
+  "empty": {
+    "docs": [],
+    "numFound": 0
+  },
+  "partial": {
+    "docs": [
+      null,
+      {},
+      {
+        "key": "javascript:bad",
+        "title": "bad"
+      },
+      {
+        "key": "/works/OL42W",
+        "title": "Fixture 雪",
+        "author_name": [
+          "Author 雪"
+        ],
+        "first_publish_year": 1984
+      }
+    ],
+    "numFound": 4
+  },
+  "invalid": {
+    "error": "wrong-shape"
+  },
+  "expected": {
+    "id": "/works/OL42W",
+    "title": "Fixture 雪",
+    "url": "https://openlibrary.org/works/OL42W",
+    "type": "book",
+    "additionalData": {
+      "first_publish_year": 1984,
+      "authors": [
+        "Author 雪"
+      ]
+    }
+  }
+}

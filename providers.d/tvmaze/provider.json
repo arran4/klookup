@@ -1,0 +1,19 @@
+{
+  "id": "tvmaze",
+  "name": "TVMaze",
+  "description": "Television shows and episodes from the TVMaze API",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": ["api.tvmaze.com"]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": true,
+    "separateContent": true,
+    "hierarchy": false
+  }
+}

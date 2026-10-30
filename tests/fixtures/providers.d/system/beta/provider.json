@@ -1,0 +1,13 @@
+{
+  "id": "beta",
+  "name": "Beta System Provider",
+  "description": "System unique package",
+  "version": "1.2.0",
+  "author": "KLookup Tests",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": ["api.beta.example.com", "*.beta.net"]
+  }
+}

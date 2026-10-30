@@ -1,4 +1,7 @@
 #include "settingsdialog.h"
+#include "providerdiagnostics.h"
+#include <QPlainTextEdit>
+#include <QJsonDocument>
 #include "autostartmanager.h"
 #include "searchprovider.h"
 #include "providerauthmanager.h"
@@ -7,6 +10,7 @@
 #include <QComboBox>
 #include <QFormLayout>
 #include "provideroptions.h"
+#include "providerapiv1.h"
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -25,8 +29,8 @@
 #include <KWallet>
 #endif
 
-SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent, ProviderAuthManager *authentication)
-    : KPageDialog(parent), m_providers(providers), m_authentication(authentication)
+SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget *parent, ProviderAuthManager *authentication, const QList<ProviderPackageStatus> &packages)
+    : KPageDialog(parent), m_providers(providers), m_packages(packages), m_authentication(authentication)
     , m_autostartManager(std::make_unique<AutostartManager>())
 {
 
@@ -44,7 +48,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     QWidget *providersWidget = new QWidget(this);
     QVBoxLayout *providersLayout = new QVBoxLayout(providersWidget);
     m_listWidget = new QListWidget(this);
+    m_listWidget->setObjectName(QStringLiteral("nativeProviders"));
     for (SearchProvider *provider : m_providers) {
+        if (qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(provider)) continue;
         QListWidgetItem *item = new QListWidgetItem(provider->name(), m_listWidget);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(provider->isEnabled() ? Qt::Checked : Qt::Unchecked);
@@ -127,6 +133,98 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     });
     updateAuthenticationUi();
     addPage(providersWidget, QStringLiteral("Providers"));
+
+    // Package metadata remains available even when no provider can be created.
+    auto *packagePage = new QWidget(this);
+    auto *packageLayout = new QVBoxLayout(packagePage);
+    m_packageList = new QListWidget(packagePage);
+    m_packageList->setObjectName(QStringLiteral("scriptedPackages"));
+    for (const auto &record : m_packages) {
+        auto *item = new QListWidgetItem(record.package.name() + QStringLiteral(" — ") + record.status, m_packageList);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(record.package.isEnabled() ? Qt::Checked : Qt::Unchecked);
+    }
+    packageLayout->addWidget(m_packageList);
+    auto *identity = new QLabel(packagePage);
+    identity->setObjectName(QStringLiteral("packageIdentity"));
+    identity->setTextFormat(Qt::PlainText);
+    identity->setWordWrap(true);
+    identity->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    packageLayout->addWidget(identity);
+    auto *approve = new QPushButton(QStringLiteral("Review and approve…"), packagePage);
+    approve->setObjectName(QStringLiteral("approvePackage"));
+    auto *revoke = new QPushButton(QStringLiteral("Revoke approval"), packagePage);
+    revoke->setObjectName(QStringLiteral("revokePackage"));
+    auto *retry = new QPushButton(QStringLiteral("Apply and retry discovery"), packagePage);
+    retry->setObjectName(QStringLiteral("retryPackages"));
+    auto *packageButtons = new QHBoxLayout;
+    for (auto *b : {approve, revoke, retry}) packageButtons->addWidget(b);
+    packageLayout->addLayout(packageButtons);
+    auto updatePackage = [this, identity, approve, revoke](int row) {
+        const bool selected = row >= 0 && row < m_packages.size();
+        approve->setEnabled(selected && m_packages[row].package.isValid());
+        revoke->setEnabled(selected);
+        if (!selected) { identity->clear(); return; }
+        const auto &record = m_packages[row];
+        const auto &pkg = record.package;
+        identity->setText(QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
+            .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
+                 pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
+                 pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,
+                 QString::fromLatin1(pkg.approvalFingerprint())));
+    };
+    connect(m_packageList, &QListWidget::currentRowChanged, this, updatePackage);
+    connect(m_packageList, &QListWidget::itemChanged, this, [this] { m_packagesChanged = true; });
+    connect(approve, &QPushButton::clicked, this, [this, identity] {
+        const int row = m_packageList->currentRow();
+        if (row < 0) return;
+        if (QMessageBox::question(this, QStringLiteral("Approve trusted in-process code"),
+            identity->text() + QStringLiteral("\n\nThis code runs inside KLookup. Approve these exact contents and permissions?"),
+            QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes) return;
+        m_approvalDrafts[m_packages[row].package.id()] = true;
+        m_packagesChanged = true;
+        m_packageList->item(row)->setText(m_packages[row].package.name() + QStringLiteral(" — Approval pending Apply"));
+    });
+    connect(revoke, &QPushButton::clicked, this, [this] {
+        const int row = m_packageList->currentRow();
+        if (row < 0) return;
+        m_approvalDrafts[m_packages[row].package.id()] = false;
+        m_packagesChanged = true;
+        m_packageList->item(row)->setText(m_packages[row].package.name() + QStringLiteral(" — Revocation pending Apply"));
+    });
+    connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; m_retryPackages = true; saveSettings(); });
+    updatePackage(-1);
+    addPage(packagePage, QStringLiteral("Script packages"));
+
+    auto *health = new QWidget(this);
+    auto *healthLayout = new QVBoxLayout(health);
+    auto *healthList = new QListWidget(health);
+    healthList->setObjectName(QStringLiteral("diagnosticProviders"));
+    const auto diagnosticSources = ProviderDiagnostics::forSettings(m_providers, m_packages);
+    for (const auto &source : diagnosticSources) healthList->addItem(source.id + QStringLiteral(" (") + source.type + QStringLiteral(")"));
+    healthLayout->addWidget(healthList);
+    auto *mode = new QComboBox(health);
+    mode->addItems({QStringLiteral("Passive preflight"), QStringLiteral("Offline fixtures (execute approved code)"), QStringLiteral("Live probes (allow network, no credentials)")});
+    mode->setObjectName(QStringLiteral("diagnosticMode"));
+    healthLayout->addWidget(mode);
+    auto *output = new QPlainTextEdit(health); output->setReadOnly(true);
+    output->setObjectName(QStringLiteral("diagnosticOutput")); healthLayout->addWidget(output);
+    auto *buttons = new QHBoxLayout;
+    auto *one = new QPushButton(QStringLiteral("Check selected / Retry"), health);
+    auto *all = new QPushButton(QStringLiteral("Check all providers"), health);
+    auto *stop = new QPushButton(QStringLiteral("Cancel checks"), health);
+    one->setObjectName(QStringLiteral("checkProvider")); all->setObjectName(QStringLiteral("checkAllProviders"));
+    buttons->addWidget(one); buttons->addWidget(all); buttons->addWidget(stop); healthLayout->addLayout(buttons);
+    auto *diagnostics = new ProviderDiagnostics(health);
+    connect(one, &QPushButton::clicked, this, [=] {
+        const int row = healthList->currentRow();
+        if (row >= 0 && row < diagnosticSources.size()) { output->clear(); diagnostics->run({diagnosticSources[row]}, static_cast<ProviderDiagnostics::Mode>(mode->currentIndex())); }
+    });
+    connect(all, &QPushButton::clicked, this, [=] { output->clear(); diagnostics->run(diagnosticSources, static_cast<ProviderDiagnostics::Mode>(mode->currentIndex())); });
+    connect(stop, &QPushButton::clicked, diagnostics, &ProviderDiagnostics::cancel);
+    connect(diagnostics, &ProviderDiagnostics::resultReady, health, [output](quint64, const QJsonObject &row) { output->appendPlainText(QString::fromUtf8(QJsonDocument(row).toJson(QJsonDocument::Compact))); });
+    addPage(health, QStringLiteral("Provider health"));
+
 
     // General Settings Tab
     QWidget *generalWidget = new QWidget(this);
@@ -290,6 +388,31 @@ void SettingsDialog::saveSettings()
         }
     }
 
+    QStringList changedPackages;
+    for (int row = 0; row < m_packages.size(); ++row) {
+        const auto &pkg = m_packages[row].package;
+        const bool enabled = m_packageList->item(row)->checkState() == Qt::Checked;
+        const bool changedEnablement = enabled != providersGroup.readEntry(pkg.id() + QStringLiteral("_Enabled"), true);
+        const QByteArray oldApproval = providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray());
+        const bool oldRevoked = providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false);
+        providersGroup.writeEntry(pkg.id() + QStringLiteral("_Enabled"), enabled);
+        if (m_approvalDrafts.contains(pkg.id())) {
+            const bool approve = m_approvalDrafts.value(pkg.id());
+            const auto current = ProviderPackage::fromDirectory(pkg.packageDir(), pkg.locationType());
+            if (approve && (!current.isValid() || current.approvalFingerprint() != pkg.approvalFingerprint())) {
+                displayWarning(QStringLiteral("Package changed"), QStringLiteral("The package changed during review. Retry discovery and review it again."));
+                return;
+            }
+            pkg.saveApproval(providersGroup, approve);
+        }
+        if (m_retryPackages || changedEnablement ||
+            oldApproval != providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray()) ||
+            oldRevoked != providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false))
+            changedPackages.append(pkg.id());
+        for (auto *provider : m_providers) if (provider->id() == pkg.id())
+            provider->setEnabled(enabled && (!m_approvalDrafts.contains(pkg.id()) || m_approvalDrafts.value(pkg.id())));
+    }
+
     if (!m_authProviderId.isEmpty()) m_clientDrafts[m_authProviderId] = m_clientId->text().trimmed();
     for (auto it = m_clientDrafts.cbegin(); it != m_clientDrafts.cend(); ++it) {
         KConfigGroup auth(config, QStringLiteral("Authentication-") + it.key());
@@ -308,6 +431,8 @@ void SettingsDialog::saveSettings()
         m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());
     }
     emit settingsApplied();
+    if (m_retryPackages || !changedPackages.isEmpty()) emit packageChangesApplied(changedPackages);
+    if (m_packagesChanged) accept(); // Recreate packages only after widgets release their provider references.
 }
 
 SettingsDialog::PersistResult SettingsDialog::performPersistence(const QString &providerId, const QString &token)

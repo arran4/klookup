@@ -44,7 +44,6 @@ add_subdirectory(providers/wikipedia)
 add_subdirectory(providers/github)
 add_subdirectory(providers/mangaupdates)
 add_subdirectory(providers/anilist)
-add_subdirectory(providers/tvmaze)
 add_subdirectory(providers/lyrics_ovh)
 add_subdirectory(providers/duckduckgo)
 add_subdirectory(providers/openlibrary)
@@ -66,7 +65,6 @@ set(KLOOKUP_PROVIDERS
     provider_github
     provider_mangaupdates
     provider_anilist
-    provider_tvmaze
     provider_lyrics_ovh
     provider_duckduckgo
     provider_openlibrary
@@ -95,7 +93,7 @@ add_custom_target(klookup_with_plugins ALL
 if(BUILD_TESTING)
     add_dependencies(klookup_with_plugins test_appicon test_clipboardinput test_clipboardpolicy test_providerauthentication test_globalshortcuts test_recentactivity test_provider_spotify test_provider_wikipedia)
     add_dependencies(klookup_with_plugins test_searchcontinuation test_searchdashboard test_mainwindow test_session_lifecycle test_session_lifecycle_helper test_searchtab test_provider_network test_provider_settings_lifecycle test_provider_settings_lifecycle_helper provider_mock_alpha provider_mock_beta)
-    add_dependencies(klookup_with_plugins test_resultactions test_sourcelink test_provider_mangadex test_provider_mangabaka test_independent_windows test_autostart test_resultcontent test_providerapiv1 test_providerdiscovery test_jsprovider)
+    add_dependencies(klookup_with_plugins test_resultactions test_sourcelink test_provider_mangadex test_provider_mangabaka test_independent_windows test_autostart test_resultcontent test_providerapiv1 test_providerdiscovery test_jsprovider test_tvmaze_scripted)
     if(TARGET test_customhttp)
         add_dependencies(klookup_with_plugins test_customhttp)
     endif()
@@ -103,5 +101,7 @@ if(BUILD_TESTING)
         add_dependencies(klookup_with_plugins test_shortcut_activation)
     endif()
 endif()
+
+install(DIRECTORY providers.d/ DESTINATION ${KDE_INSTALL_DATADIR}/klookup/providers.d)
 
 feature_summary(WHAT ALL INCLUDE_QUIET_PACKAGES FATAL_ON_MISSING_REQUIRED_PACKAGES)

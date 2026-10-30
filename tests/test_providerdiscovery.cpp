@@ -11,6 +11,9 @@
 #include <QNetworkRequest>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <KConfig>
+#include <KConfigGroup>
+#include "jsprovider.h"
 #include <QTest>
 #include <QTimer>
 
@@ -144,6 +147,173 @@ class TestProviderDiscovery : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
+    void testApprovalFingerprintAndRevocation()
+    {
+        QTemporaryDir temp;
+        const QString root = temp.path() + QStringLiteral("/alpha");
+        QVERIFY(QDir().mkpath(root));
+        auto write = [&](const QString &name, const QByteArray &data) {
+            QFile f(root + QLatin1Char('/') + name);
+            return f.open(QIODevice::WriteOnly) && f.write(data) == data.size();
+        };
+        QVERIFY(write(QStringLiteral("provider.json"), "{\"id\":\"alpha\",\"name\":\"Alpha\",\"permissions\":{\"origins\":[\"https://example.com\"]}}"));
+        QVERIFY(write(QStringLiteral("main.mjs"), "import {x} from './helper'; export function search() { return []; }"));
+        QVERIFY(write(QStringLiteral("helper"), "export const x = 1;"));
+        QVERIFY(write(QStringLiteral("image.bin"), QByteArray::fromHex("00ff012227")));
+        auto pkg = ProviderPackage::fromDirectory(root);
+        QVERIFY2(pkg.isValid(), qPrintable(pkg.validationError()));
+        KConfig config(temp.path() + QStringLiteral("/approvalrc"), KConfig::SimpleConfig);
+        KConfigGroup group(&config, QStringLiteral("Providers"));
+        QVERIFY(!pkg.approved(group));
+        group.writeEntry(QStringLiteral("alpha_Trusted"), true);
+        QVERIFY(!pkg.approved(group)); // Legacy ID-only approval is ignored.
+        pkg.saveApproval(group, true);
+        QVERIFY(pkg.approved(group));
+        auto reloaded = ProviderPackage::fromDirectory(root);
+        QVERIFY(reloaded.approved(group));
+        auto custom = ProviderPackage::fromDirectory(root, ProviderPackage::LocationType::Custom);
+        QVERIFY(!custom.approved(group));
+        auto system = ProviderPackage::fromDirectory(root, ProviderPackage::LocationType::System);
+        QVERIFY(!system.isDistributionPackage()); // Arbitrary XDG_DATA_DIRS is not a distribution root.
+        QVERIFY(!system.approved(group));
+        QTemporaryDir snapshot;
+        QString error;
+        QVERIFY2(pkg.writeVerifiedSnapshot(snapshot.path(), &error), qPrintable(error));
+        QVERIFY(QFile::exists(snapshot.path() + QStringLiteral("/helper")));
+        QVERIFY(write(QStringLiteral("helper"), "export const x = 2;"));
+        QVERIFY(!ProviderPackage::fromDirectory(root).approved(group));
+        QVERIFY(!pkg.writeVerifiedSnapshot(snapshot.path(), &error));
+        QVERIFY(error.contains(QStringLiteral("changed")));
+        reloaded = ProviderPackage::fromDirectory(root);
+        reloaded.saveApproval(group, true);
+        QVERIFY(reloaded.approved(group));
+        reloaded.saveApproval(group, false);
+        QVERIFY(!reloaded.approved(group));
+        QVERIFY(write(QStringLiteral("main.mjs"), "export function search() { return []; }"));
+        QVERIFY(!ProviderPackage::fromDirectory(root).approved(group)); // Revocation survives upgrades.
+        group.sync();
+        KConfig restarted(temp.path() + QStringLiteral("/approvalrc"), KConfig::SimpleConfig);
+        QVERIFY(!ProviderPackage::fromDirectory(root).approved(KConfigGroup(&restarted, QStringLiteral("Providers"))));
+    }
+
+    void testApprovalDoesNotFollowIdOrPermissions()
+    {
+        QTemporaryDir temp;
+        KConfig config(temp.path() + QStringLiteral("/config"), KConfig::SimpleConfig);
+        KConfigGroup group(&config, QStringLiteral("Providers"));
+        const QString first = temp.path() + QStringLiteral("/first");
+        const QString second = temp.path() + QStringLiteral("/second");
+        for (const auto &root : {first, second}) {
+            QVERIFY(QDir().mkpath(root));
+            QFile manifest(root + QStringLiteral("/provider.json"));
+            QVERIFY(manifest.open(QIODevice::WriteOnly));
+            manifest.write("{\"id\":\"alpha\",\"name\":\"Alpha\",\"permissions\":{\"origins\":[\"https://example.com\"]}}");
+            QFile entry(root + QStringLiteral("/main.mjs"));
+            QVERIFY(entry.open(QIODevice::WriteOnly));
+            entry.write("export function search() { return []; }");
+        }
+        auto pkg = ProviderPackage::fromDirectory(first);
+        QVERIFY(pkg.isValid());
+        pkg.saveApproval(group, true);
+        QCOMPARE(pkg.contentHash(), ProviderPackage::fromDirectory(second).contentHash());
+        QVERIFY(!ProviderPackage::fromDirectory(second).approved(group));
+        const QByteArray original = "{\"id\":\"alpha\",\"name\":\"Alpha\",\"permissions\":{\"origins\":[\"https://example.com\"]}}";
+        for (const auto &manifest : {QByteArray(original).replace("example.com", "other.example"),
+            QByteArray(original).replace("\"origins\":", "\"secrets\":[\"key\"],\"origins\":"),
+            QByteArray(original).replace("\"name\":\"Alpha\"", "\"name\":\"Alpha 2\"")}) {
+            QFile file(first + QStringLiteral("/provider.json"));
+            QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(manifest);
+            file.close();
+            QVERIFY(!ProviderPackage::fromDirectory(first).approved(group));
+        }
+    }
+
+    void testSnapshotRejectsExternalImportsAndSymlinks()
+    {
+        QTemporaryDir temp;
+        QFile manifest(temp.filePath(QStringLiteral("provider.json")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"alpha\",\"name\":\"Alpha\"}");
+        manifest.close();
+        for (const QByteArray &module : {QByteArray("import /* comment */ x from '../outside.mjs'; export function search() {}"),
+                 QByteArray("export {x} from '/tmp/outside.mjs'; export function search() {}"),
+                 QByteArray("import 'file:///tmp/outside.mjs'; export function search() {}"),
+                 QByteArray("export function search() { return import('./dynamic.mjs'); }"),
+                 QByteArray("const r = /'/; import '/tmp/outside.mjs'; const s = '\"'; export function search() {}"),
+                 QByteArray("export function search() { return `x${import('/tmp/outside.mjs')}`; }")}) {
+            QFile entry(temp.filePath(QStringLiteral("main.mjs")));
+            QVERIFY(entry.open(QIODevice::WriteOnly));
+            entry.write(module);
+            entry.close();
+            auto pkg = ProviderPackage::fromDirectory(temp.path());
+            QVERIFY(pkg.isValid());
+            pkg.setTrusted(true);
+            JsProvider provider(pkg);
+            QVERIFY(!provider.isLoaded());
+            QVERIFY(provider.loadError().contains(QStringLiteral("import")));
+        }
+        QVERIFY(QFile::link(QStringLiteral("/etc/passwd"), temp.filePath(QStringLiteral("escape"))));
+        QVERIFY(!ProviderPackage::fromDirectory(temp.path()).isValid());
+    }
+
+    void testXdgProvenanceAndInvalidVisibility()
+    {
+        QTemporaryDir temp;
+        const QByteArray oldHome = qgetenv("XDG_DATA_HOME");
+        const QByteArray oldDirs = qgetenv("XDG_DATA_DIRS");
+        const QString user = temp.path() + QStringLiteral("/user");
+        const QString system = temp.path() + QStringLiteral("/system");
+        const QString suffix = QStringLiteral("/klookup/providers.d/alpha");
+        for (const auto &base : {user, system}) {
+            QVERIFY(QDir().mkpath(base + suffix));
+            QVERIFY(QFile::copy(QStringLiteral(FIXTURES_DIR "/providers.d/user/alpha/provider.json"), base + suffix + QStringLiteral("/provider.json")));
+            QVERIFY(QFile::copy(QStringLiteral(FIXTURES_DIR "/providers.d/user/alpha/main.mjs"), base + suffix + QStringLiteral("/main.mjs")));
+        }
+        qputenv("XDG_DATA_HOME", user.toUtf8());
+        qputenv("XDG_DATA_DIRS", system.toUtf8());
+        const auto packages = ProviderPackageDiscovery::discoverPackages({system + QStringLiteral("/klookup/providers.d")});
+        QVERIFY(!packages.isEmpty());
+        QCOMPARE(packages.first().locationType(), ProviderPackage::LocationType::User);
+        QCOMPARE(packages.first().packageDir(), user + suffix);
+        QFile(user + suffix + QStringLiteral("/main.mjs")).remove();
+        const auto broken = ProviderPackageDiscovery::discoverPackages();
+        QVERIFY(!broken.isEmpty());
+        QVERIFY(!broken.first().isValid()); // Broken user override remains visible and blocks duplicate system ID.
+        qputenv("XDG_DATA_HOME", oldHome);
+        qputenv("XDG_DATA_DIRS", oldDirs);
+    }
+
+    void testPackageReadLimits()
+    {
+        QTemporaryDir temp;
+        QFile manifest(temp.filePath(QStringLiteral("provider.json")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"bounded\",\"name\":\"Bounded\"}");
+        manifest.close();
+        QFile entry(temp.filePath(QStringLiteral("main.mjs")));
+        QVERIFY(entry.open(QIODevice::WriteOnly));
+        entry.write("export function search() { return []; }");
+        entry.close();
+        QFile asset(temp.filePath(QStringLiteral("asset.bin")));
+        QVERIFY(asset.open(QIODevice::WriteOnly));
+        QVERIFY(asset.resize(5 * 1024 * 1024));
+        asset.close();
+        QVERIFY(ProviderPackage::fromDirectory(temp.path()).isValid());
+        QVERIFY(asset.open(QIODevice::WriteOnly | QIODevice::Append));
+        asset.write("x");
+        asset.close();
+        const auto oversizedAsset = ProviderPackage::fromDirectory(temp.path());
+        QVERIFY(!oversizedAsset.isValid());
+        QVERIFY(oversizedAsset.validationError().contains(QStringLiteral("size limit")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        QVERIFY(manifest.resize(1024 * 1024 + 1));
+        manifest.close();
+        const auto oversizedManifest = ProviderPackage::fromDirectory(temp.path());
+        QVERIFY(!oversizedManifest.isValid());
+        QVERIFY(oversizedManifest.validationError().contains(QStringLiteral("1 MiB")));
+    }
+
     void testDiscoveryPrecedence()
     {
         const QString fixtureDir = QStringLiteral(FIXTURES_DIR "/providers.d");

@@ -736,7 +736,7 @@ private slots:
         QCheckBox *minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         QVERIFY(minimizeCheck);
         minimizeCheck->setChecked(false);
-        QListWidget* listWidget = dialog->findChild<QListWidget*>();
+        QListWidget* listWidget = dialog->findChild<QListWidget*>(QStringLiteral("nativeProviders"));
         QVERIFY(listWidget);
         QVERIFY(listWidget->count() > 0);
         listWidget->item(0)->setCheckState(Qt::Unchecked);
@@ -753,7 +753,7 @@ private slots:
         minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         minimizeCheck->setChecked(false);
 
-        listWidget = dialog->findChild<QListWidget*>();
+        listWidget = dialog->findChild<QListWidget*>(QStringLiteral("nativeProviders"));
         QVERIFY(listWidget && listWidget->count() > 0);
         listWidget->item(0)->setCheckState(Qt::Unchecked);
 
@@ -788,7 +788,7 @@ private slots:
         dialog->show();
         minimizeCheck = dialog->findChild<QCheckBox*>(QStringLiteral("minimizeToTray"));
         minimizeCheck->setChecked(true);
-        listWidget = dialog->findChild<QListWidget*>();
+        listWidget = dialog->findChild<QListWidget*>(QStringLiteral("nativeProviders"));
         QVERIFY(listWidget);
         QVERIFY(listWidget->count() > 0);
         listWidget->item(0)->setCheckState(Qt::Checked);
@@ -836,7 +836,7 @@ private slots:
 
         TestableSettingsDialog dialog(providers);
 
-        QListWidget *listWidget = dialog.findChild<QListWidget*>();
+        QListWidget *listWidget = dialog.findChild<QListWidget*>(QStringLiteral("nativeProviders"));
         QVERIFY(listWidget);
         QVERIFY(listWidget->count() > 0);
         listWidget->setCurrentRow(0);

@@ -624,7 +624,7 @@ void TestProviderMangaBaka::testFormatSettings()
     }
     QVERIFY(provider.formats().isEmpty());
     SettingsDialog dialog({&provider});
-    dialog.findChild<QListWidget *>()->setCurrentRow(0);
+    dialog.findChild<QListWidget *>(QStringLiteral("nativeProviders"))->setCurrentRow(0);
     auto *all = dialog.findChild<QCheckBox *>(QStringLiteral("allFormats"));
     QVERIFY(all->isChecked());
     all->setChecked(false);

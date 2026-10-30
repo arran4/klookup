@@ -19,6 +19,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <cstring>
 
 class ScriptFixtureReply : public QNetworkReply {
@@ -53,10 +54,12 @@ public:
     int status = 200;
     bool delayed = false;
     QList<QNetworkRequest> requests;
+    QList<qint64> requestTimes;
     QPointer<ScriptFixtureReply> last;
 protected:
     QNetworkReply *createRequest(Operation, const QNetworkRequest &request, QIODevice *) override {
         requests.append(request);
+        QElapsedTimer clock; clock.start(); requestTimes.append(clock.msecsSinceReference());
         last = new ScriptFixtureReply(request, response, status, this, delayed);
         return last;
     }
@@ -126,7 +129,53 @@ private slots:
             QVERIFY(failed.first()[2].toString().contains(QStringLiteral("3 seconds")));
             provider.search(query); QTRY_COMPARE(failed.count(), 2);
             QCOMPARE(network.requests.size(), 1); // respect cooldown, no retry loop
+            QTest::qWait(3050); // The application-wide origin cooldown survives this instance.
         }
+    }
+    void independentTabsShareSpacingAndQueuedCancellation() {
+        ScriptFixtureNetwork firstNetwork, secondNetwork;
+        firstNetwork.response = secondNetwork.response = QJsonDocument(fixture.value(QStringLiteral("empty")).toObject()).toJson();
+        ProviderHost::ProviderHostService firstHost(package, nullptr, &firstNetwork), secondHost(package, nullptr, &secondNetwork);
+        JsProvider first(package, nullptr, &firstHost), second(package, nullptr, &secondHost);
+        QSignalSpy firstReady(&first, &ProviderApiV1::ProviderV1::pageReady), secondReady(&second, &ProviderApiV1::ProviderV1::pageReady);
+        first.search(QStringLiteral("first independent tab"));
+        second.search(QStringLiteral("second independent tab"));
+        QTRY_COMPARE(firstReady.count() + secondReady.count(), 2);
+        QCOMPARE(firstNetwork.requests.size(), 1);
+        QCOMPARE(secondNetwork.requests.size(), 1);
+        QVERIFY(qAbs(secondNetwork.requestTimes.first() - firstNetwork.requestTimes.first()) >= 1000);
+
+        // Cancellation while waiting for the shared slot never starts HTTP.
+        const auto cancelled = first.search(QStringLiteral("cancel queued tab"));
+        first.cancel(cancelled);
+        QTest::qWait(1050);
+        QCOMPARE(firstNetwork.requests.size(), 1);
+        QCOMPARE(firstReady.count(), 1);
+    }
+    void retryAfterSurvivesHostDestructionAndNewTab() {
+        {
+            ScriptFixtureNetwork network;
+            network.response = "{}"; network.status = 429;
+            ProviderHost::ProviderHostService host(package, nullptr, &network);
+            JsProvider provider(package, nullptr, &host);
+            QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed);
+            provider.search(QStringLiteral("rate limited old tab"));
+            QTRY_COMPARE(failed.count(), 1);
+            QCOMPARE(network.requests.size(), 1);
+        }
+        ScriptFixtureNetwork network;
+        network.response = QJsonDocument(fixture.value(QStringLiteral("empty")).toObject()).toJson();
+        ProviderHost::ProviderHostService host(package, nullptr, &network);
+        JsProvider provider(package, nullptr, &host);
+        QSignalSpy failed(&provider, &ProviderApiV1::ProviderV1::pageFailed), ready(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider.search(QStringLiteral("new tab during cooldown"));
+        QTRY_COMPARE(failed.count(), 1);
+        QVERIFY(failed.first()[2].toString().contains(QStringLiteral("rate limited")));
+        QCOMPARE(network.requests.size(), 0);
+        QTest::qWait(3050);
+        provider.search(QStringLiteral("new tab after cooldown"));
+        QTRY_COMPARE(ready.count(), 1);
+        QCOMPARE(network.requests.size(), 1);
     }
     void documentedPaginationUsesOffsets() {
         ScriptFixtureNetwork network;

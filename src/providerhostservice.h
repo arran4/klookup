@@ -26,6 +26,7 @@ struct HttpRequestOptions {
     QMap<QString, QString> headers;
     QByteArray body;
     int timeoutMs = 10000;
+    int minimumIntervalMs = 0;
     quint64 requestId = 0;
     QString secretKey;
     QString secretHeader;

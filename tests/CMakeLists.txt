@@ -167,3 +167,25 @@ set_tests_properties(test_staged_install PROPERTIES SKIP_RETURN_CODE 77 RUN_SERI
 add_executable(test_providerhost_transport test_providerhost_transport.cpp)
 target_link_libraries(test_providerhost_transport Qt6::Test klookup_core ZLIB::ZLIB)
 add_test(NAME test_providerhost_transport COMMAND test_providerhost_transport)
+
+add_executable(test_providerdiagnostics test_providerdiagnostics.cpp)
+target_link_libraries(test_providerdiagnostics Qt6::Test klookup_core)
+target_compile_definitions(test_providerdiagnostics PRIVATE
+    PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    NATIVE_GITHUB="$<TARGET_FILE:provider_github>"
+    CHECK_BINARY="$<TARGET_FILE:klookup-provider-check>")
+add_dependencies(test_providerdiagnostics provider_github klookup-provider-check)
+add_test(NAME test_providerdiagnostics COMMAND test_providerdiagnostics)
+add_test(NAME test_test_target_coverage COMMAND ${Python3_EXECUTABLE} "${CMAKE_CURRENT_SOURCE_DIR}/check_test_coverage.py" "${CMAKE_SOURCE_DIR}")
+
+add_executable(check_builtin_script check_builtin_script.cpp)
+target_link_libraries(check_builtin_script klookup_core)
+file(GLOB builtin_manifests CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/providers.d/*/provider.json")
+foreach(manifest IN LISTS builtin_manifests)
+    get_filename_component(package_dir "${manifest}" DIRECTORY)
+    get_filename_component(package_id "${package_dir}" NAME)
+    if(NOT EXISTS "${package_dir}/diagnostics.json")
+        message(FATAL_ERROR "Builtin script provider ${package_id} has no dedicated diagnostic fixture")
+    endif()
+    add_test(NAME "test_builtin_script_${package_id}" COMMAND check_builtin_script "${package_dir}")
+endforeach()

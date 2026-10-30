@@ -186,6 +186,9 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
         fail(request, QStringLiteral("Provider HTTP request timed out"));
     });
     request->timer->start(timeout);
+    if (m_diagnosticMode && (!m_allowNetwork || !options.secretKey.isEmpty())) {
+        fail(request, QStringLiteral("Network or credentials unavailable in this diagnostic mode")); return id;
+    }
     if (!m_package.isValid() || !m_package.isTrusted()) {
         fail(request, QStringLiteral("Untrusted provider package '%1' cannot make network requests.").arg(m_package.id())); return id;
     }

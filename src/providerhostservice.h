@@ -66,6 +66,9 @@ public:
     }
     CredentialStore *credentialStore() const { return m_credentialStore; }
 
+    bool isDiagnosticMode() const { return m_diagnosticMode; }
+    void setDiagnosticPolicy(bool allowNetwork) { m_diagnosticMode = true; m_allowNetwork = allowNetwork; }
+
     quint64 executeHttpRequest(const HttpRequestOptions &options);
     void cancelRequest(quint64 requestId);
     void cancelAllRequests();
@@ -84,6 +87,8 @@ private:
     void fail(const Request &request, const QString &message, bool truncated = false);
     void retire(const Request &request);
 
+    bool m_diagnosticMode = false;
+    bool m_allowNetwork = true;
     ProviderPackage m_package;
     QPointer<QNetworkAccessManager> m_nam;
     quint64 m_requestCounter = 0;

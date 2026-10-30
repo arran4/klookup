@@ -35,6 +35,14 @@ public:
     ProviderApiV1::Capabilities capabilities() const override;
     bool isLoaded() const { return m_loaded; }
     QString loadError() const { return m_loadError; }
+    quint64 check(bool live = false, quint64 requestId = 0);
+    bool hasCheck(bool live = false) const;
+
+signals:
+    void checkReady(quint64 requestId, const QJsonObject &result);
+    void checkFailed(quint64 requestId, ProviderApiV1::ErrorCode code);
+
+public:
     quint64 search(const QString &query, quint64 requestId = 0) override;
     quint64 getPage(const QString &query, const QString &pageToken, quint64 requestId = 0) override;
     quint64 getDetails(const QString &resultId, quint64 requestId = 0) override;
@@ -62,7 +70,7 @@ protected:
 private:
     friend class JsHostBridge;
     friend class JsInterruptionGate;
-    enum class Kind { Page, Details, Content, ContentFromDetails };
+    enum class Kind { Page, Details, Content, ContentFromDetails, Check };
     struct Operation {
         Kind kind = Kind::Page;
         quint64 token = 0;

@@ -298,8 +298,15 @@ void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_providers, this, m_authManager, m_packages);
     connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
+    bool reloadPackages = false;
+    QStringList changedPackages;
+    connect(&dialog, &SettingsDialog::packageChangesApplied, this, [&](const QStringList &ids) {
+        reloadPackages = true;
+        changedPackages.append(ids);
+        changedPackages.removeDuplicates();
+    });
     dialog.exec();
-    loadPlugins(m_customPackagePaths, m_customPluginPaths);
+    if (reloadPackages) loadPlugins(m_customPackagePaths, m_customPluginPaths, changedPackages);
 
     m_recent->reloadPolicy();
     // We re-check clipboard monitoring if settings change
@@ -377,10 +384,16 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
     }
 }
 
-void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStringList &customPluginPaths)
+void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStringList &customPluginPaths,
+                             const QStringList &packageIdsToInvalidate)
 {
     // Retire operations held by open tabs/windows before replacing templates.
-    for (auto *adapter : m_scriptedAdapters) emit packageReloaded(adapter->id());
+    // An explicit discovery retry invalidates all packages; a Settings apply
+    // retires only the providers whose approval or enablement actually changed.
+    for (auto *adapter : m_scriptedAdapters) {
+        if (packageIdsToInvalidate.isEmpty() || packageIdsToInvalidate.contains(adapter->id()))
+            emit packageReloaded(adapter->id());
+    }
     // 1. Restore any native providers that were previously overridden
     for (auto it = m_fallbackProviders.cbegin(); it != m_fallbackProviders.cend(); ++it) {
         for (int i = 0; i < m_providers.size(); ++i) {

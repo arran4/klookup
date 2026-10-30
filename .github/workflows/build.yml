@@ -47,7 +47,7 @@ jobs:
       run: ./.jules/run.sh cmake --build build-san --parallel
 
     - name: Run sanitizer CTest with leak detection
-      env:
-        ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
-        UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-      run: ./.jules/run.sh ctest --test-dir build-san --output-on-failure
+      run: |
+        ./.jules/run.sh env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+          UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+          ctest --test-dir build-san --output-on-failure

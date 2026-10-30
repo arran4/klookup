@@ -52,7 +52,7 @@ jobs:
         run: |
           set -euo pipefail
           ./.jules/run.sh apt-get update
-          ./.jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev zlib1g-dev cmake ninja-build build-essential g++
+          ./.jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev zlib1g-dev cmake ninja-build build-essential g++ reuse
       - name: Verify REUSE licensing
         run: ./.jules/run.sh reuse lint
       - name: Configure normal build

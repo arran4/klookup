@@ -1,0 +1,174 @@
+# Generated using:
+# https://arran4.github.io/blog/post/2026/043-canonical-github-actions-ci-cd-super-reference/
+# This repository is not publishing software releases yet (see issue #73).
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize]
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 19 1 * *' # Day 2, 05:00 AEST / 06:00 AEDT
+
+permissions:
+  contents: read
+
+# Only a newer attempt for the same PR can supersede an older run.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-pr-{1}', github.workflow, github.event.pull_request.number) || format('{0}-run-{1}', github.workflow, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  route:
+    name: Route event
+    runs-on: ubuntu-latest
+    outputs:
+      validation: ${{ steps.route.outputs.validation }}
+      publish_pages: ${{ steps.route.outputs.publish_pages }}
+    steps:
+      - id: route
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            push|pull_request|workflow_dispatch|schedule)
+              echo "validation=true" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "Unsupported event: $EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+          if [[ "$EVENT_NAME" == push && "$REF_NAME" == refs/heads/main ]]; then
+            echo "publish_pages=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish_pages=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  workflow-validation:
+    name: Validate GitHub Actions
+    needs: [route]
+    if: ${{ needs.route.outputs.validation == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Check workflow syntax and expressions
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@latest
+
+  cmake-test:
+    name: Qt/KF6 build, CTest, sanitizers and REUSE
+    needs: [route]
+    if: ${{ needs.route.outputs.validation == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Bootstrap KDE development rootfs
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          ./.jules/bootstrap.sh
+      - name: Install Qt/KF6 and build dependencies
+        run: |
+          set -euo pipefail
+          ./.jules/run.sh apt-get update
+          ./.jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev zlib1g-dev cmake ninja-build build-essential g++ reuse
+      - name: Verify REUSE licensing
+        run: ./.jules/run.sh reuse lint
+      - name: Configure normal build
+        run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+      - name: Build application, providers and tests
+        run: ./.jules/run.sh cmake --build build --parallel
+      - name: Run normal CTest including staged install
+        run: ./.jules/run.sh ctest --test-dir build --output-on-failure
+      - name: Configure ASan/UBSan build
+        run: |
+          ./.jules/run.sh cmake -S . -B build-san -G Ninja -DBUILD_TESTING=ON \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_MODULE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build ASan/UBSan application and tests
+        run: ./.jules/run.sh cmake --build build-san --parallel
+      - name: Run ASan/UBSan CTest with leak detection
+        run: |
+          ./.jules/run.sh env ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 \
+            UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+            ctest --test-dir build-san --output-on-failure
+
+  docs-build:
+    name: Build and validate developer documentation
+    needs: [route]
+    if: ${{ needs.route.outputs.validation == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install MkDocs
+        run: python -m pip install 'mkdocs==1.6.1'
+      - name: Validate and build site
+        run: mkdocs build --strict
+      - name: Upload PR documentation preview
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: documentation-preview
+          path: site/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prepare Pages artifact from main
+        if: ${{ needs.route.outputs.publish_pages == 'true' }}
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/
+
+  validation:
+    name: Required validation passed
+    if: ${{ always() && needs.route.outputs.validation == 'true' }}
+    needs: [route, workflow-validation, cmake-test, docs-build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require selected CI jobs
+        env:
+          WORKFLOW_RESULT: ${{ needs.workflow-validation.result }}
+          CMAKE_RESULT: ${{ needs.cmake-test.result }}
+          DOCS_RESULT: ${{ needs.docs-build.result }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_RESULT" == "success" ]]
+          [[ "$CMAKE_RESULT" == "success" ]]
+          [[ "$DOCS_RESULT" == "success" ]]
+
+  pages-deploy:
+    name: Publish GitHub Pages
+    needs: [route, validation]
+    if: ${{ needs.route.outputs.publish_pages == 'true' && needs.validation.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy validated site
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: 2026 KLookup contributors
+# SPDX-License-Identifier: CC-BY-SA-4.0
+
+site_name: KLookup developer documentation
+site_description: Developer and provider reference for the KDE Plasma KLookup application
+site_url: https://arran4.github.io/klookup/
+repo_url: https://github.com/arran4/klookup
+repo_name: arran4/klookup
+docs_dir: docs
+site_dir: site
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Desktop integration:
+      - Autostart: autostart.md
+      - Global shortcuts: global-shortcuts.md
+      - Clipboard privacy: clipboard-policy.md
+      - Recent activity: recent-activity.md
+      - Result interactions: result-interactions.md
+      - Structured metadata: structured-metadata.md
+  - Provider architecture:
+      - Installing and approving packages: provider-package-approval.md
+      - Authentication: provider-authentication.md
+      - Request lifecycle: script-provider-lifecycle.md
+      - Continuation: provider-continuation.md
+      - HTTP transport: provider-http-transport.md
+      - Diagnostics: provider-diagnostics.md
+  - Provider guides:
+      - Wikipedia: wikipedia-content.md
+      - MangaBaka formats: mangabaka-formats.md
+      - Spotify: spotify-provider.md
+      - AniList: provider-anilist.md
+      - Lyrics.ovh: provider-lyrics-ovh.md
+      - Open Library: provider-openlibrary.md

@@ -1,15 +1,37 @@
 # Generated using:
 # https://arran4.github.io/blog/post/2026/043-canonical-github-actions-ci-cd-super-reference/
-# This repository is not publishing software releases yet (see issue #73).
+# Release publication is opt-in via manual modes or v* tags; release readiness is tracked in issue #73.
 name: CI/CD
 
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     types: [opened, synchronize]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Action to perform (releases publish a GitHub Release)
+        type: choice
+        required: true
+        default: build
+        options:
+          - build
+          - monthly-maintenance
+          - release-major
+          - release-minor
+          - release-patch
+          - release-test
+          - release-rc
+          - release-alpha
+          - publish-tag
+      release_version_override:
+        description: Optional exact release tag/version (only for release-* modes)
+        type: string
+        required: false
+        default: ''
   schedule:
     - cron: '0 19 1 * *' # Day 2, 05:00 AEST / 06:00 AEDT
 
@@ -28,28 +50,60 @@ jobs:
     outputs:
       validation: ${{ steps.route.outputs.validation }}
       publish_pages: ${{ steps.route.outputs.publish_pages }}
+      release: ${{ steps.route.outputs.release }}
+      publisher: ${{ steps.route.outputs.publisher }}
     steps:
       - id: route
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref }}
+          INPUT_MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
+          release=false
+          publisher=false
           case "$EVENT_NAME" in
-            push|pull_request|workflow_dispatch|schedule)
-              echo "validation=true" >> "$GITHUB_OUTPUT"
+            push)
+              case "$REF_NAME" in
+                refs/heads/main) ;;
+                refs/tags/v*) publisher=true ;;
+                *) echo "Unsupported push ref: $REF_NAME" >&2; exit 1 ;;
+              esac
               ;;
-            *)
-              echo "Unsupported event: $EVENT_NAME" >&2
-              exit 1
+            pull_request|schedule) ;;
+            workflow_dispatch)
+              case "$INPUT_MODE" in
+                build|monthly-maintenance) ;;
+                release-major|release-minor|release-patch|release-test|release-rc|release-alpha)
+                  if [[ "$REF_NAME" != refs/heads/main ]]; then
+                    echo "Release preparation requires the main branch" >&2
+                    exit 1
+                  fi
+                  release=true
+                  ;;
+                publish-tag)
+                  if [[ "$REF_NAME" != refs/tags/v* ]]; then
+                    echo "publish-tag must be dispatched on an existing v* tag" >&2
+                    exit 1
+                  fi
+                  publisher=true
+                  ;;
+                *) echo "Unsupported manual mode: $INPUT_MODE" >&2; exit 1 ;;
+              esac
               ;;
+            *) echo "Unsupported event: $EVENT_NAME" >&2; exit 1 ;;
           esac
+          publish_pages=false
           if [[ "$EVENT_NAME" == push && "$REF_NAME" == refs/heads/main ]]; then
-            echo "publish_pages=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish_pages=false" >> "$GITHUB_OUTPUT"
+            publish_pages=true
           fi
+          {
+            echo "validation=true"
+            echo "release=$release"
+            echo "publisher=$publisher"
+            echo "publish_pages=$publish_pages"
+          } >> "$GITHUB_OUTPUT"
 
   workflow-validation:
     name: Validate GitHub Actions
@@ -60,11 +114,20 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Check workflow syntax and expressions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@latest
+      - name: Smoke test canonical release version calculation without tagging
+        run: |
+          set -euo pipefail
+          go install github.com/arran4/git-tag-inc/cmd/git-tag-inc@v1.3.10
+          GO_BIN="$(go env GOPATH)/bin"
+          export PATH="$GO_BIN:$PATH"
+          NEXT="$(git-tag-inc --print-version-only patch)"
+          [[ "$NEXT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]
 
   cmake-test:
     name: Qt/KF6 build, CTest, sanitizers and REUSE
@@ -109,6 +172,29 @@ jobs:
             UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             ctest --test-dir build-san --output-on-failure
 
+      # Build and smoke a non-portable Linux install archive on every validation run.
+      # Linux/KF6 runtime dependencies remain supplied by the destination system.
+      - name: Stage release candidate
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release-candidates
+          ./.jules/run.sh cmake --install build --prefix /workspace/dist/staged
+          test -x dist/staged/bin/klookup
+          test -x dist/staged/bin/klookup-provider-check
+          test -f dist/staged/share/klookup/providers.d/tvmaze/main.mjs
+          tar -czf dist/release-candidates/klookup-linux-amd64.tar.gz -C dist staged
+          (
+            cd dist/release-candidates
+            sha256sum klookup-linux-amd64.tar.gz > klookup-linux-amd64.tar.gz.sha256
+          )
+      - name: Upload release candidates for smoke testing
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-candidates
+          path: dist/release-candidates/*
+          if-no-files-found: error
+          retention-days: 1
+
   docs-build:
     name: Build and validate developer documentation
     needs: [route]
@@ -142,7 +228,7 @@ jobs:
   validation:
     name: Required validation passed
     if: ${{ always() && needs.route.outputs.validation == 'true' }}
-    needs: [route, workflow-validation, cmake-test, docs-build]
+    needs: [route, workflow-validation, cmake-test, docs-build, artifact-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Require selected CI jobs
@@ -150,11 +236,13 @@ jobs:
           WORKFLOW_RESULT: ${{ needs.workflow-validation.result }}
           CMAKE_RESULT: ${{ needs.cmake-test.result }}
           DOCS_RESULT: ${{ needs.docs-build.result }}
+          SMOKE_RESULT: ${{ needs.artifact-smoke.result }}
         run: |
           set -euo pipefail
           [[ "$WORKFLOW_RESULT" == "success" ]]
           [[ "$CMAKE_RESULT" == "success" ]]
           [[ "$DOCS_RESULT" == "success" ]]
+          [[ "$SMOKE_RESULT" == "success" ]]
 
   pages-deploy:
     name: Publish GitHub Pages
@@ -172,3 +260,178 @@ jobs:
       - name: Deploy validated site
         id: deployment
         uses: actions/deploy-pages@v5
+
+  artifact-smoke:
+    name: Smoke exact release candidates
+    needs: [route, cmake-test]
+    if: ${{ needs.route.outputs.validation == 'true' && needs.cmake-test.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-candidates
+          path: release-candidates
+      - name: Verify downloaded candidate checksums and staged install
+        run: |
+          set -euo pipefail
+          (
+            cd release-candidates
+            sha256sum -c klookup-linux-amd64.tar.gz.sha256
+          )
+          mkdir -p candidate
+          tar -xzf release-candidates/klookup-linux-amd64.tar.gz -C candidate
+          test -x candidate/staged/bin/klookup
+          test -x candidate/staged/bin/klookup-provider-check
+          test -f candidate/staged/share/klookup/providers.d/tvmaze/main.mjs
+          readelf -h candidate/staged/bin/klookup | grep -q ELF64
+          # Keep this archive an install-layout artifact, not a claim of a portable AppImage.
+          find candidate/staged -type f | grep -q .
+
+  release-ready:
+    name: Release gates passed
+    needs: [route, validation, artifact-smoke]
+    if: ${{ always() && (needs.route.outputs.release == 'true' || needs.route.outputs.publisher == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require validated source and candidate
+        env:
+          VALIDATION_RESULT: ${{ needs.validation.result }}
+          SMOKE_RESULT: ${{ needs.artifact-smoke.result }}
+        run: |
+          set -euo pipefail
+          [[ "$VALIDATION_RESULT" == success ]]
+          [[ "$SMOKE_RESULT" == success ]]
+
+  prepare-release-tag:
+    name: Prepare immutable release tag
+    needs: [route, release-ready]
+    if: ${{ needs.route.outputs.release == 'true' && needs.release-ready.result == 'success' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-release-preparation
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: Install owner's version calculation utility
+        run: go install github.com/arran4/git-tag-inc/cmd/git-tag-inc@v1.3.10
+      - name: Require exact current main before release
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          git fetch origin main --tags
+          CURRENT="$(git rev-parse origin/main)"
+          if [[ "$CURRENT" != "$GITHUB_SHA" ]]; then
+            echo "main moved from the validated $GITHUB_SHA to $CURRENT" >&2
+            exit 1
+          fi
+      - name: Select version without creating a tag
+        env:
+          RELEASE_MODE: ${{ inputs.mode }}
+          VERSION_OVERRIDE: ${{ inputs.release_version_override }}
+        run: |
+          set -euo pipefail
+          GO_BIN="$(go env GOPATH)/bin"
+          export PATH="$GO_BIN:$PATH"
+          if [[ -n "$VERSION_OVERRIDE" ]]; then
+            TAG="v${VERSION_OVERRIDE#v}"
+          else
+            case "$RELEASE_MODE" in
+              release-major) args=(major) ;;
+              release-minor) args=(minor) ;;
+              release-patch) args=(patch) ;;
+              release-test) args=(patch test) ;;
+              release-rc) args=(patch rc) ;;
+              release-alpha) args=(patch alpha) ;;
+              *) echo "Unsupported release mode: $RELEASE_MODE" >&2; exit 1 ;;
+            esac
+            TAG="$(git-tag-inc --print-version-only "${args[@]}")"
+          fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+            echo "Invalid proposed version: $TAG" >&2
+            exit 1
+          fi
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "Validated release tag: $TAG"
+      - name: Verify or push the exact immutable tag
+        run: |
+          set -euo pipefail
+          remote_sha="$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}')"
+          peeled_sha="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+          [[ -z "$peeled_sha" ]] || remote_sha="$peeled_sha"
+          if [[ -n "$remote_sha" ]]; then
+            [[ "$remote_sha" == "$GITHUB_SHA" ]] || { echo "Tag already belongs to another commit" >&2; exit 1; }
+          else
+            git fetch origin main
+            [[ "$(git rev-parse origin/main)" == "$GITHUB_SHA" ]] || { echo "main advanced before tagging" >&2; exit 1; }
+            git tag -d "$TAG" 2>/dev/null || true
+            git tag "$TAG" "$GITHUB_SHA"
+            if ! git push origin "refs/tags/$TAG"; then
+              remote_sha="$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}')"
+              peeled_sha="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+              [[ -z "$peeled_sha" ]] || remote_sha="$peeled_sha"
+              [[ "$remote_sha" == "$GITHUB_SHA" ]] || exit 1
+            fi
+          fi
+      - name: Explicitly dispatch immutable tag build and publisher
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh workflow run ci.yml --ref "$TAG" -f mode=publish-tag
+
+  publisher:
+    name: Publish single GitHub Release
+    needs: [route, release-ready]
+    if: ${{ needs.route.outputs.publisher == 'true' && needs.release-ready.result == 'success' }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-publish-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-candidates
+          path: release-candidates
+      - name: Verify tag and release context
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/tags/v* ]] || exit 1
+          git fetch origin main --tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          resolved_sha="$(git rev-parse "$GITHUB_REF_NAME^{commit}")"
+          [[ "$resolved_sha" == "$GITHUB_SHA" ]] || { echo "Tag does not match validated commit" >&2; exit 1; }
+          (
+            cd release-candidates
+            sha256sum -c klookup-linux-amd64.tar.gz.sha256
+          )
+      - name: Create or resume GitHub Release for the exact tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            target="$(gh release view "$GITHUB_REF_NAME" --json targetCommitish --jq '.targetCommitish')"
+            if [[ "$target" != "$GITHUB_SHA" ]]; then
+              echo "Existing release target $target differs from validated $GITHUB_SHA" >&2
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" release-candidates/* --clobber
+          else
+            args=(--verify-tag --generate-notes --target "$GITHUB_SHA")
+            [[ "$GITHUB_REF_NAME" != *-* ]] || args+=(--prerelease)
+            gh release create "$GITHUB_REF_NAME" release-candidates/* "${args[@]}"
+          fi

@@ -94,14 +94,16 @@ jobs:
               ;;
             *) echo "Unsupported event: $EVENT_NAME" >&2; exit 1 ;;
           esac
-          echo "validation=true" >> "$GITHUB_OUTPUT"
-          echo "release=$release" >> "$GITHUB_OUTPUT"
-          echo "publisher=$publisher" >> "$GITHUB_OUTPUT"
+          publish_pages=false
           if [[ "$EVENT_NAME" == push && "$REF_NAME" == refs/heads/main ]]; then
-            echo "publish_pages=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "publish_pages=false" >> "$GITHUB_OUTPUT"
+            publish_pages=true
           fi
+          {
+            echo "validation=true"
+            echo "release=$release"
+            echo "publisher=$publisher"
+            echo "publish_pages=$publish_pages"
+          } >> "$GITHUB_OUTPUT"
 
   workflow-validation:
     name: Validate GitHub Actions
@@ -122,7 +124,8 @@ jobs:
         run: |
           set -euo pipefail
           go install github.com/arran4/git-tag-inc/cmd/git-tag-inc@v1.3.10
-          export PATH="$(go env GOPATH)/bin:$PATH"
+          GO_BIN="$(go env GOPATH)/bin"
+          export PATH="$GO_BIN:$PATH"
           NEXT="$(git-tag-inc --print-version-only patch)"
           [[ "$NEXT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]
 
@@ -335,7 +338,8 @@ jobs:
           VERSION_OVERRIDE: ${{ inputs.release_version_override }}
         run: |
           set -euo pipefail
-          export PATH="$(go env GOPATH)/bin:$PATH"
+          GO_BIN="$(go env GOPATH)/bin"
+          export PATH="$GO_BIN:$PATH"
           if [[ -n "$VERSION_OVERRIDE" ]]; then
             TAG="v${VERSION_OVERRIDE#v}"
           else

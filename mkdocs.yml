@@ -12,6 +12,7 @@ theme:
   name: mkdocs
 nav:
   - Home: index.md
+  - Releasing: releasing.md
   - Desktop integration:
       - Autostart: autostart.md
       - Global shortcuts: global-shortcuts.md

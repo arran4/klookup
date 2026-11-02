@@ -172,10 +172,9 @@ jobs:
             UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
             ctest --test-dir build-san --output-on-failure
 
-      # Build a non-portable Linux installation archive only for release routes.
+      # Build and smoke a non-portable Linux install archive on every validation run.
       # Linux/KF6 runtime dependencies remain supplied by the destination system.
       - name: Stage release candidate
-        if: ${{ needs.route.outputs.release == 'true' || needs.route.outputs.publisher == 'true' }}
         run: |
           set -euo pipefail
           mkdir -p dist/release-candidates
@@ -189,7 +188,6 @@ jobs:
             sha256sum klookup-linux-amd64.tar.gz > klookup-linux-amd64.tar.gz.sha256
           )
       - name: Upload release candidates for smoke testing
-        if: ${{ needs.route.outputs.release == 'true' || needs.route.outputs.publisher == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: release-candidates
@@ -230,7 +228,7 @@ jobs:
   validation:
     name: Required validation passed
     if: ${{ always() && needs.route.outputs.validation == 'true' }}
-    needs: [route, workflow-validation, cmake-test, docs-build]
+    needs: [route, workflow-validation, cmake-test, docs-build, artifact-smoke]
     runs-on: ubuntu-latest
     steps:
       - name: Require selected CI jobs
@@ -238,11 +236,13 @@ jobs:
           WORKFLOW_RESULT: ${{ needs.workflow-validation.result }}
           CMAKE_RESULT: ${{ needs.cmake-test.result }}
           DOCS_RESULT: ${{ needs.docs-build.result }}
+          SMOKE_RESULT: ${{ needs.artifact-smoke.result }}
         run: |
           set -euo pipefail
           [[ "$WORKFLOW_RESULT" == "success" ]]
           [[ "$CMAKE_RESULT" == "success" ]]
           [[ "$DOCS_RESULT" == "success" ]]
+          [[ "$SMOKE_RESULT" == "success" ]]
 
   pages-deploy:
     name: Publish GitHub Pages
@@ -264,7 +264,7 @@ jobs:
   artifact-smoke:
     name: Smoke exact release candidates
     needs: [route, cmake-test]
-    if: ${{ (needs.route.outputs.release == 'true' || needs.route.outputs.publisher == 'true') && needs.cmake-test.result == 'success' }}
+    if: ${{ needs.route.outputs.validation == 'true' && needs.cmake-test.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8

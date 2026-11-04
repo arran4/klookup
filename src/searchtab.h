@@ -15,6 +15,8 @@ class ProviderAuthSession;
 class SourceLink;
 class QMenu;
 class ResultDetailWindow;
+class QSplitter;
+class QStackedWidget;
 
 class SearchTab : public QWidget
 {
@@ -27,6 +29,15 @@ public:
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
     void addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId = {});
     void setError(const QString &providerName, const QString &errorMsg);
+
+    QSplitter *mainSplitter() const;
+    QSplitter *detailSplitter() const;
+    QWidget *emptyStateWidget() const;
+
+    void saveLayout();
+    void restoreLayout();
+    void resetMainSplitterSizes();
+    void resetDetailSplitterSizes();
 
 signals:
     void resultViewed(const QString &providerId, const SearchResult &result);
@@ -65,7 +76,15 @@ private:
     void renderMetadata(const ResultMetadata &metadata);
     void loadInitialDetails();
     void updateDetailsControl();
+    QWidget *createEmptyStateWidget(QWidget *parent);
+
     QString m_query;
+    QSplitter *m_mainSplitter = nullptr;
+    QSplitter *m_detailSplitter = nullptr;
+    QStackedWidget *m_detailStack = nullptr;
+    QWidget *m_emptyStateWidget = nullptr;
+    QWidget *m_detailContainer = nullptr;
+
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;
     QTreeWidget *m_metadataView;
@@ -78,5 +97,6 @@ private:
     QString m_detailProvider;
     QString m_detailId;
     QTreeWidgetItem *m_selected = nullptr;
+    QList<int> m_savedDetailSizes;
 };
 #endif

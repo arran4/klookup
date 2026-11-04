@@ -14,6 +14,7 @@ class QLabel;
 class QTextBrowser;
 class QTreeWidget;
 class SourceLink;
+class QSplitter;
 
 class ResultDetailWindow : public QMainWindow
 {
@@ -37,11 +38,17 @@ public:
     ResultMetadata metadata() const;
     ResultContent content() const;
 
+    QSplitter *splitter() const;
+    void saveLayout();
+    void restoreLayout();
+    void resetSplitterSizes();
+
 signals:
     void windowClosing(ResultDetailWindow *window);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     void setupUi(const QString &providerName, const ResultMetadata &metadata, const ResultContent &content);
@@ -51,6 +58,7 @@ private:
     QString m_providerName;
     ResultMetadata m_metadata;
     ResultContent m_content;
+    QSplitter *m_splitter = nullptr;
     QTextBrowser *m_detailsView = nullptr;
     QTreeWidget *m_metadataView = nullptr;
     SourceLink *m_sourceLink = nullptr;

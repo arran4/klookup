@@ -34,26 +34,50 @@ KLookup is designed around **focused lookups**: rather than trying to become ano
 
 ## Screenshots — current interface (November 2026)
 
-These images were captured from **KLookup v0.0.1 running on KDE Plasma**. They show the shipped interface at the time of capture, not a proposed redesign. Work on [resizable panes](https://github.com/arran4/klookup/issues/136), [result presentation](https://github.com/arran4/klookup/issues/134) and [settings layout](https://github.com/arran4/klookup/issues/137) will change its appearance.
+These images were captured from **KLookup running on KDE Plasma 6** (November 2026). They document what the application looks like and does **today**, rather than illustrating proposed features. The user interface will continue to evolve as work on [resizable panes](https://github.com/arran4/klookup/issues/136), [results presentation](https://github.com/arran4/klookup/issues/134) and [settings layout](https://github.com/arran4/klookup/issues/137) progresses.
 
 ### Search results and source details
 
-[![KLookup One Piece search results grouped by provider, with MangaBaka description and structured metadata](docs/images/klookup-search-results.webp)](docs/images/klookup-search-results.webp)
+[![KLookup search results for "One piece" grouped by provider, showing MangaBaka details and structured metadata](docs/images/klookup-search-results.webp)](docs/images/klookup-search-results.webp)
 
-*One Piece results from multiple sources, with the current MangaBaka description and structured detail view. Future versions will make rich information easier to browse without requiring the raw metadata tree.*
+*Searching for “One piece”: provider-grouped matches on the left, with the selected MangaBaka summary, source URL, and structured detail tree on the right.*
 
-### Provider management and privacy
+### Providers and plugins
 
-| Script packages | Provider diagnostics |
+| Native provider settings | Script packages |
 | --- | --- |
-| [![KLookup script package list and approval details](docs/images/klookup-script-packages.webp)](docs/images/klookup-script-packages.webp) | [![KLookup provider health checks](docs/images/klookup-provider-health.webp)](docs/images/klookup-provider-health.webp) |
-| Discover, approve, revoke and retry script packages | Inspect provider status and run explicit checks |
+| [![KLookup native provider configuration showing individual enable/disable checkboxes](docs/images/klookup-provider-settings.webp)](docs/images/klookup-provider-settings.webp) | [![KLookup script packages settings showing JavaScript providers and approval status](docs/images/klookup-script-packages.webp)](docs/images/klookup-script-packages.webp) |
+| Native lookup providers can be enabled or disabled individually | JavaScript providers with source paths, permissions, status, and approval controls |
 
-[![KLookup general settings including clipboard policy and recent activity preferences](docs/images/klookup-general-settings.webp)](docs/images/klookup-general-settings.webp)
+KLookup supports both native C++ lookup plugins and JavaScript script packages (`.mjs`) loaded from `providers.d` directories. Native sources can be toggled on or off individually. Script packages require explicit user review and approval (verifying source location, declared origin permissions, and package fingerprint) before execution, displaying their readiness status and offering revoke or retry controls. Note that scripted KWallet credential provisioning remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); shipped script packages require no credentials.
 
-*General preferences, including clipboard capture, automatic search, recent activity and session behaviour.*
+### Provider diagnostics
 
-All four screenshots are from KLookup itself, and no third-party website screenshot is redistributed.
+[![KLookup provider health tab showing native and scripted providers with diagnostic check controls](docs/images/klookup-provider-health.webp)](docs/images/klookup-provider-health.webp)
+
+*Provider health diagnostics: inspect native and scripted provider readiness, run passive preflights or explicit checks, and view diagnostic status.*
+
+The **Provider health** tab allows diagnosing both native and scripted providers. Passive preflight checks inspect provider registration and configuration without sending network traffic or requesting wallet access, while explicit checks can be run on demand to report status, unsupported operations, or connectivity failures.
+
+### Settings and integration
+
+| General preferences | Keyboard shortcuts |
+| --- | --- |
+| [![KLookup general preferences dialog showing tray, clipboard capture, and search history settings](docs/images/klookup-general-settings.webp)](docs/images/klookup-general-settings.webp) | [![KLookup keyboard shortcut configuration showing application actions and global shortcuts](docs/images/klookup-keyboard-shortcuts.webp)](docs/images/klookup-keyboard-shortcuts.webp) |
+| Tray behavior, clipboard capture policies, automatic search, and recent activity options | Application actions and configurable Plasma global shortcuts |
+
+Clipboard monitoring and automatic searches are strictly controlled by user preferences and are turned off by default. Configurable Plasma global shortcuts (such as raising search or looking up clipboard content) are opt-in and unassigned by default, ensuring existing desktop hotkeys are never overridden without user configuration.
+
+<details>
+<summary>Recent activity dashboard</summary>
+
+[![KLookup dashboard showing recent activity with searched query and viewed result](docs/images/klookup-recent-activity.webp)](docs/images/klookup-recent-activity.webp)
+
+*Recent activity after a search and result selection, showing the query, timestamp, and viewed item with options to revisit, remove, or clear history.*
+
+</details>
+
+All screenshots depict KLookup itself running on KDE Plasma; external third-party website interfaces are not included.
 
 ## Getting started
 

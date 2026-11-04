@@ -10,7 +10,7 @@ Find encyclopaedia articles, books, software projects, films, shows, music, anim
 
 KLookup is designed around **focused lookups**: rather than trying to become another browser or a full web search engine, it asks dedicated information sources for relevant results and presents them together.
 
-> **Project status:** KLookup can be built from source, but there are currently no published GitHub release binaries. Some features described under [Planned improvements](#planned-improvements) are **not yet implemented**.
+> **Project status:** KLookup can be built from source, but [v0.0.2](https://github.com/arran4/klookup/releases/tag/v0.0.2) is published, including a Linux amd64 release archive. Some features described under [Planned improvements](#planned-improvements) are **not yet implemented**.
 
 ## At a glance
 
@@ -32,25 +32,58 @@ KLookup is designed around **focused lookups**: rather than trying to become ano
 - **Integrate with KDE.** Launch searches through KRunner, configure global shortcuts and optionally keep the application in the system tray.
 - **Privacy choices are visible.** Clipboard monitoring and automatic clipboard searches are opt-in and configured separately.
 
-## Screenshots — TODO
+## Screenshots — current interface (November 2026)
 
-**TODO: Add screenshots when the application presentation is ready.** This section deliberately has no image links yet.
+These are real screenshots of **KLookup running on KDE Plasma**, taken from a Gentoo installation of v0.0.1. They document what the application does **today**, rather than illustrating proposed features. The user interface will evolve as the [results presentation](https://github.com/arran4/klookup/issues/134), [resizable panes](https://github.com/arran4/klookup/issues/136) and [settings layout](https://github.com/arran4/klookup/issues/137) improve.
 
-Suggested screenshots to add:
+### Search and results
 
-1. **Dashboard and search results** — a query showing matches grouped by provider.
-2. **Result details** — a selected entry with its description, structured metadata and source link.
-3. **Multiple searches/windows** — tabs alongside a detached search or details window.
-4. **Plasma integration** — a KRunner lookup and/or global-shortcut configuration.
-5. **Provider settings and privacy** — enabled sources, authentication and clipboard policies.
+[![KLookup dashboard with a search field and recent activity controls](docs/images/klookup-dashboard.webp)](docs/images/klookup-dashboard.webp)
 
-Keep images representative of a real supported workflow. The [application icon](icons/256x256/apps/org.kde.klookup.png) above is already the repository's own installed icon.
+*Dashboard with the search field and recent-activity controls.*
+
+[![KLookup results for One Piece grouped by provider, with MangaBaka description and structured metadata](docs/images/klookup-search-results.webp)](docs/images/klookup-search-results.webp)
+
+*Searching for “One piece”: provider-grouped results on the left, selected MangaBaka details and source metadata on the right. This is the existing raw-information view, not the planned semantic result layout.*
+
+### Providers, diagnostics and preferences
+
+[![KLookup script-package approval and provider readiness settings](docs/images/klookup-script-packages.webp)](docs/images/klookup-script-packages.webp)
+
+*Script-package discovery and approval details.*
+
+[![KLookup provider-health diagnostic controls](docs/images/klookup-provider-health.webp)](docs/images/klookup-provider-health.webp)
+
+*Per-provider diagnostic checks, including passive preflight mode.*
+
+<details>
+<summary>More current settings and integration screenshots</summary>
+
+[![KLookup native provider selection settings](docs/images/klookup-provider-settings.webp)](docs/images/klookup-provider-settings.webp)
+
+*Native provider selection and current authentication settings.*
+
+[![KLookup keyboard-shortcut editor, including unassigned global shortcuts](docs/images/klookup-keyboard-shortcuts.webp)](docs/images/klookup-keyboard-shortcuts.webp)
+
+*Shortcut editor. Global shortcuts are not assigned automatically.*
+
+[![KLookup general preferences for tray, clipboard capture, searches and history](docs/images/klookup-general-settings.webp)](docs/images/klookup-general-settings.webp)
+
+*General preferences for the tray, clipboard and search-history behavior.*
+
+[![KLookup recent activity showing a One Piece search and viewed result](docs/images/klookup-recent-activity.webp)](docs/images/klookup-recent-activity.webp)
+
+*Recent activity after a search and result selection.*
+
+</details>
+
+Images are captured from the application itself. Third-party website screenshots are not redistributed here.
 
 ## Getting started
 
 ### 1. Install or build KLookup
 
-If you have a distribution package, use the package's normal installation procedure. Otherwise, follow [Build from source](#build-from-source) below. **No prebuilt release downloads are currently published in this repository.**
+If you have a distribution package, use the package's normal installation procedure. Otherwise, follow [Build from source](#build-from-source) below. GitHub [releases](https://github.com/arran4/klookup/releases) include a Linux amd64 archive. Check its compatibility with your distribution; Gentoo users can install from the separate [arrans_overlay](https://github.com/arran4/arrans_overlay) source ebuild once it has been updated to the desired release.
 
 The installed application should be available as **KLookup** from your KDE application launcher, or as `klookup` from a terminal.
 

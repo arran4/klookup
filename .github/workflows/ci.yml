@@ -120,6 +120,12 @@ jobs:
           go-version: stable
       - name: Check workflow syntax and expressions
         run: go run github.com/rhysd/actionlint/cmd/actionlint@latest
+      - name: Validate installed desktop entry source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils
+          desktop-file-validate src/org.kde.klookup.desktop
+
       - name: Smoke test canonical release version calculation without tagging
         run: |
           set -euo pipefail

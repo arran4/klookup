@@ -34,50 +34,26 @@ KLookup is designed around **focused lookups**: rather than trying to become ano
 
 ## Screenshots — current interface (November 2026)
 
-These are real screenshots of **KLookup running on KDE Plasma**, taken from a Gentoo installation of v0.0.1. They document what the application does **today**, rather than illustrating proposed features. The user interface will evolve as the [results presentation](https://github.com/arran4/klookup/issues/134), [resizable panes](https://github.com/arran4/klookup/issues/136) and [settings layout](https://github.com/arran4/klookup/issues/137) improve.
+These images were captured from **KLookup v0.0.1 running on KDE Plasma**. They show the shipped interface at the time of capture, not a proposed redesign. Work on [resizable panes](https://github.com/arran4/klookup/issues/136), [result presentation](https://github.com/arran4/klookup/issues/134) and [settings layout](https://github.com/arran4/klookup/issues/137) will change its appearance.
 
-### Search and results
+### Search results and source details
 
-[![KLookup dashboard with a search field and recent activity controls](docs/images/klookup-dashboard.webp)](docs/images/klookup-dashboard.webp)
+[![KLookup One Piece search results grouped by provider, with MangaBaka description and structured metadata](docs/images/klookup-search-results.webp)](docs/images/klookup-search-results.webp)
 
-*Dashboard with the search field and recent-activity controls.*
+*One Piece results from multiple sources, with the current MangaBaka description and structured detail view. Future versions will make rich information easier to browse without requiring the raw metadata tree.*
 
-[![KLookup results for One Piece grouped by provider, with MangaBaka description and structured metadata](docs/images/klookup-search-results.webp)](docs/images/klookup-search-results.webp)
+### Provider management and privacy
 
-*Searching for “One piece”: provider-grouped results on the left, selected MangaBaka details and source metadata on the right. This is the existing raw-information view, not the planned semantic result layout.*
+| Script packages | Provider diagnostics |
+| --- | --- |
+| [![KLookup script package list and approval details](docs/images/klookup-script-packages.webp)](docs/images/klookup-script-packages.webp) | [![KLookup provider health checks](docs/images/klookup-provider-health.webp)](docs/images/klookup-provider-health.webp) |
+| Discover, approve, revoke and retry script packages | Inspect provider status and run explicit checks |
 
-### Providers, diagnostics and preferences
+[![KLookup general settings including clipboard policy and recent activity preferences](docs/images/klookup-general-settings.webp)](docs/images/klookup-general-settings.webp)
 
-[![KLookup script-package approval and provider readiness settings](docs/images/klookup-script-packages.webp)](docs/images/klookup-script-packages.webp)
+*General preferences, including clipboard capture, automatic search, recent activity and session behaviour.*
 
-*Script-package discovery and approval details.*
-
-[![KLookup provider-health diagnostic controls](docs/images/klookup-provider-health.webp)](docs/images/klookup-provider-health.webp)
-
-*Per-provider diagnostic checks, including passive preflight mode.*
-
-<details>
-<summary>More current settings and integration screenshots</summary>
-
-[![KLookup native provider selection settings](docs/images/klookup-provider-settings.webp)](docs/images/klookup-provider-settings.webp)
-
-*Native provider selection and current authentication settings.*
-
-[![KLookup keyboard-shortcut editor, including unassigned global shortcuts](docs/images/klookup-keyboard-shortcuts.webp)](docs/images/klookup-keyboard-shortcuts.webp)
-
-*Shortcut editor. Global shortcuts are not assigned automatically.*
-
-[![KLookup general preferences for tray, clipboard capture, searches and history](docs/images/klookup-general-settings.webp)](docs/images/klookup-general-settings.webp)
-
-*General preferences for the tray, clipboard and search-history behavior.*
-
-[![KLookup recent activity showing a One Piece search and viewed result](docs/images/klookup-recent-activity.webp)](docs/images/klookup-recent-activity.webp)
-
-*Recent activity after a search and result selection.*
-
-</details>
-
-Images are captured from the application itself. Third-party website screenshots are not redistributed here.
+All four screenshots are from KLookup itself, and no third-party website screenshot is redistributed.
 
 ## Getting started
 

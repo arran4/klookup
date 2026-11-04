@@ -56,6 +56,15 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 KLookup contributors"
 SPDX-License-Identifier = "CC-BY-SA-4.0"
 
+# Screenshots captured from the KLookup desktop application for documentation
+[[annotations]]
+path = [
+  "docs/images/klookup-*.webp",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 KLookup contributors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
+
 # Original CC0 KLookup icons
 [[annotations]]
 path = [

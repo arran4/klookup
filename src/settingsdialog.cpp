@@ -1,4 +1,7 @@
 #include "providerdefaults.h"
+#include "providereligibility.h"
+#include <QSignalBlocker>
+#include <KLocalizedString>
 #include "settingsdialog.h"
 #include "providerdiagnostics.h"
 #include <QPlainTextEdit>
@@ -157,6 +160,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         auto *item = new QListWidgetItem(record.package.name() + QStringLiteral(" — ") + record.status, m_packageList);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(record.package.isEnabled() ? Qt::Checked : Qt::Unchecked);
+        item->setData(Qt::UserRole + 1, record.package.isEnabled());
         item->setToolTip(ProviderDefaults::reason(record.package.id()));
     }
     packageLayout->addWidget(m_packageList);
@@ -240,6 +244,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(diagnostics, &ProviderDiagnostics::resultReady, health, [output](quint64, const QJsonObject &row) { output->appendPlainText(QString::fromUtf8(QJsonDocument(row).toJson(QJsonDocument::Compact))); });
     addPage(health, QStringLiteral("Provider health"));
 
+
+    setupEligibilityPage();
 
     // General Settings Tab
     QWidget *generalWidget = new QWidget(this);
@@ -391,30 +397,35 @@ void SettingsDialog::saveSettings()
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
 
+    KConfigGroup groupPolicies(config, QStringLiteral("ProviderGroups"));
+    for (const auto &id : m_changedGroups) {
+        if (m_groupOverrides.contains(id)) groupPolicies.writeEntry(id, m_groupOverrides.value(id));
+        else groupPolicies.deleteEntry(id);
+    }
+    for (const auto &id : m_changedSources) {
+        const auto choice = m_sourceOverrides.value(id);
+        if (choice) providersGroup.writeEntry(id + QStringLiteral("_Enabled"), *choice);
+        else providersGroup.deleteEntry(id + QStringLiteral("_Enabled"));
+    }
+
     for (int i = 0; i < m_listWidget->count(); ++i) {
         QListWidgetItem *item = m_listWidget->item(i);
         SearchProvider *provider = item->data(Qt::UserRole).value<SearchProvider*>();
         if (provider) {
-            bool isEnabled = (item->checkState() == Qt::Checked);
+            bool isEnabled = ProviderEligibility::resolve(providersGroup, groupPolicies, provider->id(), provider->classification()).enabled;
             provider->setEnabled(isEnabled);
             if (auto *capability = qobject_cast<SearchProviderOptions *>(provider); capability && m_providerOptions.contains(provider))
                 capability->saveOptions(m_providerOptions.value(provider));
-            if (providersGroup.hasKey(provider->id() + QStringLiteral("_Enabled")) ||
-                isEnabled != item->data(Qt::UserRole + 1).toBool())
-                providersGroup.writeEntry(provider->id() + QStringLiteral("_Enabled"), isEnabled);
-            item->setData(Qt::UserRole + 1, isEnabled);
         }
     }
 
     QStringList changedPackages;
     for (int row = 0; row < m_packages.size(); ++row) {
         const auto &pkg = m_packages[row].package;
-        const bool enabled = m_packageList->item(row)->checkState() == Qt::Checked;
-        const bool changedEnablement = enabled != ProviderDefaults::enabled(providersGroup, pkg.id());
+        const bool enabled = ProviderEligibility::resolve(providersGroup, groupPolicies, pkg.id(), pkg.manifest().classification).enabled;
+        const bool changedEnablement = enabled != pkg.isEnabled();
         const QByteArray oldApproval = providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray());
         const bool oldRevoked = providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false);
-        if (providersGroup.hasKey(pkg.id() + QStringLiteral("_Enabled")) || changedEnablement)
-            providersGroup.writeEntry(pkg.id() + QStringLiteral("_Enabled"), enabled);
         if (m_approvalDrafts.contains(pkg.id())) {
             const bool approve = m_approvalDrafts.value(pkg.id());
             const auto current = ProviderPackage::fromDirectory(pkg.packageDir(), pkg.locationType());
@@ -451,7 +462,7 @@ void SettingsDialog::saveSettings()
     }
     emit settingsApplied();
     if (m_retryPackages || !changedPackages.isEmpty()) emit packageChangesApplied(changedPackages);
-    if (m_packagesChanged) accept(); // Recreate packages only after widgets release their provider references.
+    if (m_packagesChanged || !changedPackages.isEmpty()) accept(); // Recreate packages only after widgets release their provider references.
 }
 
 SettingsDialog::PersistResult SettingsDialog::performPersistence(const QString &providerId, const QString &token)
@@ -585,5 +596,99 @@ void SettingsDialog::setAutostartManager(std::unique_ptr<AutostartManager> manag
     m_autostartManager = std::move(manager);
     if (m_autostartManager && m_autostartCheck) {
         m_autostartCheck->setChecked(m_autostartManager->isAutostartEnabled());
+    }
+}
+
+void SettingsDialog::setupEligibilityPage()
+{
+    const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    const KConfigGroup providers(config, QStringLiteral("Providers")), groups(config, QStringLiteral("ProviderGroups"));
+    for (auto *provider : m_providers) {
+        m_sourceClassifications.insert(provider->id(), provider->classification());
+        m_sourceNames.insert(provider->id(), provider->name());
+    }
+    for (const auto &record : m_packages) {
+        m_sourceClassifications.insert(record.package.id(), record.package.manifest().classification);
+        m_sourceNames.insert(record.package.id(), record.package.name());
+    }
+    for (auto it = m_sourceNames.begin(); it != m_sourceNames.end(); ++it) {
+        const auto key = it.key() + QStringLiteral("_Enabled");
+        m_sourceOverrides.insert(it.key(), providers.hasKey(key) ? std::optional<bool>(providers.readEntry(key, false)) : std::nullopt);
+    }
+    for (const auto &key : groups.keyList()) m_groupOverrides.insert(key, groups.readEntry(key, false));
+    auto *page = new QWidget(this);
+    auto *layout = new QVBoxLayout(page);
+    auto *help = new QLabel(i18n("Source selection controls which providers are queried. Explicit provider choices win over group policies; conflicting groups prefer disabled. Partial checks inherit the provider default. Changes apply to future searches; no query runs here."), page);
+    help->setTextFormat(Qt::PlainText); help->setWordWrap(true); layout->addWidget(help);
+    m_policyGroups = new QListWidget(page); m_policyGroups->setObjectName(QStringLiteral("sourceGroupPolicies"));
+    m_policyGroups->setAccessibleName(i18n("Global source group policies"));
+    QSet<QString> facets;
+    for (const auto &classification : m_sourceClassifications) for (const auto &id : classification.facets) facets.insert(id);
+    auto sorted = facets.values(); sorted.sort();
+    for (const auto &id : sorted) {
+        ProviderClassification labels;
+        auto *item = new QListWidgetItem(labels.label(id), m_policyGroups);
+        item->setData(Qt::UserRole, id);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsUserTristate);
+        item->setCheckState(m_groupOverrides.contains(id) ? (m_groupOverrides.value(id) ? Qt::Checked : Qt::Unchecked) : Qt::PartiallyChecked);
+        item->setToolTip(i18n("Checked: enable group; unchecked: disable group; partial: inherit. Individual provider overrides take precedence."));
+    }
+    layout->addWidget(m_policyGroups, 1);
+    m_effectiveSources = new QListWidget(page); m_effectiveSources->setObjectName(QStringLiteral("effectiveSourcePolicies"));
+    m_effectiveSources->setAccessibleName(i18n("Effective source selection and override reasons"));
+    for (auto it = m_sourceNames.begin(); it != m_sourceNames.end(); ++it) {
+        auto *item = new QListWidgetItem(m_effectiveSources); item->setData(Qt::UserRole, it.key());
+    }
+    layout->addWidget(m_effectiveSources, 1);
+    auto *reset = new QPushButton(i18n("Use group / provider default for selected source"), page);
+    reset->setObjectName(QStringLiteral("resetSourceOverride")); layout->addWidget(reset);
+    connect(reset, &QPushButton::clicked, this, [this] {
+        if (const auto *item = m_effectiveSources->currentItem()) {
+            const auto id = item->data(Qt::UserRole).toString();
+            m_sourceOverrides[id] = std::nullopt; m_changedSources.insert(id); updateEligibilityUi();
+        }
+    });
+    connect(m_policyGroups, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        const auto id = item->data(Qt::UserRole).toString();
+        if (item->checkState() == Qt::PartiallyChecked) m_groupOverrides.remove(id);
+        else m_groupOverrides[id] = item->checkState() == Qt::Checked;
+        m_changedGroups.insert(id); updateEligibilityUi();
+    });
+    connect(m_listWidget, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        if ((item->checkState() == Qt::Checked) == item->data(Qt::UserRole + 1).toBool()) return;
+        if (auto *provider = item->data(Qt::UserRole).value<SearchProvider *>()) {
+            m_sourceOverrides[provider->id()] = item->checkState() == Qt::Checked;
+            m_changedSources.insert(provider->id()); updateEligibilityUi();
+        }
+    });
+    connect(m_packageList, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        if ((item->checkState() == Qt::Checked) == item->data(Qt::UserRole + 1).toBool()) return;
+        const int row = m_packageList->row(item);
+        if (row < 0 || row >= m_packages.size()) return;
+        const auto id = m_packages[row].package.id();
+        m_sourceOverrides[id] = item->checkState() == Qt::Checked; m_changedSources.insert(id); updateEligibilityUi();
+    });
+    updateEligibilityUi(); addPage(page, i18n("Source selection"));
+}
+
+void SettingsDialog::updateEligibilityUi()
+{
+    const QSignalBlocker nativeBlock(m_listWidget), packageBlock(m_packageList);
+    for (int row = 0; row < m_effectiveSources->count(); ++row) {
+        auto *item = m_effectiveSources->item(row); const auto id = item->data(Qt::UserRole).toString();
+        const auto decision = ProviderEligibility::evaluate(id, m_sourceClassifications.value(id), m_sourceOverrides.value(id), m_groupOverrides);
+        item->setText(m_sourceNames.value(id) + (decision.enabled ? i18n(" — Enabled: ") : i18n(" — Disabled: ")) + decision.reason);
+        item->setToolTip(decision.reason.toHtmlEscaped());
+        for (int index = 0; index < m_listWidget->count(); ++index) {
+            auto *provider = m_listWidget->item(index)->data(Qt::UserRole).value<SearchProvider *>();
+            if (provider && provider->id() == id) {
+                m_listWidget->item(index)->setCheckState(decision.enabled ? Qt::Checked : Qt::Unchecked);
+                m_listWidget->item(index)->setData(Qt::UserRole + 1, decision.enabled);
+            }
+        }
+        for (int index = 0; index < m_packages.size(); ++index) if (m_packages[index].package.id() == id) {
+            m_packageList->item(index)->setCheckState(decision.enabled ? Qt::Checked : Qt::Unchecked);
+            m_packageList->item(index)->setData(Qt::UserRole + 1, decision.enabled);
+        }
     }
 }

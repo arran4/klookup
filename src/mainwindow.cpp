@@ -1,4 +1,5 @@
 #include "providerdefaults.h"
+#include "providereligibility.h"
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
@@ -504,7 +505,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         pkg.setTrusted(pkg.approved(providersGroup));
         if (pkg.isTrusted() && !providersGroup.hasKey(pkg.id() + QStringLiteral("_Approval")))
             pkg.saveApproval(providersGroup, true);
-        const bool isEnabled = ProviderDefaults::enabled(providersGroup, pkg.id());
+        const bool isEnabled = ProviderEligibility::resolve(providersGroup, KConfigGroup(config, QStringLiteral("ProviderGroups")), pkg.id(), pkg.manifest().classification).enabled;
         pkg.setEnabled(isEnabled);
         providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastPath"), pkg.packageDir());
         providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastProvenance"), pkg.provenance());
@@ -516,30 +517,9 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         m_packages.append(record);
         if (!pkg.isValid() || pkg.runtime() != QLatin1String("javascript") || !pkg.isTrusted() || !isEnabled) continue;
 
-        auto namFactory = m_namFactory;
-        ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
-            QNetworkAccessManager *nam = namFactory ? namFactory(parent) : nullptr;
-            auto *hostService = new ProviderHost::ProviderHostService(pkg, parent, nam);
-            auto *provider = new JsProvider(pkg, parent, hostService);
-            hostService->setParent(provider);
-            if (window) connect(window, &MainWindow::packageReloaded, provider, [provider, pkg](const QString &id) {
-                if (id == pkg.id()) provider->invalidate();
-            });
-            if (nam && nam->parent() == parent) nam->setParent(hostService);
-            return provider;
-        };
-
-        auto *adapter = new ProviderApiV1::ProviderV1ToLegacyAdapter(factory, this);
-        auto *jsInstance = qobject_cast<JsProvider *>(adapter->underlyingProvider());
-        if (!jsInstance || !jsInstance->isLoaded()) {
-            qCWarning(KLOOKUP_PLUGINS) << "Scripted provider" << pkg.id()
-                                       << "failed to initialize:" << (jsInstance ? jsInstance->loadError() : QStringLiteral("null"));
-            m_packages.last().status = QStringLiteral("Load failed: %1").arg(jsInstance ? jsInstance->loadError() : QStringLiteral("No instance"));
-            delete adapter;
-            continue;
-        }
-
-        adapter->setEnabled(isEnabled);
+        QString loadError;
+        auto *adapter = createScriptedAdapter(pkg, this, &loadError);
+        if (!adapter) { m_packages.last().status = QStringLiteral("Load failed: %1").arg(loadError); continue; }
         m_scriptedAdapters.append(adapter);
 
         // Precedence: trusted scripted provider overrides native provider with same ID
@@ -574,7 +554,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         const auto type = source == QLatin1String("system") ? ProviderPackage::LocationType::System :
                           source == QLatin1String("user") ? ProviderPackage::LocationType::User : ProviderPackage::LocationType::Custom;
         auto missing = ProviderPackage::fromDirectory(oldPath, type);
-        missing.setEnabled(ProviderDefaults::enabled(providersGroup, id));
+        missing.setEnabled(ProviderEligibility::resolve(providersGroup, KConfigGroup(config, QStringLiteral("ProviderGroups")), id, missing.manifest().classification).enabled);
         m_packages.append({missing, QStringLiteral("Package missing from discovery; reinstall or retry")});
     }
     providersGroup.sync();
@@ -653,7 +633,7 @@ void MainWindow::restoreProviderState(SearchProvider* provider)
 {
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
-    provider->setEnabled(ProviderDefaults::enabled(providersGroup, provider->id()));
+    provider->setEnabled(ProviderEligibility::resolve(providersGroup, KConfigGroup(config, QStringLiteral("ProviderGroups")), provider->id(), provider->classification()).enabled);
 }
 void MainWindow::performSearch(const QString &query)
 {
@@ -675,6 +655,7 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
             });
         }
     });
+    configureSourceSelection(tab);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
@@ -735,6 +716,7 @@ SearchWindow *MainWindow::openSearchInNewWindow(const QString &query)
         m_searchWindows.removeAll(window);
     });
     if (auto *tab = window->searchTab()) {
+        configureSourceSelection(tab);
         connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
         connect(tab, &SearchTab::openSearchInNewWindowRequested, this, [this](const QString &q) {
             openSearchInNewWindow(q);
@@ -879,4 +861,82 @@ void MainWindow::readWalletPasswordAndSet(SearchProvider *provider)
 {
     Q_UNUSED(provider);
     // Kept as a compatibility/testing seam. Never open wallets during lookup.
+}
+
+ProviderApiV1::ProviderV1ToLegacyAdapter *MainWindow::createScriptedAdapter(ProviderPackage pkg, QObject *parent, QString *error)
+{
+    pkg.setEnabled(true); // This instance is authorized for a deliberately selected search.
+    auto namFactory = m_namFactory;
+    ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
+        QNetworkAccessManager *nam = namFactory ? namFactory(parent) : nullptr;
+        auto *hostService = new ProviderHost::ProviderHostService(pkg, parent, nam);
+        auto *provider = new JsProvider(pkg, parent, hostService);
+        hostService->setParent(provider);
+        if (window) connect(window, &MainWindow::packageReloaded, provider, [provider, pkg](const QString &id) {
+        if (id == pkg.id()) provider->invalidate();
+        });
+        if (nam && nam->parent() == parent) nam->setParent(hostService);
+        return provider;
+    };
+
+
+    auto *adapter = new ProviderApiV1::ProviderV1ToLegacyAdapter(factory, parent);
+    auto *js = qobject_cast<JsProvider *>(adapter->underlyingProvider());
+    if (!js || !js->isLoaded()) {
+        if (error) *error = js ? js->loadError() : QStringLiteral("No instance");
+        delete adapter; return nullptr;
+    }
+    adapter->setEnabled(true);
+    return adapter;
+}
+
+QList<SearchSourceChoice> MainWindow::searchSourceChoices() const
+{
+    const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    const KConfigGroup providers(config, QStringLiteral("Providers")), groups(config, QStringLiteral("ProviderGroups"));
+    QMap<QString, SearchSourceChoice> choices;
+    for (auto *provider : m_providers) {
+        const auto decision = ProviderEligibility::resolve(providers, groups, provider->id(), provider->classification());
+        const bool explicitOff = providers.hasKey(provider->id() + QStringLiteral("_Enabled")) && !providers.readEntry(provider->id() + QStringLiteral("_Enabled"), false);
+        choices.insert(provider->id(), {provider->id(), provider->name(), decision.reason, decision.enabled, !explicitOff});
+    }
+    for (const auto &record : m_packages) {
+        const auto &package = record.package;
+        const auto decision = ProviderEligibility::resolve(providers, groups, package.id(), package.manifest().classification);
+        const bool available = package.isValid() && package.approved(providers);
+        if (!available && choices.contains(package.id()) && provider(package.id()) &&
+            !qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(provider(package.id()))) continue;
+        const bool explicitOff = providers.hasKey(package.id() + QStringLiteral("_Enabled")) && !providers.readEntry(package.id() + QStringLiteral("_Enabled"), false);
+        choices.insert(package.id(), {package.id(), package.name(), available ? decision.reason : record.status, decision.enabled && available, available && !explicitOff});
+    }
+    return choices.values();
+}
+
+void MainWindow::configureSourceSelection(SearchTab *tab)
+{
+    tab->setSourceChoices(searchSourceChoices());
+    connect(tab, &SearchTab::searchSelectedSourcesRequested, this, [this, tab](const QSet<QString> &sources) { searchSelectedSources(tab, sources); });
+}
+
+void MainWindow::searchSelectedSources(SearchTab *tab, const QSet<QString> &selected)
+{
+    const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    const KConfigGroup providers(config, QStringLiteral("Providers")), groups(config, QStringLiteral("ProviderGroups"));
+    QSet<QString> allowed;
+    for (const auto &choice : searchSourceChoices()) if (selected.contains(choice.id) && choice.selectable) allowed.insert(choice.id);
+    tab->applySourceEligibility(allowed);
+    for (const auto &id : allowed) {
+        if (tab->hasProvider(id)) continue;
+        if (auto *source = provider(id)) {
+            const auto decision = ProviderEligibility::resolve(providers, groups, id, source->classification(), true);
+            if (!decision.enabled) continue;
+            auto *copy = source->clone(tab); if (copy) copy->setEnabled(true);
+            tab->startProvider(copy, m_authManager->sessionFor(source));
+        } else {
+            for (auto record : m_packages) if (record.package.id() == id && record.package.isValid() && record.package.approved(providers)) {
+                record.package.setTrusted(true);
+                if (auto *copy = createScriptedAdapter(record.package, tab)) tab->startProvider(copy);
+            }
+        }
+    }
 }

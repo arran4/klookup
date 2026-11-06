@@ -3,12 +3,14 @@
 
 #include <KXmlGuiWindow>
 #include <QTabWidget>
+#include <QSet>
 #include <functional>
 #include "searchprovider.h"
 #include "providerpackage.h"
 #include "clipboardpolicy.h"
 #include "searchdashboard.h"
 #include "searchwindow.h"
+#include "providereligibility.h"
 #include "resultdetailwindow.h"
 
 class QSystemTrayIcon;
@@ -16,6 +18,7 @@ class QPluginLoader;
 class ProviderAuthManager;
 class GlobalShortcuts;
 class RecentActivity;
+class SearchTab;
 class QNetworkAccessManager;
 
 class MainWindow : public KXmlGuiWindow
@@ -71,6 +74,10 @@ private slots:
     void configureShortcuts();
 
 private:
+    ProviderApiV1::ProviderV1ToLegacyAdapter *createScriptedAdapter(ProviderPackage package, QObject *parent, QString *error = nullptr);
+    QList<SearchSourceChoice> searchSourceChoices() const;
+    void configureSourceSelection(SearchTab *tab);
+    void searchSelectedSources(SearchTab *tab, const QSet<QString> &selected);
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
     void loadSettings();
     void saveSettings();

@@ -224,3 +224,7 @@ add_executable(test_scripted_cheapshark test_scripted_cheapshark.cpp)
 target_link_libraries(test_scripted_cheapshark Qt6::Test klookup_core)
 target_compile_definitions(test_scripted_cheapshark PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_scripted_cheapshark COMMAND test_scripted_cheapshark)
+
+add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/provider_spotify.cpp)
+target_link_libraries(test_closedreplies Qt6::Test klookup_core)
+add_test(NAME test_closedreplies COMMAND test_closedreplies)

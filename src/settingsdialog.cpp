@@ -1,3 +1,4 @@
+#include "providerdefaults.h"
 #include "settingsdialog.h"
 #include "providerdiagnostics.h"
 #include <QPlainTextEdit>
@@ -54,6 +55,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         QListWidgetItem *item = new QListWidgetItem(provider->name(), m_listWidget);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(provider->isEnabled() ? Qt::Checked : Qt::Unchecked);
+        item->setData(Qt::UserRole + 1, provider->isEnabled());
+        item->setToolTip(ProviderDefaults::reason(provider->id()));
         item->setData(Qt::UserRole, QVariant::fromValue(provider));
     }
     providersLayout->addWidget(m_listWidget);
@@ -143,6 +146,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         auto *item = new QListWidgetItem(record.package.name() + QStringLiteral(" — ") + record.status, m_packageList);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(record.package.isEnabled() ? Qt::Checked : Qt::Unchecked);
+        item->setToolTip(ProviderDefaults::reason(record.package.id()));
     }
     packageLayout->addWidget(m_packageList);
     auto *identity = new QLabel(packagePage);
@@ -167,7 +171,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (!selected) { identity->clear(); return; }
         const auto &record = m_packages[row];
         const auto &pkg = record.package;
-        identity->setText(QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
+        identity->setText(ProviderDefaults::reason(pkg.id()) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
             .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
                  pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
                  pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,
@@ -384,7 +388,10 @@ void SettingsDialog::saveSettings()
             provider->setEnabled(isEnabled);
             if (auto *capability = qobject_cast<SearchProviderOptions *>(provider); capability && m_providerOptions.contains(provider))
                 capability->saveOptions(m_providerOptions.value(provider));
-            providersGroup.writeEntry(provider->id() + QStringLiteral("_Enabled"), isEnabled);
+            if (providersGroup.hasKey(provider->id() + QStringLiteral("_Enabled")) ||
+                isEnabled != item->data(Qt::UserRole + 1).toBool())
+                providersGroup.writeEntry(provider->id() + QStringLiteral("_Enabled"), isEnabled);
+            item->setData(Qt::UserRole + 1, isEnabled);
         }
     }
 
@@ -392,10 +399,11 @@ void SettingsDialog::saveSettings()
     for (int row = 0; row < m_packages.size(); ++row) {
         const auto &pkg = m_packages[row].package;
         const bool enabled = m_packageList->item(row)->checkState() == Qt::Checked;
-        const bool changedEnablement = enabled != providersGroup.readEntry(pkg.id() + QStringLiteral("_Enabled"), true);
+        const bool changedEnablement = enabled != ProviderDefaults::enabled(providersGroup, pkg.id());
         const QByteArray oldApproval = providersGroup.readEntry(pkg.id() + QStringLiteral("_Approval"), QByteArray());
         const bool oldRevoked = providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false);
-        providersGroup.writeEntry(pkg.id() + QStringLiteral("_Enabled"), enabled);
+        if (providersGroup.hasKey(pkg.id() + QStringLiteral("_Enabled")) || changedEnablement)
+            providersGroup.writeEntry(pkg.id() + QStringLiteral("_Enabled"), enabled);
         if (m_approvalDrafts.contains(pkg.id())) {
             const bool approve = m_approvalDrafts.value(pkg.id());
             const auto current = ProviderPackage::fromDirectory(pkg.packageDir(), pkg.locationType());

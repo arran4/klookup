@@ -171,6 +171,7 @@ void ProviderMangaBaka::requestDetails(const QString &resultId, const QString &t
 SearchProvider *ProviderMangaBaka::clone(QObject *parent) const
 {
     auto *provider = new ProviderMangaBaka(parent);
+    provider->setEnabled(isEnabled());
     provider->m_formats = m_formats;
     return provider;
 }

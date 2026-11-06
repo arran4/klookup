@@ -147,7 +147,9 @@ void ProviderMangaDex::requestDetails(const QString &resultId, const QString &to
 
 SearchProvider *ProviderMangaDex::clone(QObject *parent) const
 {
-    return new ProviderMangaDex(parent);
+    auto *copy = new ProviderMangaDex(parent);
+    copy->setEnabled(isEnabled());
+    return copy;
 }
 
 ResultMetadata ProviderMangaDex::parseMetadata(const QJsonObject &obj) const

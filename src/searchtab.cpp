@@ -1,4 +1,5 @@
 #include "searchtab.h"
+#include "splitterkeyboard.h"
 #include "providerauthsession.h"
 #include "resultactions.h"
 #include "resultdetailwindow.h"
@@ -188,11 +189,11 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     }
 
     connect(m_mainSplitter, &QSplitter::splitterMoved, this, [this] {
-        saveLayout();
+        saveLayout(m_mainSplitter);
     });
     connect(m_detailSplitter, &QSplitter::splitterMoved, this, [this] {
         m_savedDetailSizes = m_detailSplitter->sizes();
-        saveLayout();
+        saveLayout(m_detailSplitter);
     });
 
     restoreLayout();
@@ -200,7 +201,6 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
 
 SearchTab::~SearchTab()
 {
-    saveLayout();
     for (const auto &state : std::as_const(m_states)) {
         if (state.provider) {
             state.provider->disconnect(this);
@@ -697,6 +697,7 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
             return true;
         } else if (event->type() == QEvent::KeyPress) {
             auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (resizeSplitterWithKey(m_mainSplitter, keyEvent)) return true;
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
                 resetMainSplitterSizes();
                 return true;
@@ -708,6 +709,7 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
             return true;
         } else if (event->type() == QEvent::KeyPress) {
             auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (resizeSplitterWithKey(m_detailSplitter, keyEvent)) return true;
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
                 resetDetailSplitterSizes();
                 return true;
@@ -745,16 +747,16 @@ QWidget *SearchTab::emptyStateWidget() const
     return m_emptyStateWidget;
 }
 
-void SearchTab::saveLayout()
+void SearchTab::saveLayout(QSplitter *changed)
 {
     KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
-    if (m_mainSplitter) {
+    if (changed == m_mainSplitter) {
         const auto sizes = m_mainSplitter->sizes();
         if (sizes.size() == 2 && sizes[0] > 0 && sizes[1] > 0) {
             group.writeEntry(QStringLiteral("SearchTabSplitter"), sizes);
         }
     }
-    if (m_savedDetailSizes.size() == 2 && m_savedDetailSizes[0] > 0) {
+    if (changed == m_detailSplitter && m_savedDetailSizes.size() == 2 && m_savedDetailSizes[0] > 0) {
         group.writeEntry(QStringLiteral("SearchTabDetailSplitter"), m_savedDetailSizes);
     }
     group.sync();
@@ -799,7 +801,7 @@ void SearchTab::resetMainSplitterSizes()
     } else {
         m_mainSplitter->setSizes({260, 540});
     }
-    saveLayout();
+    saveLayout(m_mainSplitter);
 }
 
 void SearchTab::resetDetailSplitterSizes()
@@ -815,7 +817,7 @@ void SearchTab::resetDetailSplitterSizes()
         m_savedDetailSizes = {250, 200};
     }
     m_detailSplitter->setSizes(m_savedDetailSizes);
-    saveLayout();
+    saveLayout(m_detailSplitter);
 }
 
 QWidget *SearchTab::createEmptyStateWidget(QWidget *parent)

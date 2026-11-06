@@ -1,3 +1,4 @@
+#include "isolatedguitest.h"
 #include "../src/searchprovider.h"
 #include "../src/searchtab.h"
 #include <KConfigGroup>
@@ -307,7 +308,7 @@ private slots:
             tab1.show();
 
             tab1.mainSplitter()->setSizes({320, 480});
-            tab1.saveLayout();
+            emit tab1.mainSplitter()->splitterMoved(320, 1);
 
             saved = layoutGroup.readEntry(QStringLiteral("SearchTabSplitter"), QList<int>());
             QCOMPARE(saved.size(), 2);
@@ -336,6 +337,29 @@ private slots:
             QVERIFY(fallbackSizes[0] > 0);
             QVERIFY(fallbackSizes[1] > 0);
         }
+    }
+
+    void testStaleTabDoesNotOverwriteNewerLayout()
+    {
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+        auto stale = std::make_unique<SearchTab>(QStringLiteral("old"));
+        stale->resize(800, 600); stale->show();
+        SearchTab current(QStringLiteral("current")); current.resize(900, 650); current.show();
+        // Both tabs have made deliberate changes previously.
+        QTest::keyClick(stale->mainSplitter()->handle(1), Qt::Key_Right);
+        QTest::keyClick(current.mainSplitter()->handle(1), Qt::Key_Right);
+        const auto horizontal = group.readEntry(QStringLiteral("SearchTabSplitter"), QList<int>());
+        QVERIFY(!horizontal.isEmpty());
+        stale->resize(1100, 700);
+        // An old tab moving its vertical separator must not save its stale horizontal one.
+        stale->resetDetailSplitterSizes();
+        QCOMPARE(group.readEntry(QStringLiteral("SearchTabSplitter"), QList<int>()), horizontal);
+        const auto vertical = group.readEntry(QStringLiteral("SearchTabDetailSplitter"), QList<int>());
+        current.resetMainSplitterSizes();
+        QCOMPARE(group.readEntry(QStringLiteral("SearchTabDetailSplitter"), QList<int>()), vertical);
+        const auto latest = group.readEntry(QStringLiteral("SearchTabSplitter"), QList<int>());
+        stale.reset();
+        QCOMPARE(group.readEntry(QStringLiteral("SearchTabSplitter"), QList<int>()), latest);
     }
 
     void testNarrowLayout()
@@ -447,7 +471,7 @@ private slots:
         QVERIFY(detailSplitter != nullptr);
 
         detailSplitter->setSizes({220, 280});
-        tab.saveLayout();
+        emit detailSplitter->splitterMoved(220, 1);
 
         detailSplitter->setSizes({500, 0});
         QCOMPARE(detailSplitter->sizes().value(1), 0);
@@ -460,5 +484,5 @@ private slots:
     }
 };
 
-QTEST_MAIN(SearchTabTest)
+int main(int argc, char **argv) { return runIsolatedGuiTest<SearchTabTest>(argc, argv); }
 #include "test_searchtab.moc"

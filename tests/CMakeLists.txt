@@ -224,3 +224,10 @@ add_executable(test_scripted_cheapshark test_scripted_cheapshark.cpp)
 target_link_libraries(test_scripted_cheapshark Qt6::Test klookup_core)
 target_compile_definitions(test_scripted_cheapshark PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_scripted_cheapshark COMMAND test_scripted_cheapshark)
+
+add_executable(test_configuration_isolation test_configuration_isolation.cpp)
+target_link_libraries(test_configuration_isolation Qt6::Test)
+target_compile_definitions(test_configuration_isolation PRIVATE
+    SEARCHTAB_TEST="$<TARGET_FILE:test_searchtab>" WINDOWS_TEST="$<TARGET_FILE:test_independent_windows>")
+add_dependencies(test_configuration_isolation test_searchtab test_independent_windows)
+add_test(NAME test_configuration_isolation COMMAND test_configuration_isolation)

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "resultdetailwindow.h"
+#include "splitterkeyboard.h"
 #include "appicon.h"
 #include "sourcelink.h"
 
@@ -79,7 +80,6 @@ ResultContent ResultDetailWindow::content() const
 
 void ResultDetailWindow::closeEvent(QCloseEvent *event)
 {
-    saveLayout();
     emit windowClosing(this);
     QMainWindow::closeEvent(event);
 }
@@ -217,6 +217,7 @@ bool ResultDetailWindow::eventFilter(QObject *watched, QEvent *event)
             return true;
         } else if (event->type() == QEvent::KeyPress) {
             auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (resizeSplitterWithKey(m_splitter, keyEvent)) return true;
             if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
                 resetSplitterSizes();
                 return true;

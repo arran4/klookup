@@ -34,7 +34,6 @@ public:
     QSplitter *detailSplitter() const;
     QWidget *emptyStateWidget() const;
 
-    void saveLayout();
     void restoreLayout();
     void resetMainSplitterSizes();
     void resetDetailSplitterSizes();
@@ -77,6 +76,7 @@ private:
     void loadInitialDetails();
     void updateDetailsControl();
     QWidget *createEmptyStateWidget(QWidget *parent);
+    void saveLayout(QSplitter *changed);
 
     QString m_query;
     QSplitter *m_mainSplitter = nullptr;

@@ -1,3 +1,4 @@
+#include "isolatedguitest.h"
 // SPDX-FileCopyrightText: 2026 KLookup contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -249,7 +250,7 @@ private slots:
         QVERIFY(qAbs(splitter->sizes()[1] - 490) <= 5);
 
         splitter->setSizes({360, 440});
-        tab->saveLayout();
+        emit tab->mainSplitter()->splitterMoved(360, 1);
 
         SearchTab mainTab(QStringLiteral("new tab"));
         mainTab.resize(800, 600);
@@ -258,6 +259,30 @@ private slots:
 
         win->close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    void testStaleDetailWindowDoesNotOverwriteNewerLayout()
+    {
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+        SearchResult result; result.title = QStringLiteral("Fixture");
+        ResultMetadata metadata;
+        MetadataNode section; section.label = QStringLiteral("Facts");
+        section.values.append({QStringLiteral("Fixture value"), QUrl(), MetadataValue::Kind::Text});
+        metadata.sections.append(section);
+        auto *old = new ResultDetailWindow(result, QStringLiteral("Fixture"), metadata);
+        auto *current = new ResultDetailWindow(result, QStringLiteral("Fixture"), metadata);
+        old->show(); current->show();
+        QTest::keyClick(old->splitter()->handle(1), Qt::Key_Down);
+        QTest::keyClick(current->splitter()->handle(1), Qt::Key_Up);
+        const auto latest = group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>());
+        QVERIFY(!latest.isEmpty());
+        old->resize(900, 900);
+        old->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>()), latest);
+        current->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>()), latest);
     }
 
     void testResultDetailWindowSplitterAndPersistence()
@@ -288,6 +313,7 @@ private slots:
         QCOMPARE(splitter->orientation(), Qt::Vertical);
 
         splitter->setSizes({280, 220});
+        emit splitter->splitterMoved(splitter->sizes()[0], 1);
         win1->close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 
@@ -317,5 +343,5 @@ private slots:
     }
 };
 
-QTEST_MAIN(TestIndependentWindows)
+int main(int argc, char **argv) { return runIsolatedGuiTest<TestIndependentWindows>(argc, argv); }
 #include "test_independent_windows.moc"

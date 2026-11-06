@@ -231,3 +231,7 @@ target_compile_definitions(test_configuration_isolation PRIVATE
     SEARCHTAB_TEST="$<TARGET_FILE:test_searchtab>" WINDOWS_TEST="$<TARGET_FILE:test_independent_windows>")
 add_dependencies(test_configuration_isolation test_searchtab test_independent_windows)
 add_test(NAME test_configuration_isolation COMMAND test_configuration_isolation)
+
+add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/provider_spotify.cpp)
+target_link_libraries(test_closedreplies Qt6::Test klookup_core)
+add_test(NAME test_closedreplies COMMAND test_closedreplies)

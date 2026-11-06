@@ -356,6 +356,7 @@ private:
 JsProvider::JsProvider(const ProviderPackage &package, QObject *parent, ProviderHost::ProviderHostService *hostService)
     : ProviderV1(parent), m_package(package), m_hostService(hostService)
 {
+    setClassification(package.manifest().classification);
     if (!m_hostService) m_hostService = new ProviderHost::ProviderHostService(package, this);
     initEngine();
 }

@@ -17,5 +17,13 @@
     "details": true,
     "separateContent": false,
     "authentication": false
+  },
+  "classification": {
+    "version": "1.0.0",
+    "facets": [
+      "topic:games",
+      "platform:pc",
+      "currency:USD"
+    ]
   }
 }

@@ -105,6 +105,11 @@ public:
     virtual QString id() const = 0;
     virtual QString name() const = 0;
     virtual QString description() const = 0;
+    ProviderClassification classification() const {
+        const auto value = property("klookupClassification");
+        return value.canConvert<ProviderClassification>() ? value.value<ProviderClassification>() : ProviderClassification::builtin(id());
+    }
+    void setClassification(const ProviderClassification &value) { setProperty("klookupClassification", QVariant::fromValue(value)); }
     virtual Capabilities capabilities() const = 0;
 
     // Asynchronous commands with explicit request IDs

@@ -29,7 +29,7 @@ add_executable(test_session_lifecycle_helper session_lifecycle_helper.cpp)
 target_link_libraries(test_session_lifecycle_helper klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
 
 add_executable(test_searchtab test_searchtab.cpp)
-target_link_libraries(test_searchtab Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui)
+target_link_libraries(test_searchtab Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui KF6::ConfigCore KF6::ConfigGui)
 add_test(NAME test_searchtab COMMAND test_searchtab)
 
 add_executable(test_resultactions test_resultactions.cpp)
@@ -86,7 +86,7 @@ add_executable(test_searchcontinuation test_searchcontinuation.cpp)
 target_link_libraries(test_searchcontinuation Qt6::Test klookup_core)
 add_test(NAME test_searchcontinuation COMMAND test_searchcontinuation)
 
-foreach(target test_provider_mangabaka test_provider_mangadex)
+foreach(target test_provider_mangabaka test_provider_mangadex test_searchtab)
     target_compile_definitions(${target} PRIVATE FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
 endforeach()
 
@@ -225,10 +225,23 @@ target_link_libraries(test_scripted_cheapshark Qt6::Test klookup_core)
 target_compile_definitions(test_scripted_cheapshark PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_scripted_cheapshark COMMAND test_scripted_cheapshark)
 
+add_executable(test_configuration_isolation test_configuration_isolation.cpp)
+target_link_libraries(test_configuration_isolation Qt6::Test)
+target_compile_definitions(test_configuration_isolation PRIVATE
+    SEARCHTAB_TEST="$<TARGET_FILE:test_searchtab>" WINDOWS_TEST="$<TARGET_FILE:test_independent_windows>")
+add_dependencies(test_configuration_isolation test_searchtab test_independent_windows)
+add_test(NAME test_configuration_isolation COMMAND test_configuration_isolation)
+
 add_executable(test_providerclassification test_providerclassification.cpp)
 target_link_libraries(test_providerclassification Qt6::Test klookup_core)
 target_compile_definitions(test_providerclassification PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_providerclassification COMMAND test_providerclassification)
+
+add_library(provider_legacy_abi_fixture MODULE provider_legacy_abi_fixture.cpp)
+target_link_libraries(provider_legacy_abi_fixture klookup_core)
+target_include_directories(provider_legacy_abi_fixture PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_dependencies(test_providerclassification provider_legacy_abi_fixture)
+target_compile_definitions(test_providerclassification PRIVATE LEGACY_NATIVE_LIBRARY="$<TARGET_FILE:provider_legacy_abi_fixture>")
 
 add_executable(test_displayfilters test_displayfilters.cpp)
 target_link_libraries(test_displayfilters Qt6::Test klookup_core)

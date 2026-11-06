@@ -1,17 +1,24 @@
 #include "searchtab.h"
+#include "splitterkeyboard.h"
 #include "providerauthsession.h"
 #include "resultactions.h"
 #include "resultdetailwindow.h"
 #include "searchcontinuation.h"
 #include "sourcelink.h"
 #include "sourceurl.h"
+#include <KConfigGroup>
+#include <KSharedConfig>
 #include <QContextMenuEvent>
 #include <QDesktopServices>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
 #include <QShortcut>
+#include <QSplitter>
+#include <QSplitterHandle>
+#include <QStackedWidget>
 #include <QTimer>
 #include <QToolButton>
 #include <QScrollArea>
@@ -32,24 +39,42 @@ constexpr int ContentRole = Qt::UserRole + 5;
 } // namespace
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
-    : QWidget(parent), m_query(query), m_resultsTree(new QTreeWidget(this)), m_detailsView(new QTextBrowser(this)),
-      m_metadataView(new QTreeWidget(this)), m_sourceLink(new SourceLink(this)),
-      m_detailsButton(new QPushButton(QStringLiteral("Load full details"), this))
+    : QWidget(parent)
+    , m_query(query)
+    , m_resultsTree(nullptr)
+    , m_detailsView(nullptr)
+    , m_metadataView(nullptr)
+    , m_sourceLink(nullptr)
+    , m_detailsButton(nullptr)
 {
-    auto *layout = new QHBoxLayout(this);
-    auto *left = new QVBoxLayout;
+    auto *rootLayout = new QHBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_mainSplitter = new QSplitter(Qt::Horizontal, this);
+    m_mainSplitter->setObjectName(QStringLiteral("mainSplitter"));
+    rootLayout->addWidget(m_mainSplitter);
+
+    auto *leftWidget = new QWidget;
+    leftWidget->setObjectName(QStringLiteral("resultsPane"));
+    leftWidget->setMinimumWidth(150);
+    auto *left = new QVBoxLayout(leftWidget);
+    left->setContentsMargins(0, 0, 0, 0);
+
     auto *headerLayout = new QHBoxLayout;
-    auto *label = new QLabel(QStringLiteral("Results for: ") + query, this);
+    auto *label = new QLabel(QStringLiteral("Results for: ") + query, leftWidget);
     label->setTextFormat(Qt::PlainText);
     headerLayout->addWidget(label);
     headerLayout->addStretch();
-    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"), this);
+    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"), leftWidget);
     detachButton->setObjectName(QStringLiteral("openSearchInNewWindow"));
     connect(detachButton, &QPushButton::clicked, this, [this] {
         emit openSearchInNewWindowRequested(m_query);
     });
     headerLayout->addWidget(detachButton);
     left->addLayout(headerLayout);
+
+    m_resultsTree = new QTreeWidget(leftWidget);
+    m_resultsTree->setObjectName(QStringLiteral("resultsTree"));
     m_resultsTree->setHeaderHidden(true);
     m_resultsTree->installEventFilter(this);
     m_resultsTree->viewport()->installEventFilter(this);
@@ -89,22 +114,59 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         applyDisplayFilters();
     });
     left->addWidget(m_resultsTree);
-    auto *right = new QVBoxLayout;
-    right->addWidget(m_detailsView);
-    right->addWidget(m_metadataView, 1);
+
+    m_detailStack = new QStackedWidget;
+    m_detailStack->setObjectName(QStringLiteral("detailStack"));
+    m_detailStack->setMinimumWidth(200);
+
+    m_emptyStateWidget = createEmptyStateWidget(m_detailStack);
+    m_detailStack->addWidget(m_emptyStateWidget);
+
+    m_detailContainer = new QWidget(m_detailStack);
+    m_detailContainer->setObjectName(QStringLiteral("detailContainer"));
+    auto *right = new QVBoxLayout(m_detailContainer);
+    right->setContentsMargins(0, 0, 0, 0);
+
+    m_detailSplitter = new QSplitter(Qt::Vertical, m_detailContainer);
+    m_detailSplitter->setObjectName(QStringLiteral("detailSplitter"));
+
+    m_detailsView = new QTextBrowser(m_detailSplitter);
+    m_detailsView->setObjectName(QStringLiteral("detailsView"));
+    m_detailsView->setMinimumHeight(60);
+
+    m_metadataView = new QTreeWidget(m_detailSplitter);
     m_metadataView->setObjectName(QStringLiteral("structuredMetadata"));
     m_metadataView->setHeaderLabels({QStringLiteral("Field / category"), QStringLiteral("Value")});
     m_metadataView->setWordWrap(true);
     m_metadataView->setColumnWidth(0, 200);
+    m_metadataView->setMinimumHeight(50);
     m_metadataView->hide();
+
+    m_detailSplitter->insertWidget(0, m_metadataView);
+    m_detailSplitter->insertWidget(0, m_detailsView);
+
+    m_detailSplitter->setChildrenCollapsible(true);
+    m_detailSplitter->setCollapsible(0, false);
+    m_detailSplitter->setCollapsible(1, true);
+
     connect(m_metadataView, &QTreeWidget::itemActivated, this, [](QTreeWidgetItem *item, int) {
         const auto url = Metadata::safeWebUrl(item->data(1, Qt::UserRole).toString());
         if (!url.isEmpty())
             QDesktopServices::openUrl(url);
     });
+
+    right->addWidget(m_detailSplitter, 1);
+
+    m_sourceLink = new SourceLink(m_detailContainer);
     right->addWidget(m_sourceLink);
+
+    m_detailsButton = new QPushButton(QStringLiteral("Load full details"), m_detailContainer);
+    m_detailsButton->setObjectName(QStringLiteral("loadDetails"));
+    m_detailsButton->hide();
+    connect(m_detailsButton, &QPushButton::clicked, this, [this] { loadDetails(); });
     right->addWidget(m_detailsButton);
-    m_openDetailsWindowButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open Details in New Window"), this);
+
+    m_openDetailsWindowButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open Details in New Window"), m_detailContainer);
     m_openDetailsWindowButton->setObjectName(QStringLiteral("openDetailsInNewWindowButton"));
     m_openDetailsWindowButton->hide();
     connect(m_openDetailsWindowButton, &QPushButton::clicked, this, [this] {
@@ -113,11 +175,23 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         }
     });
     right->addWidget(m_openDetailsWindowButton);
-    layout->addLayout(left, 1);
-    layout->addLayout(right, 2);
-    m_detailsButton->setObjectName(QStringLiteral("loadDetails"));
-    m_detailsButton->hide();
-    connect(m_detailsButton, &QPushButton::clicked, this, [this] { loadDetails(); });
+
+    m_detailStack->addWidget(m_detailContainer);
+
+    m_mainSplitter->insertWidget(0, m_detailStack);
+    m_mainSplitter->insertWidget(0, leftWidget);
+
+    m_mainSplitter->setChildrenCollapsible(false);
+    m_mainSplitter->setCollapsible(0, false);
+    m_mainSplitter->setCollapsible(1, false);
+
+    m_mainSplitter->setStretchFactor(0, 1);
+    m_mainSplitter->setStretchFactor(1, 2);
+    m_detailSplitter->setStretchFactor(0, 1);
+    m_detailSplitter->setStretchFactor(1, 1);
+
+    m_detailStack->setCurrentWidget(m_emptyStateWidget);
+
     connect(m_resultsTree, &QTreeWidget::itemClicked, this, &SearchTab::onResultClicked);
     connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) { onResultClicked(item, 0); });
     m_detailsView->setOpenExternalLinks(false);
@@ -128,6 +202,31 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         if (!safe.isEmpty())
             QDesktopServices::openUrl(safe);
     });
+
+    if (auto *handle = m_mainSplitter->handle(1)) {
+        handle->setObjectName(QStringLiteral("mainSplitterHandle"));
+        handle->setFocusPolicy(Qt::StrongFocus);
+        handle->setAccessibleName(QStringLiteral("Search results and details splitter"));
+        handle->setAccessibleDescription(QStringLiteral("Use left and right arrow keys to resize the results list and detail panes. Double-click or press Enter to reset."));
+        handle->installEventFilter(this);
+    }
+    if (auto *handle = m_detailSplitter->handle(1)) {
+        handle->setObjectName(QStringLiteral("detailSplitterHandle"));
+        handle->setFocusPolicy(Qt::StrongFocus);
+        handle->setAccessibleName(QStringLiteral("Detail summary and metadata splitter"));
+        handle->setAccessibleDescription(QStringLiteral("Use up and down arrow keys to resize the summary and metadata panes. Double-click or press Enter to reset."));
+        handle->installEventFilter(this);
+    }
+
+    connect(m_mainSplitter, &QSplitter::splitterMoved, this, [this] {
+        saveLayout(m_mainSplitter);
+    });
+    connect(m_detailSplitter, &QSplitter::splitterMoved, this, [this] {
+        m_savedDetailSizes = m_detailSplitter->sizes();
+        saveLayout(m_detailSplitter);
+    });
+
+    restoreLayout();
 }
 
 SearchTab::~SearchTab()
@@ -530,7 +629,13 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
         if (m_openDetailsWindowButton) {
             m_openDetailsWindowButton->hide();
         }
+        if (m_detailStack) {
+            m_detailStack->setCurrentWidget(m_emptyStateWidget);
+        }
         return;
+    }
+    if (m_detailStack) {
+        m_detailStack->setCurrentWidget(m_detailContainer);
     }
     if (m_openDetailsWindowButton) {
         m_openDetailsWindowButton->show();
@@ -549,7 +654,13 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
 
 void SearchTab::renderMetadata(const ResultMetadata &metadata)
 {
+    const bool wasVisible = m_metadataView->isVisible();
     Metadata::populateMetadataTree(m_metadataView, metadata);
+    if (!wasVisible && m_metadataView->isVisible() && m_detailSplitter) {
+        if (m_savedDetailSizes.size() == 2 && m_savedDetailSizes[0] > 0) {
+            m_detailSplitter->setSizes(m_savedDetailSizes);
+        }
+    }
 }
 
 QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
@@ -616,6 +727,32 @@ void SearchTab::showResultMenu(QTreeWidgetItem *item, const QPoint &globalPositi
 
 bool SearchTab::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_mainSplitter && watched == m_mainSplitter->handle(1)) {
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            resetMainSplitterSizes();
+            return true;
+        } else if (event->type() == QEvent::KeyPress) {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (resizeSplitterWithKey(m_mainSplitter, keyEvent)) return true;
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
+                resetMainSplitterSizes();
+                return true;
+            }
+        }
+    } else if (m_detailSplitter && watched == m_detailSplitter->handle(1)) {
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            resetDetailSplitterSizes();
+            return true;
+        } else if (event->type() == QEvent::KeyPress) {
+            auto *keyEvent = static_cast<QKeyEvent *>(event);
+            if (resizeSplitterWithKey(m_detailSplitter, keyEvent)) return true;
+            if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter || keyEvent->key() == Qt::Key_Space) {
+                resetDetailSplitterSizes();
+                return true;
+            }
+        }
+    }
+
     if ((watched == m_resultsTree || watched == m_resultsTree->viewport()) && event->type() == QEvent::ContextMenu) {
         auto *context = static_cast<QContextMenuEvent *>(event);
         auto *item = context->reason() == QContextMenuEvent::Keyboard
@@ -629,6 +766,140 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QWidget::eventFilter(watched, event);
+}
+
+QSplitter *SearchTab::mainSplitter() const
+{
+    return m_mainSplitter;
+}
+
+QSplitter *SearchTab::detailSplitter() const
+{
+    return m_detailSplitter;
+}
+
+QWidget *SearchTab::emptyStateWidget() const
+{
+    return m_emptyStateWidget;
+}
+
+void SearchTab::saveLayout(QSplitter *changed)
+{
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+    if (changed == m_mainSplitter) {
+        const auto sizes = m_mainSplitter->sizes();
+        if (sizes.size() == 2 && sizes[0] > 0 && sizes[1] > 0) {
+            group.writeEntry(QStringLiteral("SearchTabSplitter"), sizes);
+        }
+    }
+    if (changed == m_detailSplitter && m_savedDetailSizes.size() == 2 && m_savedDetailSizes[0] > 0) {
+        group.writeEntry(QStringLiteral("SearchTabDetailSplitter"), m_savedDetailSizes);
+    }
+    group.sync();
+}
+
+void SearchTab::restoreLayout()
+{
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+    const QList<int> defaultMainSizes = {260, 540};
+    const QList<int> defaultDetailSizes = {250, 200};
+
+    if (m_mainSplitter) {
+        QList<int> mainSizes = group.readEntry(QStringLiteral("SearchTabSplitter"), defaultMainSizes);
+        if (mainSizes.size() == 2 && mainSizes[0] > 0 && mainSizes[1] > 0) {
+            m_mainSplitter->setSizes(mainSizes);
+        } else {
+            m_mainSplitter->setSizes(defaultMainSizes);
+        }
+    }
+
+    QList<int> detailSizes = group.readEntry(QStringLiteral("SearchTabDetailSplitter"), defaultDetailSizes);
+    if (detailSizes.size() == 2 && detailSizes[0] > 0 && detailSizes[1] >= 0) {
+        m_savedDetailSizes = detailSizes;
+    } else {
+        m_savedDetailSizes = defaultDetailSizes;
+    }
+
+    if (m_detailSplitter) {
+        m_detailSplitter->setSizes(m_savedDetailSizes);
+    }
+}
+
+void SearchTab::resetMainSplitterSizes()
+{
+    if (!m_mainSplitter)
+        return;
+    const int total = m_mainSplitter->width();
+    if (total > 0) {
+        const int left = qMax(150, total / 3);
+        const int right = qMax(200, total - left);
+        m_mainSplitter->setSizes({left, right});
+    } else {
+        m_mainSplitter->setSizes({260, 540});
+    }
+    saveLayout(m_mainSplitter);
+}
+
+void SearchTab::resetDetailSplitterSizes()
+{
+    if (!m_detailSplitter)
+        return;
+    const int total = m_detailSplitter->height();
+    if (total > 0) {
+        const int top = qMax(60, total / 2);
+        const int bottom = qMax(50, total - top);
+        m_savedDetailSizes = {top, bottom};
+    } else {
+        m_savedDetailSizes = {250, 200};
+    }
+    m_detailSplitter->setSizes(m_savedDetailSizes);
+    saveLayout(m_detailSplitter);
+}
+
+QWidget *SearchTab::createEmptyStateWidget(QWidget *parent)
+{
+    auto *widget = new QWidget(parent);
+    widget->setObjectName(QStringLiteral("emptyDetailState"));
+    widget->setAccessibleName(QStringLiteral("No result selected"));
+    widget->setAccessibleDescription(QStringLiteral("Select a search result from the list to view its details, summary, and metadata."));
+
+    auto *layout = new QVBoxLayout(widget);
+    layout->setAlignment(Qt::AlignCenter);
+    layout->setSpacing(10);
+    layout->setContentsMargins(20, 20, 20, 20);
+
+    auto *iconLabel = new QLabel(widget);
+    iconLabel->setObjectName(QStringLiteral("emptyStateIcon"));
+    iconLabel->setAlignment(Qt::AlignCenter);
+    QIcon icon = QIcon::fromTheme(QStringLiteral("edit-find"));
+    if (icon.isNull()) {
+        icon = QIcon::fromTheme(QStringLiteral("system-search"));
+    }
+    if (!icon.isNull()) {
+        iconLabel->setPixmap(icon.pixmap(48, 48));
+    }
+    layout->addWidget(iconLabel);
+
+    auto *titleLabel = new QLabel(QStringLiteral("No result selected"), widget);
+    titleLabel->setObjectName(QStringLiteral("emptyStateTitle"));
+    titleLabel->setAlignment(Qt::AlignCenter);
+    QFont titleFont = titleLabel->font();
+    titleFont.setBold(true);
+    titleFont.setPointSize(titleFont.pointSize() + 1);
+    titleLabel->setFont(titleFont);
+    layout->addWidget(titleLabel);
+
+    auto *descLabel = new QLabel(QStringLiteral("Select a search result on the left to view its details, summary, and metadata."), widget);
+    descLabel->setObjectName(QStringLiteral("emptyStateDescription"));
+    descLabel->setAlignment(Qt::AlignCenter);
+    descLabel->setWordWrap(true);
+    descLabel->setMaximumWidth(360);
+    QPalette pal = descLabel->palette();
+    pal.setColor(QPalette::WindowText, pal.color(QPalette::Disabled, QPalette::WindowText));
+    descLabel->setPalette(pal);
+    layout->addWidget(descLabel);
+
+    return widget;
 }
 
 void SearchTab::updateDisplayFilters()

@@ -5,7 +5,10 @@
 
 Classification describes a **provider**, never a result's story tags, user
 location, approval or source enablement. Native providers expose
-`SearchProvider::classification()`; Provider API v1 and both adapters carry the
+`SearchProvider::classification()`; custom native metadata uses `setClassification()`
+(usually during construction). This access is nonvirtual and stored as QObject
+data so the unversioned legacy native-provider vtable is unchanged. Application
+`cloneForSearch()` copies metadata and enablement even for old plugins. Provider API v1 and both adapters carry the
 same descriptor. Script packages expose it declaratively in `provider.json`:
 
 ```json
@@ -53,3 +56,8 @@ requests network data to obtain metadata.
 Settings displays the descriptor for native and script sources, and live result
 groups carry it as typed data with a readable tooltip. Interactive display
 filtering and source eligibility controls are separate follow-up changes.
+
+A binary fixture compiles a real module against the pre-change SearchProvider
+header, then loads it into the new host and verifies search/clone dispatch and
+metadata copying. Provider API v1 metadata also uses nonvirtual QObject data;
+no JavaScript executes to read a descriptor.

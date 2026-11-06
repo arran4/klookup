@@ -105,7 +105,11 @@ public:
     virtual QString id() const = 0;
     virtual QString name() const = 0;
     virtual QString description() const = 0;
-    virtual ProviderClassification classification() const { return ProviderClassification::builtin(id()); }
+    ProviderClassification classification() const {
+        const auto value = property("klookupClassification");
+        return value.canConvert<ProviderClassification>() ? value.value<ProviderClassification>() : ProviderClassification::builtin(id());
+    }
+    void setClassification(const ProviderClassification &value) { setProperty("klookupClassification", QVariant::fromValue(value)); }
     virtual Capabilities capabilities() const = 0;
 
     // Asynchronous commands with explicit request IDs
@@ -143,7 +147,6 @@ public:
     QString id() const override;
     QString name() const override;
     QString description() const override;
-    ProviderClassification classification() const override;
     Capabilities capabilities() const override;
 
     quint64 search(const QString &query, quint64 requestId = 0) override;
@@ -196,7 +199,6 @@ public:
 
     QString id() const override;
     QString name() const override;
-    ProviderClassification classification() const override;
     void search(const QString &query) override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
 

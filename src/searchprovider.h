@@ -49,7 +49,17 @@ public:
 
     virtual QString name() const = 0;
     virtual QString id() const = 0;
-    virtual ProviderClassification classification() const { return ProviderClassification::builtin(id()); }
+    // Nonvirtual metadata access preserves the legacy native-provider vtable.
+    ProviderClassification classification() const {
+        const auto value = property("klookupClassification");
+        return value.canConvert<ProviderClassification>() ? value.value<ProviderClassification>() : ProviderClassification::builtin(id());
+    }
+    void setClassification(const ProviderClassification &value) { setProperty("klookupClassification", QVariant::fromValue(value)); }
+    SearchProvider *cloneForSearch(QObject *parent = nullptr) const {
+        auto *copy = clone(parent);
+        if (copy) { copy->setClassification(classification()); copy->setEnabled(isEnabled()); }
+        return copy;
+    }
 
     virtual void search(const QString &query) = 0;
 

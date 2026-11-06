@@ -17,6 +17,8 @@ class ProviderAuthSession;
 class SourceLink;
 class QMenu;
 class ResultDetailWindow;
+class QSplitter;
+class QStackedWidget;
 
 class SearchTab : public QWidget
 {
@@ -32,6 +34,14 @@ public:
     void applySourceEligibility(const QSet<QString> &selected);
     bool hasProvider(const QString &id) const { return m_states.contains(id); }
     void setError(const QString &providerName, const QString &errorMsg);
+
+    QSplitter *mainSplitter() const;
+    QSplitter *detailSplitter() const;
+    QWidget *emptyStateWidget() const;
+
+    void restoreLayout();
+    void resetMainSplitterSizes();
+    void resetDetailSplitterSizes();
 
 signals:
     void searchSelectedSourcesRequested(const QSet<QString> &sources);
@@ -71,6 +81,9 @@ private:
     void renderMetadata(const ResultMetadata &metadata);
     void loadInitialDetails();
     void updateDetailsControl();
+    QWidget *createEmptyStateWidget(QWidget *parent);
+    void saveLayout(QSplitter *changed);
+
     bool sourceEligible(SearchProvider *provider) const;
     bool m_respectSourcePolicy = false;
     bool m_hasTemporarySelection = false;
@@ -79,6 +92,12 @@ private:
     QToolButton *m_sourceButton = nullptr;
     QPushButton *m_applySources = nullptr;
     QString m_query;
+    QSplitter *m_mainSplitter = nullptr;
+    QSplitter *m_detailSplitter = nullptr;
+    QStackedWidget *m_detailStack = nullptr;
+    QWidget *m_emptyStateWidget = nullptr;
+    QWidget *m_detailContainer = nullptr;
+
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;
     QTreeWidget *m_metadataView;
@@ -91,5 +110,6 @@ private:
     QString m_detailProvider;
     QString m_detailId;
     QTreeWidgetItem *m_selected = nullptr;
+    QList<int> m_savedDetailSizes;
 };
 #endif

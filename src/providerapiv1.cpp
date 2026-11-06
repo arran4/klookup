@@ -487,6 +487,7 @@ LegacyProviderV1Adapter::LegacyProviderV1Adapter(SearchProvider *legacyProvider,
     , m_continuation(qobject_cast<SearchProviderContinuation *>(legacyProvider))
 {
     if (m_legacy) {
+        setClassification(m_legacy->classification());
         connect(m_legacy, &SearchProvider::searchCompleted, this, &LegacyProviderV1Adapter::onSearchCompleted);
         connect(m_legacy, &SearchProvider::searchFailed, this, &LegacyProviderV1Adapter::onSearchFailed);
         connect(m_legacy, &SearchProvider::pageCompleted, this, &LegacyProviderV1Adapter::onPageCompleted);
@@ -726,7 +727,7 @@ void LegacyProviderV1Adapter::onRequestFailed(quint64 reqId, const QString &erro
 ProviderV1 *LegacyProviderV1Adapter::clone(QObject *parent) const
 {
     if (m_legacy) {
-        auto *clonedLegacy = m_legacy->clone(parent);
+        auto *clonedLegacy = m_legacy->cloneForSearch(parent);
         if (clonedLegacy) {
             return new LegacyProviderV1Adapter(clonedLegacy, parent);
         }
@@ -769,6 +770,7 @@ ProviderV1ToLegacyAdapter::~ProviderV1ToLegacyAdapter()
 void ProviderV1ToLegacyAdapter::initV1Connections()
 {
     if (m_v1) {
+        setClassification(m_v1->classification());
         connect(m_v1, &ProviderV1::pageReady, this, &ProviderV1ToLegacyAdapter::onPageReady);
         connect(m_v1, &ProviderV1::pageFailed, this, &ProviderV1ToLegacyAdapter::onPageFailed);
         connect(m_v1, &ProviderV1::detailsReady, this, &ProviderV1ToLegacyAdapter::onDetailsReady);
@@ -931,12 +933,3 @@ void ProviderV1ToLegacyAdapter::onContentFailed(quint64 reqId, const QString &re
 }
 
 } // namespace ProviderApiV1
-
-ProviderClassification ProviderApiV1::LegacyProviderV1Adapter::classification() const
-{
-    return m_legacy ? m_legacy->classification() : ProviderClassification();
-}
-ProviderClassification ProviderApiV1::ProviderV1ToLegacyAdapter::classification() const
-{
-    return m_v1 ? m_v1->classification() : ProviderClassification();
-}

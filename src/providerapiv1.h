@@ -8,6 +8,7 @@
 #include "resultmetadata.h"
 #include "searchcontinuation.h"
 #include "searchprovider.h"
+#include "providerauthentication.h"
 
 #include <QHash>
 #include <QJsonArray>
@@ -106,6 +107,7 @@ public:
     virtual QString name() const = 0;
     virtual QString description() const = 0;
     virtual Capabilities capabilities() const = 0;
+    virtual AuthenticationDescriptor authentication() const { return {}; }
 
     // Asynchronous commands with explicit request IDs
     virtual quint64 search(const QString &query, quint64 requestId = 0) = 0;
@@ -143,6 +145,7 @@ public:
     QString name() const override;
     QString description() const override;
     Capabilities capabilities() const override;
+    AuthenticationDescriptor authentication() const override;
 
     quint64 search(const QString &query, quint64 requestId = 0) override;
     quint64 getPage(const QString &query, const QString &pageToken, quint64 requestId = 0) override;
@@ -181,10 +184,10 @@ private:
 };
 
 // ProviderV1 -> Legacy SearchProvider & SearchProviderContinuation adapter
-class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation
+class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation, public ProviderAuthentication
 {
     Q_OBJECT
-    Q_INTERFACES(SearchProvider SearchProviderContinuation)
+    Q_INTERFACES(SearchProvider SearchProviderContinuation ProviderAuthentication)
 public:
     using Factory = std::function<ProviderV1 *(QObject *parent)>;
 
@@ -194,6 +197,7 @@ public:
 
     QString id() const override;
     QString name() const override;
+    AuthenticationDescriptor authenticationDescriptor() const override { return m_v1 ? m_v1->authentication() : AuthenticationDescriptor(); }
     void search(const QString &query) override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
 

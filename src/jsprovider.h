@@ -32,6 +32,7 @@ public:
     QString id() const override;
     QString name() const override;
     QString description() const override;
+    AuthenticationDescriptor authentication() const override { return m_package.manifest().authentication; }
     ProviderApiV1::Capabilities capabilities() const override;
     bool isLoaded() const { return m_loaded; }
     QString loadError() const { return m_loadError; }

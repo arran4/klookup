@@ -248,6 +248,14 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
         pkg.m_manifest.defaultSettings = root.value(QStringLiteral("defaultSettings")).toObject();
     }
 
+    pkg.m_manifest.authentication.executionSupported = false;
+    pkg.m_manifest.authentication.walletSupported = false;
+    if (root.contains(QStringLiteral("authentication"))) {
+        if (!AuthenticationDescriptor::fromManifest(root.value(QStringLiteral("authentication")), &pkg.m_manifest.authentication, &pkg.m_validationError)) return pkg;
+    } else if (pkg.m_manifest.capabilities.authentication) {
+        pkg.m_manifest.authentication.mode = AuthenticationMode::Unsupported;
+    }
+
     // Snapshot every asset, including extensionless imports and hidden files. Fail
     // closed on unreadable files, symlinks and bounded-read violations.
     QDirIterator it(canonicalPackageDir, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden,

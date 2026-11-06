@@ -928,3 +928,8 @@ void ProviderV1ToLegacyAdapter::onContentFailed(quint64 reqId, const QString &re
 }
 
 } // namespace ProviderApiV1
+
+AuthenticationDescriptor ProviderApiV1::LegacyProviderV1Adapter::authentication() const
+{
+    return ::authenticationDescriptor(m_legacy);
+}

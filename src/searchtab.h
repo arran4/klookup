@@ -2,6 +2,7 @@
 #define SEARCHTAB_H
 
 #include "searchprovider.h"
+#include "providereligibility.h"
 #include <QDateTime>
 #include <QMap>
 #include <QPointer>
@@ -11,6 +12,7 @@
 #include <QWidget>
 
 class QPushButton;
+class QToolButton;
 class ProviderAuthSession;
 class SourceLink;
 class QMenu;
@@ -28,6 +30,9 @@ public:
     ResultDetailWindow *openResultDetailsInNewWindow(QTreeWidgetItem *item);
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
     void addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId = {});
+    void setSourceChoices(const QList<SearchSourceChoice> &choices);
+    void applySourceEligibility(const QSet<QString> &selected);
+    bool hasProvider(const QString &id) const { return m_states.contains(id); }
     void setError(const QString &providerName, const QString &errorMsg);
 
     QSplitter *mainSplitter() const;
@@ -39,6 +44,7 @@ public:
     void resetDetailSplitterSizes();
 
 signals:
+    void searchSelectedSourcesRequested(const QSet<QString> &sources);
     void resultViewed(const QString &providerId, const SearchResult &result);
     void detailWindowCreated(ResultDetailWindow *window);
     void openSearchInNewWindowRequested(const QString &query);
@@ -78,6 +84,13 @@ private:
     QWidget *createEmptyStateWidget(QWidget *parent);
     void saveLayout(QSplitter *changed);
 
+    bool sourceEligible(SearchProvider *provider) const;
+    bool m_respectSourcePolicy = false;
+    bool m_hasTemporarySelection = false;
+    QSet<QString> m_appliedSources;
+    QSet<QString> m_sourceDraft;
+    QToolButton *m_sourceButton = nullptr;
+    QPushButton *m_applySources = nullptr;
     QString m_query;
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_detailSplitter = nullptr;

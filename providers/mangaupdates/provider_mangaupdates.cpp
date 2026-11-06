@@ -117,5 +117,7 @@ void ProviderMangaUpdates::onReplyFinished(QNetworkReply *reply)
 
 SearchProvider* ProviderMangaUpdates::clone(QObject *parent) const
 {
-    return new ProviderMangaUpdates(parent);
+    auto *copy = new ProviderMangaUpdates(parent);
+    copy->setEnabled(isEnabled());
+    return copy;
 }

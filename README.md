@@ -132,7 +132,7 @@ Find catalogue information through **Spotify** (after connecting it) or find son
 
 ## Search providers
 
-After the selective JavaScript provider batch, KLookup ships **15 lookup providers**: **10 native C++ modules** and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Merge this README after the batch and its shared approval, lifecycle, transport and diagnostics PRs. Providers can be enabled or disabled independently.
+After the selective JavaScript provider batch, KLookup ships **15 lookup providers**: **10 native C++ modules** and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Merge this README after the batch and its shared approval, lifecycle, transport and diagnostics PRs. Providers can be enabled or disabled independently. CheapShark is **off by default**: enable it in Settings → Script packages to include USD-priced PC-game deals. Explicit saved choices survive upgrades.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |

@@ -20,6 +20,9 @@
 #include <QSplitterHandle>
 #include <QStackedWidget>
 #include <QTimer>
+#include <QToolButton>
+#include <KConfigGroup>
+#include <KSharedConfig>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
@@ -83,6 +86,21 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
                 showResultMenu(item, m_resultsTree->viewport()->mapToGlobal(m_resultsTree->visualItemRect(item).center()));
         });
     }
+    auto *sourceControls = new QHBoxLayout;
+    m_sourceButton = new QToolButton(this);
+    m_sourceButton->setObjectName(QStringLiteral("sourceSelection"));
+    m_sourceButton->setText(QStringLiteral("Sources for this search…"));
+    m_sourceButton->setPopupMode(QToolButton::InstantPopup);
+    m_sourceButton->setFocusPolicy(Qt::StrongFocus);
+    m_sourceButton->setToolTip(QStringLiteral("Choose sources, then explicitly search them. This does not filter loaded results."));
+    sourceControls->addWidget(m_sourceButton);
+    m_applySources = new QPushButton(QStringLiteral("Search selected sources"), this);
+    m_applySources->setObjectName(QStringLiteral("applySourceSelection"));
+    m_applySources->setToolTip(QStringLiteral("Fetch newly selected sources. Already loaded results are retained."));
+    sourceControls->addWidget(m_applySources);
+    m_sourceButton->setVisible(false); m_applySources->setVisible(false);
+    connect(m_applySources, &QPushButton::clicked, this, [this] { emit searchSelectedSourcesRequested(m_sourceDraft); });
+    left->addLayout(sourceControls);
     left->addWidget(m_resultsTree);
 
     m_detailStack = new QStackedWidget;
@@ -216,7 +234,7 @@ SearchTab::~SearchTab()
 
 void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *authentication)
 {
-    if (!provider || m_states.contains(provider->id())) {
+    if (!provider || !provider->isEnabled() || m_states.contains(provider->id())) {
         return;
     }
     provider->setParent(this);
@@ -331,7 +349,7 @@ void SearchTab::loadMore(const QString &providerId)
     if (it == m_states.end())
         return;
     auto &state = it.value();
-    if (!state.provider || state.pending || (state.started && state.nextToken.isEmpty()) || state.retryAt > QDateTime::currentDateTimeUtc())
+    if (!state.provider || !sourceEligible(state.provider) || state.pending || (state.started && state.nextToken.isEmpty()) || state.retryAt > QDateTime::currentDateTimeUtc())
         return;
     state.pending = ++m_nextRequest;
     pageStatus(state, QStringLiteral("Loading…"), false);
@@ -533,7 +551,7 @@ void SearchTab::loadDetails(bool refresh)
     const auto result = m_selected->data(0, Qt::UserRole).value<SearchResult>();
     const QString id = m_selected->data(0, ProviderRole).toString();
     auto it = m_states.find(id);
-    if (it == m_states.end() || !it->provider || it->detailRetryAt > QDateTime::currentDateTimeUtc())
+    if (it == m_states.end() || !it->provider || !sourceEligible(it->provider) || it->detailRetryAt > QDateTime::currentDateTimeUtc())
         return;
     auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
     if (!continuation || !continuation->supportsDetails())
@@ -548,8 +566,8 @@ void SearchTab::loadDetails(bool refresh)
         if (m_detailRequest != requestId || !m_states.value(id).provider)
             return;
         auto *provider = m_states.value(id).provider.data();
-        if (!ready) {
-            emit provider->requestFailed(requestId, error);
+        if (!ready || !sourceEligible(provider)) {
+            emit provider->requestFailed(requestId, ready ? QStringLiteral("Source is disabled in Settings") : error);
             return;
         }
         if (auto *capability = qobject_cast<SearchProviderContinuation *>(provider))
@@ -567,7 +585,7 @@ void SearchTab::updateDetailsControl()
     QDateTime retryAt;
     if (m_selected && m_selected->data(0, Qt::UserRole).isValid()) {
         auto it = m_states.find(m_selected->data(0, ProviderRole).toString());
-        if (it != m_states.end() && it->provider) {
+        if (it != m_states.end() && it->provider && sourceEligible(it->provider)) {
             auto *continuation = qobject_cast<SearchProviderContinuation *>(it->provider);
             retryAt = it->detailRetryAt;
             supported = continuation && continuation->supportsDetails() &&
@@ -866,4 +884,52 @@ QWidget *SearchTab::createEmptyStateWidget(QWidget *parent)
     layout->addWidget(descLabel);
 
     return widget;
+}
+
+void SearchTab::setSourceChoices(const QList<SearchSourceChoice> &choices)
+{
+    m_respectSourcePolicy = true;
+    auto *menu = new QMenu(m_sourceButton);
+    m_sourceDraft.clear();
+    for (const auto &choice : choices) {
+        auto *action = menu->addAction(choice.name + QStringLiteral(" — ") + choice.explanation);
+        action->setObjectName(QStringLiteral("sourceChoice-") + choice.id);
+        action->setCheckable(true); action->setChecked(choice.selected); action->setEnabled(choice.selectable);
+        if (choice.selected) m_sourceDraft.insert(choice.id);
+        connect(action, &QAction::toggled, this, [this, id = choice.id](bool selected) {
+            if (selected) m_sourceDraft.insert(id); else m_sourceDraft.remove(id);
+        });
+    }
+    if (auto *old = m_sourceButton->menu()) old->deleteLater();
+    m_sourceButton->setMenu(menu);
+    m_sourceButton->setVisible(!choices.isEmpty()); m_applySources->setVisible(!choices.isEmpty());
+}
+
+void SearchTab::applySourceEligibility(const QSet<QString> &selected)
+{
+    m_hasTemporarySelection = true; m_appliedSources = selected;
+    for (auto it = m_states.begin(); it != m_states.end(); ++it) {
+        auto &state = it.value();
+        if (!state.provider) continue;
+        const bool enabled = selected.contains(it.key());
+        state.provider->setEnabled(enabled);
+        if (!enabled) {
+            if (auto *continuation = qobject_cast<SearchProviderContinuation *>(state.provider)) continuation->cancelRequests();
+            state.pending = 0;
+            if (m_detailProvider == it.key()) { m_detailRequest = 0; m_detailProvider.clear(); m_detailId.clear(); }
+        } else if (!state.started && !state.pending) {
+            loadMore(it.key());
+        }
+    }
+    updateDetailsControl();
+}
+
+bool SearchTab::sourceEligible(SearchProvider *provider) const
+{
+    if (!provider || !provider->isEnabled()) return false;
+    if (!m_respectSourcePolicy) return true;
+    const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    return ProviderEligibility::resolve(KConfigGroup(config, QStringLiteral("Providers")),
+        KConfigGroup(config, QStringLiteral("ProviderGroups")), provider->id(), provider->classification(),
+        m_hasTemporarySelection ? std::optional<bool>(m_appliedSources.contains(provider->id())) : std::nullopt).enabled;
 }

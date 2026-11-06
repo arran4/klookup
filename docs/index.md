@@ -14,7 +14,7 @@ For installation, source builds and contribution instructions, see the [reposito
 
 - [Package installation and approval](provider-package-approval.md), [authentication](provider-authentication.md) and [diagnostics](provider-diagnostics.md).
 - [Script lifecycle](script-provider-lifecycle.md), [HTTP transport](provider-http-transport.md) and [continuation contract](provider-continuation.md).
-- Provider-specific guides: [Wikipedia](wikipedia-content.md), [MangaBaka](mangabaka-formats.md), [Spotify](spotify-provider.md), [AniList](provider-anilist.md), [Lyrics.ovh](provider-lyrics-ovh.md) and [Open Library](provider-openlibrary.md).
+- Provider-specific guides: [Wikipedia](wikipedia-content.md), [MangaBaka](mangabaka-formats.md), [Spotify](spotify-provider.md), [AniList](provider-anilist.md), [Lyrics.ovh](provider-lyrics-ovh.md), [Open Library](provider-openlibrary.md) and [CheapShark](provider-cheapshark.md).
 
 ## Preview locally
 

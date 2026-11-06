@@ -34,3 +34,4 @@ nav:
       - AniList: provider-anilist.md
       - Lyrics.ovh: provider-lyrics-ovh.md
       - Open Library: provider-openlibrary.md
+      - CheapShark: provider-cheapshark.md

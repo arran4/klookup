@@ -13,6 +13,10 @@
 #include <QPushButton>
 #include <QShortcut>
 #include <QTimer>
+#include <QToolButton>
+#include <QScrollArea>
+#include <QSignalBlocker>
+#include <KLocalizedString>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
@@ -58,6 +62,32 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
                 showResultMenu(item, m_resultsTree->viewport()->mapToGlobal(m_resultsTree->visualItemRect(item).center()));
         });
     }
+    auto *filterHeader = new QHBoxLayout;
+    m_filterStatus = new QLabel(i18n("Show loaded results"), this);
+    m_filterStatus->setObjectName(QStringLiteral("displayFilterStatus"));
+    m_filterStatus->setTextFormat(Qt::PlainText);
+    filterHeader->addWidget(m_filterStatus);
+    auto *showAll = new QPushButton(i18n("Show all"), this);
+    showAll->setObjectName(QStringLiteral("resetDisplayFilters"));
+    showAll->setAccessibleDescription(i18n("Show all already loaded provider results. No new search is performed."));
+    filterHeader->addWidget(showAll);
+    left->addLayout(filterHeader);
+    auto *chips = new QWidget(this);
+    m_filterLayout = new QHBoxLayout(chips);
+    m_filterLayout->setContentsMargins(0, 0, 0, 0);
+    m_filterLayout->addStretch();
+    auto *scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("displayFilterChips"));
+    scroll->setAccessibleName(i18n("Filter already loaded results"));
+    scroll->setWidgetResizable(true); scroll->setWidget(chips);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setMaximumHeight(fontMetrics().height() + 48);
+    left->addWidget(scroll);
+    connect(showAll, &QPushButton::clicked, this, [this] {
+        m_selectedFacets.clear();
+        for (auto *button : m_filterButtons) { const QSignalBlocker blocker(button); button->setChecked(false); }
+        applyDisplayFilters();
+    });
     left->addWidget(m_resultsTree);
     auto *right = new QVBoxLayout;
     right->addWidget(m_detailsView);
@@ -139,6 +169,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
     state.group->setExpanded(true);
     const QString id = provider->id();
     m_states.insert(id, state);
+    updateDisplayFilters();
     connect(provider, &SearchProvider::pageCompleted, this, [this, id](quint64 requestId, const SearchPage &page) {
         auto &state = m_states[id];
         if (!state.pending || state.pending != requestId)
@@ -392,6 +423,7 @@ void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> 
 void SearchTab::addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId)
 {
     auto *group = groupForName(providerName);
+    group->setData(0, Qt::UserRole + 20, QVariant::fromValue(ProviderClassification::builtin(providerId)));
     const int first = group->childCount();
     appendResults(group, results);
     for (int index = first; index < group->childCount(); ++index) {
@@ -399,6 +431,7 @@ void SearchTab::addResults(const QString &providerName, const QList<SearchResult
         if (item->data(0, Qt::UserRole).canConvert<SearchResult>())
             item->setData(0, ProviderRole, providerId.isEmpty() ? providerName : providerId);
     }
+    updateDisplayFilters();
 }
 
 void SearchTab::setError(const QString &providerName, const QString &errorMsg)
@@ -407,6 +440,7 @@ void SearchTab::setError(const QString &providerName, const QString &errorMsg)
     item->setText(0, QStringLiteral("Error: ") + errorMsg);
     item->setForeground(0, Qt::red);
     item->setFlags(item->flags() & ~Qt::ItemIsSelectable);
+    updateDisplayFilters();
 }
 
 void SearchTab::onResultClicked(QTreeWidgetItem *item, int column)
@@ -595,4 +629,59 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QWidget::eventFilter(watched, event);
+}
+
+void SearchTab::updateDisplayFilters()
+{
+    for (int i = 0; i < m_resultsTree->topLevelItemCount(); ++i) {
+        const auto classification = m_resultsTree->topLevelItem(i)->data(0, Qt::UserRole + 20).value<ProviderClassification>();
+        auto facets = classification.facets;
+        if (facets.isEmpty()) facets.append(QStringLiteral("display:unclassified"));
+        for (const auto &id : facets) {
+            if (m_filterButtons.contains(id)) continue;
+            const auto label = id == QLatin1String("display:unclassified") ? i18n("Unclassified") : classification.label(id);
+            auto *button = new QToolButton(this);
+            button->setText(label); button->setCheckable(true);
+            button->setFocusPolicy(Qt::StrongFocus);
+            button->setProperty("providerFacet", id);
+            button->setObjectName(QStringLiteral("displayFacet-") + id);
+            button->setAccessibleName(i18n("Show loaded results: %1", label));
+            button->setToolTip(i18n("Display only; no network requests. Match any selected value within a facet, and every selected facet."));
+            m_filterButtons.insert(id, button);
+            m_filterLayout->insertWidget(m_filterLayout->count() - 1, button);
+            connect(button, &QToolButton::toggled, this, [this, id](bool checked) {
+                if (checked) m_selectedFacets.insert(id); else m_selectedFacets.remove(id);
+                applyDisplayFilters();
+            });
+        }
+    }
+    applyDisplayFilters();
+}
+
+void SearchTab::applyDisplayFilters()
+{
+    QMap<QString, QSet<QString>> selectedByFacet;
+    for (const auto &id : m_selectedFacets) if (!id.startsWith(QLatin1String("display:")))
+        selectedByFacet[id.section(QLatin1Char(':'), 0, 0)].insert(id);
+    int visible = 0;
+    const int count = m_resultsTree->topLevelItemCount();
+    for (int i = 0; i < count; ++i) {
+        auto *group = m_resultsTree->topLevelItem(i);
+        const auto facets = group->data(0, Qt::UserRole + 20).value<ProviderClassification>().facets;
+        bool matches = m_selectedFacets.isEmpty();
+        if (!matches && facets.isEmpty()) matches = m_selectedFacets.contains(QStringLiteral("display:unclassified"));
+        else if (!matches && !selectedByFacet.isEmpty()) {
+            matches = true;
+            for (const auto &choices : selectedByFacet) {
+                bool facetMatches = false;
+                for (const auto &id : facets) if (choices.contains(id)) { facetMatches = true; break; }
+                matches = matches && facetMatches;
+            }
+        }
+        group->setHidden(!matches);
+        if (matches) ++visible;
+    }
+    // Keep selection, loaded detail documents and every provider's continuation
+    // state intact, including when the selected result's group is hidden.
+    m_filterStatus->setText(m_selectedFacets.isEmpty() ? i18n("Show loaded results") : i18n("Loaded source groups: %1 of %2", visible, count));
 }

@@ -11,6 +11,9 @@
 #include <QWidget>
 
 class QPushButton;
+class QToolButton;
+class QHBoxLayout;
+class QLabel;
 class ProviderAuthSession;
 class SourceLink;
 class QMenu;
@@ -65,6 +68,12 @@ private:
     void renderMetadata(const ResultMetadata &metadata);
     void loadInitialDetails();
     void updateDetailsControl();
+    void updateDisplayFilters();
+    void applyDisplayFilters();
+    QMap<QString, QToolButton *> m_filterButtons;
+    QSet<QString> m_selectedFacets;
+    QHBoxLayout *m_filterLayout = nullptr;
+    QLabel *m_filterStatus = nullptr;
     QString m_query;
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;

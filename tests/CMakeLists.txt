@@ -229,3 +229,7 @@ add_executable(test_providerclassification test_providerclassification.cpp)
 target_link_libraries(test_providerclassification Qt6::Test klookup_core)
 target_compile_definitions(test_providerclassification PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_providerclassification COMMAND test_providerclassification)
+
+add_executable(test_displayfilters test_displayfilters.cpp)
+target_link_libraries(test_displayfilters Qt6::Test klookup_core)
+add_test(NAME test_displayfilters COMMAND test_displayfilters)

@@ -361,7 +361,7 @@ void ProviderAuthSession::connectOAuth(const QString &clientId, bool remember)
     cancel();
     if (!guard)
         return;
-    m_clientId = clientId.trimmed();
+    m_clientId = m_descriptor.oauth.publicClientId.isEmpty() ? clientId.trimmed() : m_descriptor.oauth.publicClientId;
     m_remember = remember;
     m_persisted = false;
     m_accessToken.clear();
@@ -448,7 +448,7 @@ void ProviderAuthSession::restore(const QString &clientId)
     emit credentialsChanged(QString());
     if (!guard)
         return;
-    m_clientId = clientId.trimmed();
+    m_clientId = m_descriptor.oauth.publicClientId.isEmpty() ? clientId.trimmed() : m_descriptor.oauth.publicClientId;
     if (!m_store) {
         fail(QStringLiteral("KWallet is unavailable"));
         return;

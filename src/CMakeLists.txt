@@ -25,6 +25,7 @@ add_library(klookup_core STATIC
     oauthreplyhandler.cpp
     oauthcodeflow.cpp
     providerauthmanager.cpp
+    providerauthentication.cpp
     globalshortcuts.cpp
     autostartmanager.cpp
 )

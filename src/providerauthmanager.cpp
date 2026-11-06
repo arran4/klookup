@@ -10,7 +10,7 @@ ProviderAuthSession *ProviderAuthManager::sessionFor(SearchProvider *provider)
     if (!provider)
         return nullptr;
     const auto descriptor = authenticationDescriptor(provider);
-    if (descriptor.mode == AuthenticationMode::None)
+    if (!descriptor.usable())
         return nullptr;
     if (m_sessions.value(provider->id()))
         return m_sessions.value(provider->id());

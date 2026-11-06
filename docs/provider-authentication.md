@@ -113,3 +113,28 @@ one consumer disconnecting/reconnecting cannot authorize subsequent lookups with
 stale success. Short-lived tokens lacking refresh credentials remain usable until
 their actual expiry. Deterministic regressions exercise each case. Real encrypted
 KWallet unlock/write/remove dialogs still require desktop verification.
+
+## Conditional Settings controls
+
+The provider descriptor drives field visibility. Credential-free sources show
+only "No authentication required". Token sources show the descriptor's token
+label and secret-entry action, with wallet controls only when supported. OAuth
+sources show callback/scopes and an editable public client ID only when the
+provider has not supplied a fixed `publicClientId`. Selection clears hidden
+fields; secrets are never placed in those public fields or KConfig. A fixed
+public ID is used consistently for authorization and restore binding.
+
+The stable method IDs are `urn:klookup:auth:none`, `urn:klookup:auth:token`
+and `urn:klookup:auth:oauth2-pkce`. No current shipped provider implements a
+username/password or combined workflow. Unsupported methods have no credential
+entry, authorize or wallet controls and cannot create a credential session.
+
+Script manifests may declare an `authentication` object with `version: "1.0.0"`,
+a bounded `methods` list, and optional plain `tokenLabel`/`guidance`. A missing
+descriptor remains compatible; a legacy authentication capability without one
+is explicitly unavailable. Discovery validates data without executing scripts.
+None cannot combine with other methods. Password, combined and unknown method
+URNs remain descriptive and unavailable. **All script credential execution and
+KWallet controls remain unavailable pending #85**, even for declared token/OAuth
+methods. Package Settings reports that limitation and never requests a wallet.
+This UI work does not fulfill or close production credential-store issue #85.

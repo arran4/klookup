@@ -231,3 +231,8 @@ target_compile_definitions(test_configuration_isolation PRIVATE
     SEARCHTAB_TEST="$<TARGET_FILE:test_searchtab>" WINDOWS_TEST="$<TARGET_FILE:test_independent_windows>")
 add_dependencies(test_configuration_isolation test_searchtab test_independent_windows)
 add_test(NAME test_configuration_isolation COMMAND test_configuration_isolation)
+
+# KRunner query normalization is independent of the Plasma desktop session.
+add_executable(test_runner_query test_runner_query.cpp)
+target_link_libraries(test_runner_query Qt6::Test Qt6::Core)
+add_test(NAME test_runner_query COMMAND test_runner_query)

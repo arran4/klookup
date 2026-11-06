@@ -1,3 +1,4 @@
+#include "isolatedguitest.h"
 // SPDX-FileCopyrightText: 2026 KLookup contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -7,6 +8,10 @@
 #include <QLineEdit>
 #include <QTreeWidget>
 #include <QTextBrowser>
+#include <QSplitter>
+#include <QMouseEvent>
+#include <KConfigGroup>
+#include <KSharedConfig>
 
 #include "mainwindow.h"
 #include "searchdashboard.h"
@@ -223,7 +228,120 @@ private slots:
         win->close();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+
+    void testSearchWindowResizablePanesAndPersistence()
+    {
+        KConfigGroup layoutGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+        layoutGroup.writeEntry(QStringLiteral("SearchTabSplitter"), QList<int>{310, 490});
+        layoutGroup.sync();
+
+        MainWindow mw;
+        SearchWindow *win = mw.openSearchInNewWindow(QStringLiteral("window query"));
+        QVERIFY(win != nullptr);
+        win->resize(800, 600);
+        win->show();
+
+        auto *tab = win->searchTab();
+        QVERIFY(tab != nullptr);
+        auto *splitter = tab->mainSplitter();
+        QVERIFY(splitter != nullptr);
+
+        QVERIFY(qAbs(splitter->sizes()[0] - 310) <= 5);
+        QVERIFY(qAbs(splitter->sizes()[1] - 490) <= 5);
+
+        splitter->setSizes({360, 440});
+        emit tab->mainSplitter()->splitterMoved(360, 1);
+
+        SearchTab mainTab(QStringLiteral("new tab"));
+        mainTab.resize(800, 600);
+        mainTab.show();
+        QCOMPARE(mainTab.mainSplitter()->sizes(), splitter->sizes());
+
+        win->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    void testStaleDetailWindowDoesNotOverwriteNewerLayout()
+    {
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+        SearchResult result; result.title = QStringLiteral("Fixture");
+        ResultMetadata metadata;
+        MetadataNode section; section.label = QStringLiteral("Facts");
+        section.values.append({QStringLiteral("Fixture value"), QUrl(), MetadataValue::Kind::Text});
+        metadata.sections.append(section);
+        auto *old = new ResultDetailWindow(result, QStringLiteral("Fixture"), metadata);
+        auto *current = new ResultDetailWindow(result, QStringLiteral("Fixture"), metadata);
+        old->show(); current->show();
+        QTest::keyClick(old->splitter()->handle(1), Qt::Key_Down);
+        QTest::keyClick(current->splitter()->handle(1), Qt::Key_Up);
+        const auto latest = group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>());
+        QVERIFY(!latest.isEmpty());
+        old->resize(900, 900);
+        old->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>()), latest);
+        current->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(group.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>()), latest);
+    }
+
+    void testResultDetailWindowSplitterAndPersistence()
+    {
+        KConfigGroup layoutGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Layout"));
+        layoutGroup.deleteGroup();
+        layoutGroup.sync();
+
+        MainWindow mw;
+        SearchResult res;
+        res.id = QStringLiteral("detail-id");
+        res.title = QStringLiteral("Detail Window Title");
+        res.description = QStringLiteral("Detailed synopsis for test.");
+
+        ResultMetadata meta;
+        MetadataNode node;
+        node.label = QStringLiteral("Info");
+        node.values.append({QStringLiteral("Value"), QUrl(), MetadataValue::Kind::Text});
+        meta.sections.append(node);
+
+        ResultDetailWindow *win1 = mw.openResultDetailsInNewWindow(res, QStringLiteral("MockProvider"), meta, QStringLiteral("<b>Content</b>"));
+        QVERIFY(win1 != nullptr);
+        win1->resize(650, 500);
+        win1->show();
+
+        auto *splitter = win1->splitter();
+        QVERIFY(splitter != nullptr);
+        QCOMPARE(splitter->orientation(), Qt::Vertical);
+
+        splitter->setSizes({280, 220});
+        emit splitter->splitterMoved(splitter->sizes()[0], 1);
+        win1->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+
+        const auto saved = layoutGroup.readEntry(QStringLiteral("DetailWindowSplitter"), QList<int>());
+        QCOMPARE(saved.size(), 2);
+        QVERIFY(saved[0] > 0);
+        QVERIFY(saved[1] > 0);
+
+        ResultDetailWindow *win2 = mw.openResultDetailsInNewWindow(res, QStringLiteral("MockProvider"), meta, QStringLiteral("<b>Content</b>"));
+        QVERIFY(win2 != nullptr);
+        win2->resize(650, 500);
+        win2->show();
+
+        QCOMPARE(win2->splitter()->sizes(), saved);
+
+        auto *handle = win2->splitter()->handle(1);
+        QVERIFY(handle != nullptr);
+        QTest::mouseDClick(handle, Qt::LeftButton);
+
+        const auto resetSizes = win2->splitter()->sizes();
+        QCOMPARE(resetSizes.size(), 2);
+        QVERIFY(resetSizes[0] > 0);
+        QVERIFY(resetSizes[1] > 0);
+
+        win2->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
 };
 
-QTEST_MAIN(TestIndependentWindows)
+int main(int argc, char **argv) { return runIsolatedGuiTest<TestIndependentWindows>(argc, argv); }
 #include "test_independent_windows.moc"

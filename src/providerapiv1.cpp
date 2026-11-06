@@ -928,3 +928,12 @@ void ProviderV1ToLegacyAdapter::onContentFailed(quint64 reqId, const QString &re
 }
 
 } // namespace ProviderApiV1
+
+ProviderClassification ProviderApiV1::LegacyProviderV1Adapter::classification() const
+{
+    return m_legacy ? m_legacy->classification() : ProviderClassification();
+}
+ProviderClassification ProviderApiV1::ProviderV1ToLegacyAdapter::classification() const
+{
+    return m_v1 ? m_v1->classification() : ProviderClassification();
+}

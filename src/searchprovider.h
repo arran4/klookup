@@ -1,6 +1,7 @@
 #ifndef SEARCHPROVIDER_H
 #define SEARCHPROVIDER_H
 
+#include "providerclassification.h"
 #include "resultcontent.h"
 #include "resultmetadata.h"
 #include <QJsonObject>
@@ -47,6 +48,7 @@ public:
 
     virtual QString name() const = 0;
     virtual QString id() const = 0;
+    virtual ProviderClassification classification() const { return ProviderClassification::builtin(id()); }
 
     virtual void search(const QString &query) = 0;
 

@@ -8,12 +8,20 @@
   "runtime": "javascript",
   "entry": "main.mjs",
   "permissions": {
-    "origins": ["api.tvmaze.com"]
+    "origins": [
+      "api.tvmaze.com"
+    ]
   },
   "capabilities": {
     "pagination": false,
     "details": true,
     "separateContent": true,
     "hierarchy": false
+  },
+  "classification": {
+    "version": "1.0.0",
+    "facets": [
+      "topic:tv"
+    ]
   }
 }

@@ -14,6 +14,8 @@
 #include <QListWidget>
 #include <QNetworkAccessManager>
 #include <QTemporaryDir>
+#include <QPluginLoader>
+#include <QSignalSpy>
 #include <QTest>
 
 class MetadataProvider : public SearchProvider {
@@ -110,6 +112,20 @@ private slots:
             found = true; QCOMPARE(record.package.manifest().classification.facets, c.facets);
         }
         QVERIFY(found); QCOMPARE(managers, 0);
+    }
+    void legacyNativeVirtualSlotsAndCloneMetadata() {
+        QPluginLoader loader(QStringLiteral(LEGACY_NATIVE_LIBRARY));
+        auto *provider = qobject_cast<SearchProvider *>(loader.instance()); QVERIFY2(provider, qPrintable(loader.errorString()));
+        QCOMPARE(provider->id(), QStringLiteral("legacy_abi_fixture"));
+        QVERIFY(provider->classification().facets.isEmpty());
+        provider->setClassification(ProviderClassification::builtin(QStringLiteral("cheapshark")));
+        QSignalSpy ready(provider, &SearchProvider::searchCompleted);
+        provider->search(QStringLiteral("old native search slot")); QCOMPARE(ready.count(), 1);
+        QCOMPARE(ready.first()[1].value<QList<SearchResult>>().first().title, QStringLiteral("old native search slot"));
+        std::unique_ptr<SearchProvider> copy(provider->cloneForSearch()); QVERIFY(copy);
+        QCOMPARE(copy->classification().facets, provider->classification().facets);
+        QSignalSpy cloned(copy.get(), &SearchProvider::searchCompleted);
+        copy->search(QStringLiteral("cloned legacy slot")); QCOMPARE(cloned.count(), 1);
     }
     void nativeScriptAndAdapterParity() {
         MetadataProvider native;

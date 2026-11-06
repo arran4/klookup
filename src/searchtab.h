@@ -23,12 +23,14 @@ public:
     explicit SearchTab(const QString &query, QWidget *parent = nullptr);
     ~SearchTab() override;
     QMenu *createResultMenu(QTreeWidgetItem *item);
+    DisplayPreferences::Context *displayContext(QTreeWidgetItem *item);
     ResultDetailWindow *openResultDetailsInNewWindow(QTreeWidgetItem *item);
     void startProvider(SearchProvider *provider, ProviderAuthSession *authentication = nullptr);
     void addResults(const QString &providerName, const QList<SearchResult> &results, const QString &providerId = {});
     void setError(const QString &providerName, const QString &errorMsg);
 
 signals:
+    void displayPreferencesChanged(const QString &providerId, const QString &resultId, const QString &key, const QVariant &value);
     void resultViewed(const QString &providerId, const SearchResult &result);
     void detailWindowCreated(ResultDetailWindow *window);
     void openSearchInNewWindowRequested(const QString &query);
@@ -65,6 +67,7 @@ private:
     void renderMetadata(const ResultMetadata &metadata);
     void loadInitialDetails();
     void updateDetailsControl();
+    QMap<QTreeWidgetItem *, QPointer<DisplayPreferences::Context>> m_displayContexts;
     QString m_query;
     QTreeWidget *m_resultsTree;
     QTextBrowser *m_detailsView;

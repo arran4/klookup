@@ -22,6 +22,7 @@ nav:
       - Structured metadata: structured-metadata.md
   - Provider architecture:
       - Installing and approving packages: provider-package-approval.md
+      - Display preferences: display-preferences.md
       - Authentication: provider-authentication.md
       - Request lifecycle: script-provider-lifecycle.md
       - Continuation: provider-continuation.md

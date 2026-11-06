@@ -106,6 +106,8 @@ public:
     virtual QString name() const = 0;
     virtual QString description() const = 0;
     virtual Capabilities capabilities() const = 0;
+    QList<DisplayPreferences::Descriptor> displayOptions() const { return property("klookupDisplayOptions").value<QList<DisplayPreferences::Descriptor>>(); }
+    void setDisplayOptions(const QList<DisplayPreferences::Descriptor> &options) { setProperty("klookupDisplayOptions", QVariant::fromValue(options)); }
 
     // Asynchronous commands with explicit request IDs
     virtual quint64 search(const QString &query, quint64 requestId = 0) = 0;

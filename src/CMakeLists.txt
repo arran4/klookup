@@ -1,4 +1,5 @@
 add_library(klookup_core STATIC
+    displaypreferences.cpp
     resultmetadata.cpp
     resultactions.cpp
     sourcelink.cpp

@@ -13,6 +13,8 @@
 #include <QPushButton>
 #include <QShortcut>
 #include <QTimer>
+#include <QDialog>
+#include <KLocalizedString>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
@@ -548,6 +550,10 @@ QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
         onResultClicked(target, 0);
         loadDetails(true);
     });
+    if (auto *context = displayContext(item)) {
+        auto *options = menu->addAction(i18n("View display options…")); options->setObjectName(QStringLiteral("viewDisplayOptions"));
+        connect(options, &QAction::triggered, context, [this, context] { context->createEditor(this)->show(); });
+    }
     return menu;
 }
 
@@ -593,4 +599,20 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
         return true;
     }
     return QWidget::eventFilter(watched, event);
+}
+
+DisplayPreferences::Context *SearchTab::displayContext(QTreeWidgetItem *item)
+{
+    if (!item || !item->data(0, Qt::UserRole).canConvert<SearchResult>()) return nullptr;
+    if (m_displayContexts.value(item)) return m_displayContexts.value(item);
+    const auto providerId = item->data(0, ProviderRole).toString();
+    const auto provider = m_states.value(providerId).provider;
+    const auto options = provider ? provider->displayOptions() : QList<DisplayPreferences::Descriptor>();
+    if (options.isEmpty()) return nullptr;
+    const auto resultId = item->data(0, Qt::UserRole).value<SearchResult>().id;
+    auto *context = new DisplayPreferences::Context(providerId, options, this);
+    if (context->descriptors().isEmpty()) { delete context; return nullptr; }
+    m_displayContexts.insert(item, context);
+    connect(context, &DisplayPreferences::Context::changed, this, [this, context, providerId, resultId](const QString &key) { emit displayPreferencesChanged(providerId, resultId, key, context->effective(key)); });
+    return context;
 }

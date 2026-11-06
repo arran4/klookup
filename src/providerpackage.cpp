@@ -248,6 +248,8 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
         pkg.m_manifest.defaultSettings = root.value(QStringLiteral("defaultSettings")).toObject();
     }
 
+    if (root.contains(QStringLiteral("displayOptions")) && !DisplayPreferences::descriptorsFromJson(root.value(QStringLiteral("displayOptions")), &pkg.m_manifest.displayOptions, &pkg.m_validationError)) return pkg;
+
     // Snapshot every asset, including extensionless imports and hidden files. Fail
     // closed on unreadable files, symlinks and bounded-read violations.
     QDirIterator it(canonicalPackageDir, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden,

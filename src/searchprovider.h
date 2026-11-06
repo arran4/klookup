@@ -2,6 +2,7 @@
 #define SEARCHPROVIDER_H
 
 #include "resultcontent.h"
+#include "displaypreferences.h"
 #include "resultmetadata.h"
 #include <QJsonObject>
 #include <QMap>
@@ -47,6 +48,13 @@ public:
 
     virtual QString name() const = 0;
     virtual QString id() const = 0;
+    QList<DisplayPreferences::Descriptor> displayOptions() const { return property("klookupDisplayOptions").value<QList<DisplayPreferences::Descriptor>>(); }
+    void setDisplayOptions(const QList<DisplayPreferences::Descriptor> &options) { setProperty("klookupDisplayOptions", QVariant::fromValue(options)); }
+    SearchProvider *cloneForSearch(QObject *parent = nullptr) const {
+        auto *copy = clone(parent);
+        if (copy) { copy->setDisplayOptions(displayOptions()); copy->setEnabled(isEnabled()); }
+        return copy;
+    }
 
     virtual void search(const QString &query) = 0;
 

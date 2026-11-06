@@ -487,6 +487,7 @@ LegacyProviderV1Adapter::LegacyProviderV1Adapter(SearchProvider *legacyProvider,
     , m_continuation(qobject_cast<SearchProviderContinuation *>(legacyProvider))
 {
     if (m_legacy) {
+        setDisplayOptions(m_legacy->displayOptions());
         connect(m_legacy, &SearchProvider::searchCompleted, this, &LegacyProviderV1Adapter::onSearchCompleted);
         connect(m_legacy, &SearchProvider::searchFailed, this, &LegacyProviderV1Adapter::onSearchFailed);
         connect(m_legacy, &SearchProvider::pageCompleted, this, &LegacyProviderV1Adapter::onPageCompleted);
@@ -726,7 +727,7 @@ void LegacyProviderV1Adapter::onRequestFailed(quint64 reqId, const QString &erro
 ProviderV1 *LegacyProviderV1Adapter::clone(QObject *parent) const
 {
     if (m_legacy) {
-        auto *clonedLegacy = m_legacy->clone(parent);
+        auto *clonedLegacy = m_legacy->cloneForSearch(parent);
         if (clonedLegacy) {
             return new LegacyProviderV1Adapter(clonedLegacy, parent);
         }
@@ -769,6 +770,7 @@ ProviderV1ToLegacyAdapter::~ProviderV1ToLegacyAdapter()
 void ProviderV1ToLegacyAdapter::initV1Connections()
 {
     if (m_v1) {
+        setDisplayOptions(m_v1->displayOptions());
         connect(m_v1, &ProviderV1::pageReady, this, &ProviderV1ToLegacyAdapter::onPageReady);
         connect(m_v1, &ProviderV1::pageFailed, this, &ProviderV1ToLegacyAdapter::onPageFailed);
         connect(m_v1, &ProviderV1::detailsReady, this, &ProviderV1ToLegacyAdapter::onDetailsReady);

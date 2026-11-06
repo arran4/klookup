@@ -224,3 +224,7 @@ add_executable(test_scripted_cheapshark test_scripted_cheapshark.cpp)
 target_link_libraries(test_scripted_cheapshark Qt6::Test klookup_core)
 target_compile_definitions(test_scripted_cheapshark PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME test_scripted_cheapshark COMMAND test_scripted_cheapshark)
+
+add_executable(test_settingspanes test_settingspanes.cpp)
+target_link_libraries(test_settingspanes Qt6::Test klookup_core)
+add_test(NAME test_settingspanes COMMAND test_settingspanes)

@@ -7,6 +7,7 @@
 #include <QMap>
 #include <QObject>
 #include <QString>
+#include <optional>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -73,7 +74,7 @@ signals:
     void authenticationRejected();
 
 private:
-    bool m_enabled = true;
+    std::optional<bool> m_enabled;
 };
 
 #define SearchProvider_iid "org.kde.klookup.SearchProvider"

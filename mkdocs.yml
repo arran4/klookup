@@ -23,6 +23,7 @@ nav:
   - Provider architecture:
       - Installing and approving packages: provider-package-approval.md
       - Provider classification: provider-classification.md
+      - Filter loaded results: result-display-filters.md
       - Authentication: provider-authentication.md
       - Request lifecycle: script-provider-lifecycle.md
       - Continuation: provider-continuation.md

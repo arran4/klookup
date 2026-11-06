@@ -11,6 +11,9 @@
 #include <QWidget>
 
 class QPushButton;
+class QToolButton;
+class QHBoxLayout;
+class QLabel;
 class ProviderAuthSession;
 class SourceLink;
 class QMenu;
@@ -78,6 +81,12 @@ private:
     QWidget *createEmptyStateWidget(QWidget *parent);
     void saveLayout(QSplitter *changed);
 
+    void updateDisplayFilters();
+    void applyDisplayFilters();
+    QMap<QString, QToolButton *> m_filterButtons;
+    QSet<QString> m_selectedFacets;
+    QHBoxLayout *m_filterLayout = nullptr;
+    QLabel *m_filterStatus = nullptr;
     QString m_query;
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_detailSplitter = nullptr;

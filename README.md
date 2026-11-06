@@ -202,7 +202,7 @@ A separate **Look up selected text** hotkey and compact popup are **planned, not
 
 ### System tray and windows
 
-KLookup can remain available from the tray when its window is closed, depending on your settings. Search tabs and independent search/detail windows are useful when you want to reference one result while searching for another.
+KLookup can remain available from the tray when its window is closed, depending on your settings. Use **Pop Out to New Window** to move an existing search tab with its loaded results and pending requests. **Return to Main Window** reattaches it without searching again. Closing a popped-out window closes that search. **Open Details in New Window** remains a separate reference view; it keeps the search tab open. The dashboard can still start a new independent search.
 
 You can also choose to **Start KLookup automatically on login** in **Settings → General**; see [Autostart configuration](docs/autostart.md). When enabled, KLookup starts quietly in the background without raising windows or triggering unrequested searches.
 

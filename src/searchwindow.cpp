@@ -9,29 +9,36 @@
 
 #include <QKeySequence>
 #include <QShortcut>
+#include <QAction>
+#include <QToolBar>
 
 SearchWindow::SearchWindow(const QString &query,
                            const QList<SearchProvider *> &providers,
                            ProviderAuthManager *authManager,
                            QWidget *parent)
-    : QMainWindow(parent)
-    , m_query(query)
+    : SearchWindow(new SearchTab(query), parent)
+{
+    for (auto *providerTemplate : providers) {
+        if (!providerTemplate || !providerTemplate->isEnabled()) continue;
+        m_tab->startProvider(providerTemplate->clone(m_tab), authManager ? authManager->sessionFor(providerTemplate) : nullptr);
+    }
+}
+
+SearchWindow::SearchWindow(SearchTab *tab, QWidget *parent)
+    : QMainWindow(parent, Qt::Window), m_query(tab ? tab->query() : QString()), m_tab(tab)
 {
     setAttribute(Qt::WA_DeleteOnClose, true);
     setAttribute(Qt::WA_QuitOnClose, false);
     setWindowIcon(applicationIcon());
-    setWindowTitle(query.isEmpty() ? QStringLiteral("KLookup") : QStringLiteral("%1 - KLookup").arg(query));
+    setWindowTitle(m_query.isEmpty() ? QStringLiteral("KLookup") : QStringLiteral("%1 - KLookup").arg(m_query));
     resize(850, 600);
-
-    m_tab = new SearchTab(query, this);
-    for (auto *providerTemplate : providers) {
-        if (!providerTemplate || !providerTemplate->isEnabled()) {
-            continue;
-        }
-        SearchProvider *cloned = providerTemplate->clone(m_tab);
-        m_tab->startProvider(cloned, authManager ? authManager->sessionFor(providerTemplate) : nullptr);
-    }
-    setCentralWidget(m_tab);
+    if (tab) { setCentralWidget(tab); tab->setPoppedOut(true); }
+    auto *toolbar = addToolBar(QStringLiteral("Search window"));
+    toolbar->setMovable(false);
+    toolbar->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    auto *returnAction = toolbar->addAction(QIcon::fromTheme(QStringLiteral("view-restore")), QStringLiteral("Return to Main Window"));
+    returnAction->setObjectName(QStringLiteral("returnSearchToMainWindow"));
+    connect(returnAction, &QAction::triggered, this, [this] { emit returnToMainRequested(this); });
 
     auto *closeShortcut = new QShortcut(QKeySequence::Close, this);
     connect(closeShortcut, &QShortcut::activated, this, &QWidget::close);
@@ -55,4 +62,12 @@ void SearchWindow::closeEvent(QCloseEvent *event)
 {
     emit windowClosing(this);
     QMainWindow::closeEvent(event);
+}
+
+SearchTab *SearchWindow::takeSearchTab()
+{
+    auto *tab = qobject_cast<SearchTab *>(takeCentralWidget());
+    m_tab = nullptr;
+    if (tab) tab->setPoppedOut(false);
+    return tab;
 }

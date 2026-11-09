@@ -33,6 +33,7 @@ struct PackageManifest {
     PackagePermissions permissions;
     ProviderApiV1::Capabilities capabilities;
     QJsonObject defaultSettings;
+    ProviderClassification classification;
 };
 
 class ProviderPackage {

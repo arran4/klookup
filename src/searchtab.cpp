@@ -233,6 +233,8 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
     }
     state.group = new QTreeWidgetItem(m_resultsTree);
     state.group->setText(0, provider->name());
+    state.group->setData(0, Qt::UserRole + 20, QVariant::fromValue(provider->classification()));
+    state.group->setToolTip(0, provider->classification().description().toHtmlEscaped());
     state.group->setFlags(state.group->flags() & ~Qt::ItemIsSelectable);
     state.group->setExpanded(true);
     const QString id = provider->id();

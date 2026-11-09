@@ -20,7 +20,7 @@ SearchWindow::SearchWindow(const QString &query,
 {
     for (auto *providerTemplate : providers) {
         if (!providerTemplate || !providerTemplate->isEnabled()) continue;
-        m_tab->startProvider(providerTemplate->clone(m_tab), authManager ? authManager->sessionFor(providerTemplate) : nullptr);
+        m_tab->startProvider(providerTemplate->cloneForSearch(m_tab), authManager ? authManager->sessionFor(providerTemplate) : nullptr);
     }
 }
 

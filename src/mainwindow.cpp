@@ -671,7 +671,7 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
 
-        tab->startProvider(providerTemplate->clone(tab), m_authManager->sessionFor(providerTemplate));
+        tab->startProvider(providerTemplate->cloneForSearch(tab), m_authManager->sessionFor(providerTemplate));
     }
 }
 

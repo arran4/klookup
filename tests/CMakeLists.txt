@@ -232,6 +232,17 @@ target_compile_definitions(test_configuration_isolation PRIVATE
 add_dependencies(test_configuration_isolation test_searchtab test_independent_windows)
 add_test(NAME test_configuration_isolation COMMAND test_configuration_isolation)
 
+add_executable(test_providerclassification test_providerclassification.cpp)
+target_link_libraries(test_providerclassification Qt6::Test klookup_core)
+target_compile_definitions(test_providerclassification PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_providerclassification COMMAND test_providerclassification)
+
+add_library(provider_legacy_abi_fixture MODULE provider_legacy_abi_fixture.cpp)
+target_link_libraries(provider_legacy_abi_fixture klookup_core)
+target_include_directories(provider_legacy_abi_fixture PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_dependencies(test_providerclassification provider_legacy_abi_fixture)
+target_compile_definitions(test_providerclassification PRIVATE LEGACY_NATIVE_LIBRARY="$<TARGET_FILE:provider_legacy_abi_fixture>")
+
 add_executable(test_languagepreferences test_languagepreferences.cpp)
 target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
 add_test(NAME test_languagepreferences COMMAND test_languagepreferences)

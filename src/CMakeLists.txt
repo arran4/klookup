@@ -8,6 +8,7 @@ add_library(klookup_core STATIC
     providerpackage.cpp
     providerhostservice.cpp
     jsprovider.cpp
+    providerclassification.cpp
     providerdefaults.cpp
     searchprovider.cpp
     searchdashboard.cpp

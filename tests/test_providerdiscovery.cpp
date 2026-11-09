@@ -152,11 +152,53 @@ protected:
     }
 };
 
+namespace {
+QStringList parserDeclarationWarnings;
+QtMessageHandler previousParserHandler = nullptr;
+void captureParserWarning(QtMsgType type, const QMessageLogContext &context, const QString &message)
+{
+    if (QString::fromLatin1(context.category) == QLatin1String("qt.qml.usedbeforedeclared")) parserDeclarationWarnings.append(message);
+    if (previousParserHandler) previousParserHandler(type, context, message);
+}
+struct ParserWarningCapture {
+    ParserWarningCapture() { parserDeclarationWarnings.clear(); previousParserHandler = qInstallMessageHandler(captureParserWarning); }
+    ~ParserWarningCapture() { qInstallMessageHandler(previousParserHandler); }
+};
+}
+
 class TestProviderDiscovery : public QObject
 {
     Q_OBJECT
 
 private Q_SLOTS:
+    void testModuleParserDeclarationOrder()
+    {
+        QTemporaryDir root, snapshot;
+        QVERIFY(root.isValid() && snapshot.isValid());
+        QFile manifest(root.filePath(QStringLiteral("provider.json")));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"parser_fixture\",\"name\":\"Parser fixture\"}"); manifest.close();
+        QFile script(root.filePath(QStringLiteral("main.mjs")));
+        QVERIFY(script.open(QIODevice::WriteOnly));
+        script.write("function declaration() { return {value: 1}; } export function search() { return declaration(); }"); script.close();
+        auto package = ProviderPackage::fromDirectory(root.path()); QVERIFY(package.isValid());
+        QString error;
+        {
+            ParserWarningCapture capture;
+            QVERIFY2(package.writeVerifiedSnapshot(snapshot.path(), &error), qPrintable(error));
+        }
+        QVERIFY2(parserDeclarationWarnings.isEmpty(), qPrintable(parserDeclarationWarnings.join(QLatin1Char('\n'))));
+        // Declaration cleanup must not weaken the import validator.
+        QVERIFY(script.open(QIODevice::WriteOnly | QIODevice::Truncate));
+        script.write("export function search() { return import('https://example.invalid/code.mjs'); }"); script.close();
+        package = ProviderPackage::fromDirectory(root.path()); QVERIFY(package.isValid());
+        {
+            ParserWarningCapture capture;
+            QVERIFY(!package.writeVerifiedSnapshot(snapshot.path(), &error));
+        }
+        QVERIFY2(parserDeclarationWarnings.isEmpty(), qPrintable(parserDeclarationWarnings.join(QLatin1Char('\n'))));
+    }
+
     void testApprovalFingerprintAndRevocation()
     {
         QTemporaryDir temp;

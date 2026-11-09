@@ -28,7 +28,7 @@ SearchWindow::SearchWindow(const QString &query,
         if (!providerTemplate || !providerTemplate->isEnabled()) {
             continue;
         }
-        SearchProvider *cloned = providerTemplate->clone(m_tab);
+        SearchProvider *cloned = providerTemplate->cloneForSearch(m_tab);
         m_tab->startProvider(cloned, authManager ? authManager->sessionFor(providerTemplate) : nullptr);
     }
     setCentralWidget(m_tab);

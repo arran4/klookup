@@ -31,6 +31,16 @@ public:
     void search(const QString &) override {}
     SearchProvider *clone(QObject *) const override { return nullptr; }
 };
+class LegacyTokenMock : public SearchProvider {
+    Q_OBJECT
+public:
+    using SearchProvider::SearchProvider;
+    QString id() const override { return QStringLiteral("legacy_token_mock"); }
+    QString name() const override { return QStringLiteral("Legacy Token Mock"); }
+    void search(const QString &) override {}
+    SearchProvider *clone(QObject *parent = nullptr) const override { return new LegacyTokenMock(parent); }
+    bool supportsAuthentication() const override { return true; }
+};
 class CapabilityDialog : public SettingsDialog {
 public:
     using SettingsDialog::SettingsDialog;
@@ -62,6 +72,39 @@ private slots:
         QVERIFY(!provider->isEnabled());
         provider->setEnabled(true);
         QVERIFY(provider->isEnabled());
+
+        SettingsDialog dialog({provider});
+        dialog.show();
+        auto *list = dialog.findChild<QListWidget *>(QStringLiteral("nativeProviders"));
+        QVERIFY(list);
+        list->setCurrentRow(0);
+        auto *modeLabel = dialog.findChild<QLabel *>(QStringLiteral("providerAuthMode"));
+        QVERIFY(modeLabel);
+        QVERIFY(modeLabel->text().contains(QStringLiteral("PKCE")));
+        auto *clientId = dialog.findChild<QLineEdit *>(QStringLiteral("oauthClientId"));
+        QVERIFY(clientId);
+        QVERIFY(clientId->isEnabled());
+    }
+    void legacySupportsAuthenticationFallbackAndUi() {
+        LegacyTokenMock legacyToken;
+        const auto descriptor = authenticationDescriptorV2(&legacyToken);
+        QCOMPARE(descriptor.mode, AuthenticationMode::ManualToken);
+        QVERIFY(descriptor.usable());
+        QVERIFY(descriptor.executionSupported);
+        QVERIFY(descriptor.walletSupported);
+
+        SettingsDialog dialog({&legacyToken});
+        dialog.show();
+        auto *list = dialog.findChild<QListWidget *>(QStringLiteral("nativeProviders"));
+        QVERIFY(list);
+        list->setCurrentRow(0);
+        auto *modeLabel = dialog.findChild<QLabel *>(QStringLiteral("providerAuthMode"));
+        QVERIFY(modeLabel);
+        QVERIFY(modeLabel->text().contains(QStringLiteral("Manually supplied")));
+        auto *connectButton = dialog.findChild<QPushButton *>(QStringLiteral("connectProvider"));
+        QVERIFY(connectButton);
+        QVERIFY(connectButton->isVisible());
+        QVERIFY(connectButton->isEnabled());
     }
     void conditionalControlsAndSelectionSwaps() {
         CapabilityProvider none(QStringLiteral("none"), AuthenticationMode::None);

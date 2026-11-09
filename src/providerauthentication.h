@@ -59,21 +59,35 @@ inline AuthenticationDescriptor authenticationDescriptor(SearchProvider *provide
 }
 // A new IID and a QObject property allow v2 metadata without touching the v1
 // provider interface or ProviderV1's existing virtual function order.
-inline AuthenticationDescriptorV2 authenticationDescriptorV2(QObject *provider)
+inline AuthenticationDescriptorV2 authenticationDescriptorV2(SearchProvider *provider)
 {
+    if (!provider)
+        return {};
     if (auto *capability = qobject_cast<ProviderAuthenticationV2 *>(provider))
         return capability->authenticationDescriptorV2();
-    if (provider) {
-        const auto property = provider->property("klookupAuthenticationV2");
-        if (property.canConvert<AuthenticationDescriptorV2>())
-            return property.value<AuthenticationDescriptorV2>();
-    }
+    const auto property = provider->property("klookupAuthenticationV2");
+    if (property.canConvert<AuthenticationDescriptorV2>())
+        return property.value<AuthenticationDescriptorV2>();
     AuthenticationDescriptorV2 result;
-    if (auto *legacy = qobject_cast<SearchProvider *>(provider)) {
-        const auto original = authenticationDescriptor(legacy);
-        result.mode = original.mode;
-        result.oauth = original.oauth;
-    }
+    const auto original = authenticationDescriptor(provider);
+    result.mode = original.mode;
+    result.oauth = original.oauth;
     return result;
+}
+
+inline AuthenticationDescriptorV2 authenticationDescriptorV2(QObject *provider)
+{
+    if (!provider)
+        return {};
+    if (auto *searchProvider = dynamic_cast<SearchProvider *>(provider))
+        return authenticationDescriptorV2(searchProvider);
+    if (auto *capability = qobject_cast<ProviderAuthenticationV2 *>(provider))
+        return capability->authenticationDescriptorV2();
+    const auto property = provider->property("klookupAuthenticationV2");
+    if (property.canConvert<AuthenticationDescriptorV2>())
+        return property.value<AuthenticationDescriptorV2>();
+    if (auto *searchProvider = qobject_cast<SearchProvider *>(provider))
+        return authenticationDescriptorV2(searchProvider);
+    return {};
 }
 #endif

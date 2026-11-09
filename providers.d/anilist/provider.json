@@ -17,5 +17,12 @@
     "details": false,
     "separateContent": false,
     "authentication": false
+  },
+  "classification": {
+    "version": "1.0.0",
+    "facets": [
+      "topic:anime",
+      "topic:manga"
+    ]
   }
 }

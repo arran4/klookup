@@ -167,6 +167,10 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
     pkg.m_manifest.runtime = root.value(QStringLiteral("runtime")).toString(QStringLiteral("javascript")).trimmed();
     pkg.m_manifest.entry = root.value(QStringLiteral("entry")).toString(QStringLiteral("main.mjs")).trimmed();
 
+    pkg.m_manifest.classification = ProviderClassification::builtin(pkg.id());
+    if (root.contains(QStringLiteral("classification")) &&
+        !ProviderClassification::fromJson(root.value(QStringLiteral("classification")), &pkg.m_manifest.classification, &pkg.m_validationError)) return pkg;
+
     if (!ProviderPackageDiscovery::isValidPackageId(pkg.m_manifest.id)) {
         pkg.m_validationError = QStringLiteral("Invalid package ID '%1'").arg(pkg.m_manifest.id);
         pkg.m_manifest.id = QFileInfo(pkg.m_packageDir).fileName();
@@ -251,7 +255,7 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
     pkg.m_manifest.authentication.executionSupported = false;
     pkg.m_manifest.authentication.walletSupported = false;
     if (root.contains(QStringLiteral("authentication"))) {
-        if (!AuthenticationDescriptor::fromManifest(root.value(QStringLiteral("authentication")), &pkg.m_manifest.authentication, &pkg.m_validationError)) return pkg;
+        if (!AuthenticationDescriptorV2::fromManifest(root.value(QStringLiteral("authentication")), &pkg.m_manifest.authentication, &pkg.m_validationError)) return pkg;
     } else if (pkg.m_manifest.capabilities.authentication) {
         pkg.m_manifest.authentication.mode = AuthenticationMode::Unsupported;
     }

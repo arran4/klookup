@@ -37,7 +37,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     if (!m_authentication) {
         for (auto *provider : providers) {
-            if (authenticationDescriptor(provider).mode == AuthenticationMode::OAuth2Pkce) { m_authentication = new ProviderAuthManager(this, this); break; }
+            if (authenticationDescriptorV2(provider).mode == AuthenticationMode::OAuth2Pkce) { m_authentication = new ProviderAuthManager(this, this); break; }
         }
     }
     setWindowTitle(QStringLiteral("Configure KLookup"));
@@ -55,6 +55,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(provider->isEnabled() ? Qt::Checked : Qt::Unchecked);
         item->setData(Qt::UserRole, QVariant::fromValue(provider));
+        item->setToolTip(provider->classification().description().toHtmlEscaped());
     }
     providersLayout->addWidget(m_listWidget);
     auto *options = new QStackedWidget(providersWidget);
@@ -66,6 +67,16 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         }
     }
     providersLayout->addWidget(options);
+    auto *classification = new QLabel(providersWidget);
+    classification->setObjectName(QStringLiteral("providerClassification"));
+    classification->setTextFormat(Qt::PlainText);
+    classification->setWordWrap(true);
+    providersLayout->addWidget(classification);
+    connect(m_listWidget, &QListWidget::currentRowChanged, this, [this, classification](int row) {
+        const auto *item = m_listWidget->item(row);
+        auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
+        classification->setText(provider ? provider->classification().description() : QString());
+    });
     connect(m_listWidget, &QListWidget::currentRowChanged, options, [this, options](int row) {
         auto *item = m_listWidget->item(row);
         auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
@@ -113,8 +124,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(m_clientId, &QLineEdit::textEdited, this, [this](const QString &text) { if (!m_authProviderId.isEmpty()) m_clientDrafts[m_authProviderId] = text; });
     for (auto *provider : providers) {
         KConfigGroup auth(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Authentication-") + provider->id());
-        const auto descriptor = authenticationDescriptor(provider);
-        if (descriptor.usable() && descriptor.mode == AuthenticationMode::OAuth2Pkce && descriptor.oauth.publicClientId.isEmpty())
+        const auto descriptor = authenticationDescriptorV2(provider);
+        if (descriptor.usable() && descriptor.mode == AuthenticationMode::OAuth2Pkce && descriptor.publicClientId.isEmpty())
             m_clientDrafts.insert(provider->id(), auth.readEntry(QStringLiteral("ClientId"), QString()));
         if (m_authentication) {
             if (auto *session = m_authentication->sessionFor(provider)) connect(session, &ProviderAuthSession::changed, this, &SettingsDialog::updateAuthenticationUi);
@@ -123,7 +134,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(m_restoreAuth, &QPushButton::clicked, this, [this] {
         auto *item = m_listWidget->currentItem();
         auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
-        if (m_authentication && provider) if (auto *session = m_authentication->sessionFor(provider)) session->restore(m_clientId->text());
+        const auto descriptor = authenticationDescriptorV2(provider);
+        const QString clientId = descriptor.publicClientId.isEmpty() ? m_clientId->text() : descriptor.publicClientId;
+        if (m_authentication && provider) if (auto *session = m_authentication->sessionFor(provider)) session->restore(clientId);
     });
     connect(m_disconnectAuth, &QPushButton::clicked, this, [this] {
         auto *item = m_listWidget->currentItem();
@@ -171,7 +184,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (!selected) { identity->clear(); return; }
         const auto &record = m_packages[row];
         const auto &pkg = record.package;
-        identity->setText((pkg.manifest().authentication.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication: %1 — script credential execution is unavailable (issue #85)").arg(pkg.manifest().authentication.methods().join(QStringLiteral(", ")))) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
+        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + (pkg.manifest().authentication.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication: %1 — script credential execution is unavailable (issue #85)").arg(pkg.manifest().authentication.methods().join(QStringLiteral(", ")))) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
             .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
                  pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
                  pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,
@@ -309,16 +322,16 @@ void SettingsDialog::showLoginDialog()
     }
 
     SearchProvider *provider = item->data(Qt::UserRole).value<SearchProvider*>();
-    const auto descriptor = authenticationDescriptor(provider);
+    const auto descriptor = authenticationDescriptorV2(provider);
     if (!provider || !descriptor.usable()) {
         QMessageBox::information(this, QStringLiteral("Not Supported"), QStringLiteral("This provider does not support authentication."));
         return;
     }
 
     if (descriptor.mode == AuthenticationMode::OAuth2Pkce && m_authentication) {
-        const QString clientId = descriptor.oauth.publicClientId.isEmpty() ? m_clientId->text().trimmed() : descriptor.oauth.publicClientId;
+        const QString clientId = descriptor.publicClientId.isEmpty() ? m_clientId->text().trimmed() : descriptor.publicClientId;
         KConfigGroup auth(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Authentication-") + provider->id());
-        if (descriptor.oauth.publicClientId.isEmpty()) {
+        if (descriptor.publicClientId.isEmpty()) {
             auth.writeEntry(QStringLiteral("ClientId"), clientId);
             auth.sync(); m_clientDrafts[provider->id()] = clientId;
         }
@@ -345,10 +358,10 @@ void SettingsDialog::updateAuthenticationUi()
 {
     auto *item = m_listWidget->currentItem();
     auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
-    const auto descriptor = authenticationDescriptor(provider);
+    const auto descriptor = authenticationDescriptorV2(provider);
     const bool supported = descriptor.usable();
     const bool oauth = supported && descriptor.mode == AuthenticationMode::OAuth2Pkce;
-    const bool editableClient = oauth && descriptor.oauth.publicClientId.isEmpty();
+    const bool editableClient = oauth && descriptor.publicClientId.isEmpty();
     const QString id = provider ? provider->id() : QString();
     if (m_authProviderId != id) {
         m_authProviderId = id;

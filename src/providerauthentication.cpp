@@ -6,7 +6,7 @@
 #include <QRegularExpression>
 #include <QSet>
 
-QStringList AuthenticationDescriptor::methods() const
+QStringList AuthenticationDescriptorV2::methods() const
 {
     if (!declaredMethods.isEmpty()) return declaredMethods;
     switch (mode) {
@@ -18,7 +18,7 @@ QStringList AuthenticationDescriptor::methods() const
     return {};
 }
 
-bool AuthenticationDescriptor::fromManifest(const QJsonValue &value, AuthenticationDescriptor *result, QString *error)
+bool AuthenticationDescriptorV2::fromManifest(const QJsonValue &value, AuthenticationDescriptorV2 *result, QString *error)
 {
     auto fail = [error](const QString &reason) { if (error) *error = reason; return false; };
     if (!value.isObject()) return fail(QStringLiteral("authentication must be an object"));
@@ -28,7 +28,7 @@ bool AuthenticationDescriptor::fromManifest(const QJsonValue &value, Authenticat
     if (object.value(QStringLiteral("version")).toString() != QLatin1String("1.0.0") || !object.value(QStringLiteral("methods")).isArray()) return fail(QStringLiteral("Unsupported authentication version or methods"));
     const auto methods = object.value(QStringLiteral("methods")).toArray();
     if (methods.isEmpty() || methods.size() > 8) return fail(QStringLiteral("Invalid authentication method count"));
-    AuthenticationDescriptor parsed;
+    AuthenticationDescriptorV2 parsed;
     // Script credential execution and production KWallet are tracked separately in #85.
     parsed.executionSupported = false; parsed.walletSupported = false;
     for (const auto &method : methods) {

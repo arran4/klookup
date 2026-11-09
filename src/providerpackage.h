@@ -5,7 +5,6 @@
 #define PROVIDERPACKAGE_H
 
 #include "providerapiv1.h"
-#include "providerauthentication.h"
 
 #include <QByteArray>
 #include <QJsonObject>
@@ -34,7 +33,8 @@ struct PackageManifest {
     PackagePermissions permissions;
     ProviderApiV1::Capabilities capabilities;
     QJsonObject defaultSettings;
-    AuthenticationDescriptor authentication;
+    ProviderClassification classification;
+    AuthenticationDescriptorV2 authentication;
 };
 
 class ProviderPackage {

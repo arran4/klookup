@@ -356,6 +356,7 @@ private:
 JsProvider::JsProvider(const ProviderPackage &package, QObject *parent, ProviderHost::ProviderHostService *hostService)
     : ProviderV1(parent), m_package(package), m_hostService(hostService)
 {
+    setProperty("klookupAuthenticationV2", QVariant::fromValue(package.manifest().authentication));
     if (!m_hostService) m_hostService = new ProviderHost::ProviderHostService(package, this);
     initEngine();
 }

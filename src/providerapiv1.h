@@ -106,8 +106,12 @@ public:
     virtual QString id() const = 0;
     virtual QString name() const = 0;
     virtual QString description() const = 0;
+    ProviderClassification classification() const {
+        const auto value = property("klookupClassification");
+        return value.canConvert<ProviderClassification>() ? value.value<ProviderClassification>() : ProviderClassification::builtin(id());
+    }
+    void setClassification(const ProviderClassification &value) { setProperty("klookupClassification", QVariant::fromValue(value)); }
     virtual Capabilities capabilities() const = 0;
-    virtual AuthenticationDescriptor authentication() const { return {}; }
 
     // Asynchronous commands with explicit request IDs
     virtual quint64 search(const QString &query, quint64 requestId = 0) = 0;
@@ -145,7 +149,6 @@ public:
     QString name() const override;
     QString description() const override;
     Capabilities capabilities() const override;
-    AuthenticationDescriptor authentication() const override;
 
     quint64 search(const QString &query, quint64 requestId = 0) override;
     quint64 getPage(const QString &query, const QString &pageToken, quint64 requestId = 0) override;
@@ -184,10 +187,10 @@ private:
 };
 
 // ProviderV1 -> Legacy SearchProvider & SearchProviderContinuation adapter
-class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation, public ProviderAuthentication
+class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation, public ProviderAuthentication, public ProviderAuthenticationV2
 {
     Q_OBJECT
-    Q_INTERFACES(SearchProvider SearchProviderContinuation ProviderAuthentication)
+    Q_INTERFACES(SearchProvider SearchProviderContinuation ProviderAuthentication ProviderAuthenticationV2)
 public:
     using Factory = std::function<ProviderV1 *(QObject *parent)>;
 
@@ -197,7 +200,8 @@ public:
 
     QString id() const override;
     QString name() const override;
-    AuthenticationDescriptor authenticationDescriptor() const override { return m_v1 ? m_v1->authentication() : AuthenticationDescriptor(); }
+    AuthenticationDescriptor authenticationDescriptor() const override { return authenticationDescriptorV2(); }
+    AuthenticationDescriptorV2 authenticationDescriptorV2() const override { return ::authenticationDescriptorV2(static_cast<QObject *>(m_v1)); }
     void search(const QString &query) override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
 

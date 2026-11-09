@@ -13,18 +13,20 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QFile>
+#include <QPluginLoader>
 #include <KConfigGroup>
 #include <KSharedConfig>
-class CapabilityProvider : public SearchProvider, public ProviderAuthentication {
+class CapabilityProvider : public SearchProvider, public ProviderAuthentication, public ProviderAuthenticationV2 {
     Q_OBJECT
-    Q_INTERFACES(ProviderAuthentication)
+    Q_INTERFACES(ProviderAuthentication ProviderAuthenticationV2)
 public:
-    AuthenticationDescriptor descriptor;
+    AuthenticationDescriptorV2 descriptor;
     QString sourceId, credential;
     CapabilityProvider(const QString &id, AuthenticationMode mode) : sourceId(id) { descriptor.mode = mode; }
     QString id() const override { return sourceId; }
     QString name() const override { return sourceId; }
     AuthenticationDescriptor authenticationDescriptor() const override { return descriptor; }
+    AuthenticationDescriptorV2 authenticationDescriptorV2() const override { return descriptor; }
     void setCredentials(const QString &, const QString &secret) override { credential = secret; }
     void search(const QString &) override {}
     SearchProvider *clone(QObject *) const override { return nullptr; }
@@ -41,6 +43,26 @@ protected:
 class AuthCapabilitiesTest : public QObject {
     Q_OBJECT
 private slots:
+    void compiledLegacyV1AuthenticationAbi() {
+        QPluginLoader loader(QStringLiteral(LEGACY_AUTH_LIBRARY));
+        auto *provider = qobject_cast<SearchProvider *>(loader.instance());
+        QVERIFY2(provider, qPrintable(loader.errorString()));
+        QCOMPARE(provider->id(), QStringLiteral("legacy_auth_abi_fixture"));
+        auto *legacy = qobject_cast<ProviderAuthentication *>(provider);
+        QVERIFY(legacy);
+        const AuthenticationDescriptor descriptor = legacy->authenticationDescriptor();
+        QCOMPARE(descriptor.mode, AuthenticationMode::OAuth2Pkce);
+        QCOMPARE(descriptor.oauth.authorizationUrl, QUrl(QStringLiteral("https://example.invalid/authorize")));
+        QCOMPARE(descriptor.oauth.scopes, QStringList{QStringLiteral("read")});
+        const auto current = authenticationDescriptorV2(provider);
+        QCOMPARE(current.mode, descriptor.mode);
+        QCOMPARE(current.oauth.tokenUrl, descriptor.oauth.tokenUrl);
+        QVERIFY(current.usable());
+        provider->setEnabled(false);
+        QVERIFY(!provider->isEnabled());
+        provider->setEnabled(true);
+        QVERIFY(provider->isEnabled());
+    }
     void conditionalControlsAndSelectionSwaps() {
         CapabilityProvider none(QStringLiteral("none"), AuthenticationMode::None);
         CapabilityProvider token(QStringLiteral("token"), AuthenticationMode::ManualToken);
@@ -49,7 +71,7 @@ private slots:
         oauth.descriptor.oauth = {QUrl(QStringLiteral("https://example.invalid/authorize")), QUrl(QStringLiteral("https://example.invalid/token")), {QStringLiteral("read")}, 0, QStringLiteral("/callback")};
         CapabilityProvider unsupported(QStringLiteral("unsupported"), AuthenticationMode::Unsupported);
         CapabilityProvider fixed(QStringLiteral("fixed"), AuthenticationMode::OAuth2Pkce);
-        fixed.descriptor.oauth = oauth.descriptor.oauth; fixed.descriptor.oauth.publicClientId = QStringLiteral("fixed-public-id");
+        fixed.descriptor.oauth = oauth.descriptor.oauth; fixed.descriptor.publicClientId = QStringLiteral("fixed-public-id");
         ProviderAuthManager manager(nullptr);
         CapabilityDialog dialog({&none, &token, &oauth, &unsupported, &fixed}, nullptr, &manager);
         dialog.show();
@@ -105,10 +127,10 @@ private slots:
         auto *identity = settings.findChild<QLabel *>(QStringLiteral("packageIdentity")); QVERIFY(identity);
         QVERIFY(identity->text().contains(mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("unavailable")));
         auto invalid = auth; invalid.insert(QStringLiteral("methods"), QJsonArray{QStringLiteral("urn:klookup:auth:none"), QStringLiteral("urn:klookup:auth:token")});
-        AuthenticationDescriptor unchanged; QString error;
-        QVERIFY(!AuthenticationDescriptor::fromManifest(invalid, &unchanged, &error));
+        AuthenticationDescriptorV2 unchanged; QString error;
+        QVERIFY(!AuthenticationDescriptorV2::fromManifest(invalid, &unchanged, &error));
         invalid = auth; invalid.insert(QStringLiteral("password"), QStringLiteral("not-allowed"));
-        QVERIFY(!AuthenticationDescriptor::fromManifest(invalid, &unchanged, &error));
+        QVERIFY(!AuthenticationDescriptorV2::fromManifest(invalid, &unchanged, &error));
     }
 };
 int main(int argc, char **argv) { return runIsolatedGuiTest<AuthCapabilitiesTest>(argc, argv); }

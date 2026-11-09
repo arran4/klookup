@@ -1,7 +1,7 @@
 # Provider authentication
 
-Providers may implement the optional `ProviderAuthentication/1.0` interface and
-return an `AuthenticationDescriptor`: None, ManualToken, or OAuth2Pkce. Existing
+Older native providers retain the exact ABI and by-value descriptor of `ProviderAuthentication/1.0`. New providers can implement `ProviderAuthentication/2.0` and
+return an `AuthenticationDescriptorV2`: None, ManualToken, OAuth2Pkce or an unsupported declaration. The `/2.0` metadata includes method labels and execution/wallet eligibility. The `/1.0` descriptor and existing `ProviderV1` virtual slots are never extended. Existing
 `supportsAuthentication()` providers are treated as manual-token providers without
 source changes. `SearchResult` and the existing credential setter are unchanged;
 OAuth providers receive only the current access token through `setCredentials`.
@@ -138,3 +138,7 @@ URNs remain descriptive and unavailable. **All script credential execution and
 KWallet controls remain unavailable pending #85**, even for declared token/OAuth
 methods. Package Settings reports that limitation and never requests a wallet.
 This UI work does not fulfill or close production credential-store issue #85.
+
+### ABI compatibility
+
+`ProviderAuthentication/1.0` returns the original two-field `AuthenticationDescriptor` by value. Its `OAuthConfiguration` and the `ProviderV1` vtable remain unchanged. Rich metadata uses the **separate `/2.0` Qt interface** or an explicit `QObject` metadata property in built-in adapters. A regression loads a plugin built against the frozen original header and queries both interfaces. This prevents an apparently source-compatible change from corrupting a native provider's binary layout.

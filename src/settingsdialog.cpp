@@ -58,6 +58,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(provider->isEnabled() ? Qt::Checked : Qt::Unchecked);
         item->setData(Qt::UserRole, QVariant::fromValue(provider));
+        item->setToolTip(provider->classification().description().toHtmlEscaped());
     }
     auto *providerDetails = new QWidget(providersWidget);
     auto *providerDetailsLayout = new QVBoxLayout(providerDetails);
@@ -75,6 +76,16 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         }
     }
     providerDetailsLayout->addWidget(options);
+    auto *classification = new QLabel(providerDetails);
+    classification->setObjectName(QStringLiteral("providerClassification"));
+    classification->setTextFormat(Qt::PlainText);
+    classification->setWordWrap(true);
+    providerDetailsLayout->addWidget(classification);
+    connect(m_listWidget, &QListWidget::currentRowChanged, this, [this, classification](int row) {
+        const auto *item = m_listWidget->item(row);
+        auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
+        classification->setText(provider ? provider->classification().description() : QString());
+    });
     connect(m_listWidget, &QListWidget::currentRowChanged, options, [this, options](int row) {
         auto *item = m_listWidget->item(row);
         auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
@@ -184,7 +195,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (!selected) { identity->clear(); return; }
         const auto &record = m_packages[row];
         const auto &pkg = record.package;
-        identity->setText(QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
+        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
             .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
                  pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
                  pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,

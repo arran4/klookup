@@ -25,11 +25,13 @@ class FilterProvider : public SearchProvider, public SearchProviderContinuation 
     Q_OBJECT
     Q_INTERFACES(SearchProvider SearchProviderContinuation)
 public:
-    FilterProvider(const QString &id, QStringList tags, FilterNetwork *network) : sourceId(id), tags(tags), network(network) {}
+    FilterProvider(const QString &id, QStringList tags, FilterNetwork *network) : sourceId(id), tags(tags), network(network) {
+        ProviderClassification classification; classification.facets = tags;
+        setClassification(classification);
+    }
     QString sourceId; QStringList tags; FilterNetwork *network; quint64 pending = 0;
     QString id() const override { return sourceId; }
     QString name() const override { return sourceId; }
-    ProviderClassification classification() const override { ProviderClassification c; c.facets = tags; return c; }
     SearchProvider *clone(QObject *) const override { return nullptr; }
     void search(const QString &) override {}
     void requestPage(const QString &, const QString &, quint64 id) override {

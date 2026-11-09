@@ -817,6 +817,8 @@
     return expr.type === "Identifier" || expr.type === "MemberExpression"
   };
 
+  var FUNC_STATEMENT = 1, FUNC_HANGING_STATEMENT = 2, FUNC_NULLABLE_ID = 4;
+
   var pp$8 = Parser.prototype;
 
   // ### Statement parsing
@@ -1426,8 +1428,6 @@
 
     this.checkLValPattern(decl.id, kind === "var" ? BIND_VAR : BIND_LEXICAL, false);
   };
-
-  var FUNC_STATEMENT = 1, FUNC_HANGING_STATEMENT = 2, FUNC_NULLABLE_ID = 4;
 
   // Parse a function declaration or literal (depending on the
   // `statement & FUNC_STATEMENT`).

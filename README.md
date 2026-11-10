@@ -200,9 +200,23 @@ Both are **unassigned by default**; no existing desktop shortcut is taken over. 
 
 A separate **Look up selected text** hotkey and compact popup are **planned, not shipped**; see [selected-text popup](https://github.com/arran4/klookup/issues/88).
 
+### In-application keyboard shortcuts
+
+| Keys | Action |
+| --- | --- |
+| **Ctrl+W** | Close the active search tab. The Dashboard cannot be closed |
+| **Ctrl+T** | Start a new search by focusing the Dashboard input |
+| **Ctrl+L** | Focus the Dashboard search input |
+| **Ctrl+Tab** | Switch to the next tab, wrapping around |
+| **Ctrl+Shift+Tab** | Switch to the previous tab, wrapping around |
+
+These shortcuts operate only inside the KLookup window, not globally. Detached
+search windows accept **Ctrl+W** to close that window without closing KLookup.
+Global shortcut actions remain opt-in and unassigned by default.
+
 ### System tray and windows
 
-KLookup can remain available from the tray when its window is closed, depending on your settings. Use **Pop Out to New Window** to move an existing search tab with its loaded results and pending requests. **Return to Main Window** reattaches it without searching again. Closing a popped-out window closes that search. **Open Details in New Window** remains a separate reference view; it keeps the search tab open. The dashboard can still start a new independent search.
+KLookup can remain available from the tray when its window is closed, depending on your settings. The tray icon uses a palette-coloured symbolic silhouette for contrast on light and dark Plasma panels; the full-colour application icon remains in the launcher and window. Use **Pop Out to New Window** to move an existing search tab with its loaded results and pending requests. **Return to Main Window** reattaches it without searching again. Closing a popped-out window closes that search. **Open Details in New Window** remains a separate reference view; it keeps the search tab open. The dashboard can still start a new independent search.
 
 You can also choose to **Start KLookup automatically on login** in **Settings → General**; see [Autostart configuration](docs/autostart.md). When enabled, KLookup starts quietly in the background without raising windows or triggering unrequested searches.
 
@@ -411,7 +425,7 @@ Turn on plugin-discovery diagnostics to inspect where modules are loaded from wi
 QT_LOGGING_RULES="klookup.plugins.debug=true" ./build/src/klookup
 ```
 
-For runner failures in an installed desktop session, enable `QT_LOGGING_RULES="klookup.runner.warning=true"` for the runner host and inspect the D-Bus error. KLookup's D-Bus service is `org.kde.klookup` with object path `/` and method `performSearch`.
+For runner failures in an installed desktop session, enable `QT_LOGGING_RULES="klookup.runner.warning=true"` for the runner host and inspect the D-Bus error. KLookup's custom D-Bus search service is `org.kde.klookup` with object path `/` and method `performSearch`. The `.desktop` launcher intentionally uses `Exec=klookup` rather than the unimplemented `org.freedesktop.Application` activation object at `/org/kde/klookup`; KDBusService still forwards repeated application starts to the existing instance.
 
 Use `ctest --test-dir build --output-on-failure` for automated tests and complement it with live Plasma verification for shortcut conflicts, Wayland selection/activation, wallet prompting, tray interactions, drag-and-drop and UI positioning. Source plugin APIs and provider outputs should be verified against fixtures rather than live API assumptions alone.
 

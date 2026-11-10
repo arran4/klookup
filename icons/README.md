@@ -23,8 +23,10 @@ done
 
 CMake installs the set into hicolor. The app embeds the scalable primary and a
 256px PNG fallback, so running from the build tree needs no theme installation.
-The stable icon name is `org.kde.klookup` in windows, launcher, tray, notifications
-and KRunner. The desktop-file identity is the same on Wayland.
+The stable icon name is `org.kde.klookup` in windows, launcher, notifications
+and KRunner. The tray instead uses the embedded symbolic variant recoloured
+from the active Qt palette, avoiding a dark-on-dark icon when Plasma's panel
+uses a dark colour scheme. The tray icon updates on palette changes. The desktop-file identity is the same on Wayland.
 
 Actions use standard themed icons: `edit-find`, `internet-web-browser`,
 `list-add` (load more), `window-new`, `document-open-recent`, `edit-clear`,

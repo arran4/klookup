@@ -31,6 +31,8 @@
 
 Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <KStandardAction>
+#include <KLocalizedString>
+#include <QKeySequence>
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QCloseEvent>
@@ -53,17 +55,15 @@ MainWindow::MainWindow(QWidget *parent)
     , m_dashboard(new SearchDashboard(this))
     , m_trayIcon(new QSystemTrayIcon(this))
 {
-    const QIcon icon = applicationIcon();
-    QApplication::setWindowIcon(icon);
-    m_trayIcon->setIcon(icon);
-    m_tabWidget->setTabsClosable(true);
-    connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, [this](int index) {
-        if (index > 0) {
-            QWidget *widget = m_tabWidget->widget(index);
-            m_tabWidget->removeTab(index);
-            widget->deleteLater();
-        }
+    QApplication::setWindowIcon(applicationIcon());
+    // Plasma can use a dark panel even when the full-colour launcher tile is visible.
+    // Recolour the dedicated symbolic tray silhouette from the Qt palette.
+    m_trayIcon->setIcon(trayIconForPalette(QApplication::palette()));
+    connect(qApp, &QGuiApplication::paletteChanged, this, [this](const QPalette &palette) {
+        m_trayIcon->setIcon(trayIconForPalette(palette));
     });
+    m_tabWidget->setTabsClosable(true);
+    connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::closeSearchTab);
 
     m_tabWidget->addTab(m_dashboard, QStringLiteral("Dashboard"));
     m_tabWidget->tabBar()->setTabButton(0, QTabBar::RightSide, nullptr);
@@ -78,13 +78,7 @@ MainWindow::MainWindow(QWidget *parent)
             connect(newWindowAction, &QAction::triggered, this, [this, index] {
                 popOutSearchTab(qobject_cast<SearchTab *>(m_tabWidget->widget(index)));
             });
-            connect(closeAction, &QAction::triggered, this, [this, index] {
-                if (index > 0 && index < m_tabWidget->count()) {
-                    QWidget *widget = m_tabWidget->widget(index);
-                    m_tabWidget->removeTab(index);
-                    widget->deleteLater();
-                }
-            });
+            connect(closeAction, &QAction::triggered, this, [this, index] { closeSearchTab(index); });
             menu.exec(m_tabWidget->tabBar()->mapToGlobal(pos));
         }
     });
@@ -216,7 +210,53 @@ void MainWindow::setupActions()
     connect(show, &QAction::triggered, this, &MainWindow::showSearchViaShortcut);
     connect(clipboard, &QAction::triggered, this, &MainWindow::searchClipboardNow);
     m_globalShortcuts = new GlobalShortcuts({show, clipboard}, this);
+
+    // Local shortcuts are active only in the KLookup window. Global shortcuts
+    // remain opt-in and must not claim keys through KGlobalAccel by default.
+    const auto localAction = [this](const QString &id, const QString &title, const QKeySequence &key) {
+        auto *action = actionCollection()->addAction(id);
+        action->setText(title);
+        actionCollection()->setDefaultShortcut(action, key);
+        action->setShortcutContext(Qt::WindowShortcut);
+        QWidget::addAction(action); // The KXMLGUI resource has no menu actions.
+        return action;
+    };
+    auto *closeTab = localAction(QStringLiteral("close_current_tab"), i18n("Close Current Search Tab"),
+                                 QKeySequence(Qt::CTRL | Qt::Key_W));
+    closeTab->setEnabled(m_tabWidget->currentIndex() > 0);
+    connect(m_tabWidget, &QTabWidget::currentChanged, closeTab,
+            [closeTab](int index) { closeTab->setEnabled(index > 0); });
+    connect(closeTab, &QAction::triggered, this, [this] { closeSearchTab(m_tabWidget->currentIndex()); });
+
+    auto *newSearch = localAction(QStringLiteral("new_search"), i18n("New Search"),
+                                  QKeySequence(Qt::CTRL | Qt::Key_T));
+    connect(newSearch, &QAction::triggered, this, &MainWindow::showSearch);
+
+    auto *focusSearch = localAction(QStringLiteral("focus_search"), i18n("Focus Search"),
+                                    QKeySequence(Qt::CTRL | Qt::Key_L));
+    connect(focusSearch, &QAction::triggered, this, &MainWindow::showSearch);
+
+    auto *nextTab = localAction(QStringLiteral("next_tab"), i18n("Next Tab"),
+                                QKeySequence(Qt::CTRL | Qt::Key_Tab));
+    connect(nextTab, &QAction::triggered, this, [this] {
+        if (m_tabWidget->count() > 1)
+            m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() + 1) % m_tabWidget->count());
+    });
+    auto *previousTab = localAction(QStringLiteral("previous_tab"), i18n("Previous Tab"),
+                                    QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab));
+    connect(previousTab, &QAction::triggered, this, [this] {
+        if (m_tabWidget->count() > 1)
+            m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() + m_tabWidget->count() - 1) % m_tabWidget->count());
+    });
     KStandardAction::quit(qApp, &QCoreApplication::quit, actionCollection());
+}
+
+void MainWindow::closeSearchTab(int index)
+{
+    if (index <= 0 || index >= m_tabWidget->count()) return; // Dashboard stays open.
+    QWidget *widget = m_tabWidget->widget(index);
+    m_tabWidget->removeTab(index);
+    widget->deleteLater();
 }
 
 void MainWindow::setupTrayIcon()

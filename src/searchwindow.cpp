@@ -42,8 +42,6 @@ SearchWindow::SearchWindow(SearchTab *tab, QWidget *parent)
 
     auto *closeShortcut = new QShortcut(QKeySequence::Close, this);
     connect(closeShortcut, &QShortcut::activated, this, &QWidget::close);
-    auto *closeWindowShortcut = new QShortcut(QKeySequence(Qt::CTRL | Qt::Key_W), this);
-    connect(closeWindowShortcut, &QShortcut::activated, this, &QWidget::close);
     auto *escShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     connect(escShortcut, &QShortcut::activated, this, &QWidget::close);
 }

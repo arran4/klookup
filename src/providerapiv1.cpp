@@ -488,6 +488,7 @@ LegacyProviderV1Adapter::LegacyProviderV1Adapter(SearchProvider *legacyProvider,
 {
     if (m_legacy) {
         setClassification(m_legacy->classification());
+        setProperty("klookupAuthenticationV2", QVariant::fromValue(::authenticationDescriptorV2(m_legacy)));
         connect(m_legacy, &SearchProvider::searchCompleted, this, &LegacyProviderV1Adapter::onSearchCompleted);
         connect(m_legacy, &SearchProvider::searchFailed, this, &LegacyProviderV1Adapter::onSearchFailed);
         connect(m_legacy, &SearchProvider::pageCompleted, this, &LegacyProviderV1Adapter::onPageCompleted);
@@ -933,3 +934,4 @@ void ProviderV1ToLegacyAdapter::onContentFailed(quint64 reqId, const QString &re
 }
 
 } // namespace ProviderApiV1
+

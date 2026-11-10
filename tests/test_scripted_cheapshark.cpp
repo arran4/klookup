@@ -187,6 +187,33 @@ private slots:
         const auto requests = network.requests.size(); provider.search(QStringLiteral("cooldown")); QTRY_COMPARE(failed.count(), 2);
         QCOMPARE(network.requests.size(), requests);
     }
+    void defaultOffSurvivesApprovalAndRediscovery() {
+        KConfigGroup settings(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+        settings.deleteEntry(QStringLiteral("cheapshark_Enabled")); settings.sync();
+        MainWindow window;
+        int networkManagers = 0;
+        window.setNetworkAccessManagerFactory([&networkManagers](QObject *parent) {
+            ++networkManagers;
+            return new ScriptFixtureNetwork(parent);
+        });
+        const QStringList paths{QFileInfo(packagePath).absolutePath()};
+        for (int reload = 0; reload < 3; ++reload) {
+            window.loadPlugins(paths, {});
+            QVERIFY(!window.provider(QStringLiteral("cheapshark")));
+            bool visible = false;
+            for (const auto &record : window.packages()) if (record.package.id() == QLatin1String("cheapshark")) {
+                visible = true; QVERIFY(!record.package.isEnabled());
+                QVERIFY(record.status.contains(QStringLiteral("US-dollar")));
+            }
+            QVERIFY(visible);
+            QVERIFY(!settings.hasKey(QStringLiteral("cheapshark_Enabled")));
+            window.setPackageTrusted(QStringLiteral("cheapshark"), true);
+        }
+        // No CheapShark runtime or network manager is even created while off.
+        // Other installed packages can create managers but must not dispatch HTTP.
+        for (auto *network : window.findChildren<ScriptFixtureNetwork *>()) QCOMPARE(network->requests.size(), 0);
+        Q_UNUSED(networkManagers);
+    }
     void normalDiscoveryApprovalAndEnablement() {
         auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
         KConfigGroup settings(config, QStringLiteral("Providers"));

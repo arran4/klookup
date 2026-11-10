@@ -128,6 +128,7 @@ QJsonObject ProviderGithub::selfTestV1() const
 SearchProvider* ProviderGithub::clone(QObject *parent) const
 {
     ProviderGithub *cloned = new ProviderGithub(parent);
+    cloned->setEnabled(isEnabled());
     cloned->m_authToken = m_authToken;
     return cloned;
 }

@@ -256,6 +256,10 @@ add_executable(test_settingspanes test_settingspanes.cpp)
 target_link_libraries(test_settingspanes Qt6::Test klookup_core)
 add_test(NAME test_settingspanes COMMAND test_settingspanes)
 
+add_executable(test_displayfilters test_displayfilters.cpp)
+target_link_libraries(test_displayfilters Qt6::Test klookup_core)
+add_test(NAME test_displayfilters COMMAND test_displayfilters)
+
 # KRunner query normalization is independent of the Plasma desktop session.
 add_executable(test_runner_query test_runner_query.cpp)
 target_link_libraries(test_runner_query Qt6::Test Qt6::Core)

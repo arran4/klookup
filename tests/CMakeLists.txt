@@ -274,6 +274,11 @@ add_executable(test_languagepreferences test_languagepreferences.cpp)
 target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
 add_test(NAME test_languagepreferences COMMAND test_languagepreferences)
 
+add_executable(test_searcheligibility test_searcheligibility.cpp)
+target_link_libraries(test_searcheligibility Qt6::Test klookup_core)
+target_compile_definitions(test_searcheligibility PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_searcheligibility COMMAND test_searcheligibility)
+
 # KRunner query normalization is independent of the Plasma desktop session.
 add_executable(test_runner_query test_runner_query.cpp)
 target_link_libraries(test_runner_query Qt6::Test Qt6::Core)

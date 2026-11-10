@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "providerhostservice.h"
+#include "providerrequest.h"
 #include <QDeadlineTimer>
 #include <QNetworkRequest>
 #include <QRegularExpression>
@@ -345,6 +346,17 @@ bool ProviderHostService::drain(const Request &state)
 {
     if (!current(state) || !state->reply) return false;
     auto *reply = state->reply.data();
+    // finished()/readyRead() can follow TLS/open failure with stale buffered
+    // availability. Never drain a failed transport or a closed QIODevice.
+    if (ProviderRequest::hasTransportError(reply)) {
+        fail(state, QStringLiteral("HTTP transport failed: %1").arg(reply->errorString())); return false;
+    }
+    if (!reply->isReadable()) {
+        if (!reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).isValid()) {
+            fail(state, QStringLiteral("HTTP reply closed before completion")); return false;
+        }
+        return current(state); // Keep an already drained HTTP body/status, without reading again.
+    }
     if (reply->header(QNetworkRequest::ContentLengthHeader).toLongLong() > MaxResponseBytes) {
         fail(state, QStringLiteral("Response exceeded maximum streaming limit of 5 MiB (compressed/wire bytes)"), true); return false;
     }

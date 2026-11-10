@@ -1,6 +1,7 @@
 #include "appicon.h"
 #include <QResource>
-#include <QPainter>
+#include <QImage>
+#include <QPixmap>
 #include <QPalette>
 
 QIcon applicationIcon()
@@ -25,13 +26,20 @@ QIcon trayIconForPalette(const QPalette &palette)
     const QIcon symbolic(QStringLiteral(":/icons/org.kde.klookup-symbolic.svg"));
     QIcon trayIcon;
     for (const int size : {16, 22, 24, 32, 48}) {
-        QPixmap pixmap = symbolic.pixmap(size, size);
-        if (pixmap.isNull()) continue;
-        QPainter painter(&pixmap);
-        painter.setCompositionMode(QPainter::CompositionMode_SourceIn);
-        painter.fillRect(pixmap.rect(), palette.color(QPalette::WindowText));
-        painter.end();
-        trayIcon.addPixmap(pixmap);
+        const QPixmap source = symbolic.pixmap(size, size);
+        if (source.isNull()) continue;
+        // Recolour *pixels*, not an icon pixmap with an active Qt paint engine:
+        // icon rendering can otherwise alter the colour according to a style.
+        QImage image = source.toImage().convertToFormat(QImage::Format_ARGB32);
+        const QColor ink = palette.color(QPalette::WindowText);
+        for (int y = 0; y < image.height(); ++y) {
+            auto *line = reinterpret_cast<QRgb *>(image.scanLine(y));
+            for (int x = 0; x < image.width(); ++x) {
+                const int alpha = qAlpha(line[x]);
+                line[x] = qRgba(ink.red(), ink.green(), ink.blue(), alpha);
+            }
+        }
+        trayIcon.addPixmap(QPixmap::fromImage(image), QIcon::Normal, QIcon::Off);
     }
     return trayIcon.isNull()
         ? QIcon::fromTheme(QStringLiteral("edit-find"), applicationIcon())

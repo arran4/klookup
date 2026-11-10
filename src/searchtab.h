@@ -13,6 +13,8 @@
 
 class QPushButton;
 class QToolButton;
+class QHBoxLayout;
+class QLabel;
 class ProviderAuthSession;
 class SourceLink;
 class QMenu;
@@ -86,6 +88,12 @@ private:
     QWidget *createEmptyStateWidget(QWidget *parent);
     void saveLayout(QSplitter *changed);
 
+    void updateDisplayFilters();
+    void applyDisplayFilters();
+    QMap<QString, QToolButton *> m_filterButtons;
+    QSet<QString> m_selectedFacets;
+    QHBoxLayout *m_filterLayout = nullptr;
+    QLabel *m_filterStatus = nullptr;
     bool sourceEligible(SearchProvider *provider) const;
     bool m_respectSourcePolicy = false;
     bool m_hasTemporarySelection = false;

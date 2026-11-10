@@ -69,6 +69,7 @@ private:
     QMap<QString, QString> m_clientDrafts;
     QString m_authProviderId;
     QLineEdit *m_clientId;
+    QLabel *m_clientIdLabel;
     QLabel *m_authStatus;
     QLabel *m_authMode;
     QLabel *m_oauthDetails;

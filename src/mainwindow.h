@@ -81,6 +81,7 @@ private:
     void saveSettings();
     void setupActions();
     void setupTrayIcon();
+    void closeSearchTab(int index);
     void handleClipboardEvent(ClipboardPolicy::Event event);
 
     QTabWidget *m_tabWidget;

@@ -183,7 +183,7 @@ void ProviderSpotify::sendJsonRequest(QPointer<QNetworkReply> &slot, const QUrl 
         reply->deleteLater();
 
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-        const QByteArray payload = reply->readAll();
+        const QByteArray payload = reply->isReadable() && !ProviderRequest::hasTransportError(reply) ? reply->readAll() : QByteArray();
         if (reply->property("responseTooLarge").toBool() || payload.size() > MaxResponseBytes) {
             ProviderRequest::fail(this, requestId, QStringLiteral("Response exceeds 8 MiB limit"));
             return;

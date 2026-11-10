@@ -73,11 +73,11 @@ MainWindow::MainWindow(QWidget *parent)
         int index = m_tabWidget->tabBar()->tabAt(pos);
         if (index > 0) {
             QMenu menu(this);
-            auto *newWindowAction = menu.addAction(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"));
+            auto *newWindowAction = menu.addAction(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Pop Out to New Window"));
             menu.addSeparator();
             auto *closeAction = menu.addAction(QIcon::fromTheme(QStringLiteral("tab-close")), QStringLiteral("Close Tab"));
             connect(newWindowAction, &QAction::triggered, this, [this, index] {
-                openSearchInNewWindow(m_tabWidget->tabText(index));
+                popOutSearchTab(qobject_cast<SearchTab *>(m_tabWidget->widget(index)));
             });
             connect(closeAction, &QAction::triggered, this, [this, index] {
                 if (index > 0 && index < m_tabWidget->count()) {
@@ -665,16 +665,7 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
         m_recent->recordSearch(query, clipboard);
     SearchTab *tab = new SearchTab(query, this);
     tab->setProperty("automaticClipboardQuery", clipboard);
-    connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
-    connect(tab, &SearchTab::openSearchInNewWindowRequested, this, &MainWindow::openSearchInNewWindow);
-    connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
-        if (win) {
-            m_detailWindows.append(win);
-            connect(win, &ResultDetailWindow::windowClosing, this, [this, win] {
-                m_detailWindows.removeAll(win);
-            });
-        }
-    });
+    connectSearchTab(tab);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
@@ -704,10 +695,10 @@ bool MainWindow::queryClose()
     // application emits aboutToQuit.  Save while all session widgets are live;
     // aboutToQuit provides the same guarantee for explicit Quit actions.
     saveSettings();
-    for (auto win : m_searchWindows) {
+    for (auto win : QList<QPointer<SearchWindow>>(m_searchWindows)) {
         if (win) win->close();
     }
-    for (auto win : m_detailWindows) {
+    for (auto win : QList<QPointer<ResultDetailWindow>>(m_detailWindows)) {
         if (win) win->close();
     }
     return true;
@@ -727,31 +718,67 @@ void MainWindow::clearSearchTabs()
     config->sync();
 }
 
+void MainWindow::connectSearchTab(SearchTab *tab)
+{
+    connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
+    connect(tab, &SearchTab::popOutRequested, this, [this, tab] { popOutSearchTab(tab); });
+    connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
+        if (win) {
+            m_detailWindows.append(win);
+            connect(win, &ResultDetailWindow::windowClosing, this, [this, win] {
+                m_detailWindows.removeAll(win);
+            });
+        }
+    });
+}
+
+void MainWindow::trackSearchWindow(SearchWindow *window)
+{
+    m_searchWindows.append(window);
+    if (auto *action = window->findChild<QAction *>(QStringLiteral("returnSearchToMainWindow")))
+        connect(this, &QObject::destroyed, action, [action] { action->setEnabled(false); });
+    connect(window, &SearchWindow::windowClosing, this, [this, window] { m_searchWindows.removeAll(window); });
+    connect(window, &SearchWindow::returnToMainRequested, this, [this](SearchWindow *source) { returnSearchToMain(source); });
+}
+
 SearchWindow *MainWindow::openSearchInNewWindow(const QString &query)
 {
     auto *window = new SearchWindow(query, m_providers, m_authManager);
-    m_searchWindows.append(window);
-    connect(window, &SearchWindow::windowClosing, this, [this, window] {
-        m_searchWindows.removeAll(window);
-    });
-    if (auto *tab = window->searchTab()) {
-        connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
-        connect(tab, &SearchTab::openSearchInNewWindowRequested, this, [this](const QString &q) {
-            openSearchInNewWindow(q);
-        });
-        connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
-            if (win) {
-                m_detailWindows.append(win);
-                connect(win, &ResultDetailWindow::windowClosing, this, [this, win] {
-                    m_detailWindows.removeAll(win);
-                });
-            }
-        });
-    }
-    window->show();
-    window->raise();
-    window->activateWindow();
+    trackSearchWindow(window);
+    connectSearchTab(window->searchTab());
+    window->show(); window->raise(); window->activateWindow();
     return window;
+}
+
+SearchWindow *MainWindow::popOutSearchTab(SearchTab *tab)
+{
+    const int index = tab ? m_tabWidget->indexOf(tab) : -1;
+    if (index <= 0) return nullptr;
+    // Attaching the existing widget transfers every provider, pending request,
+    // loaded result/detail and continuation with it; no search is dispatched.
+    auto *window = new SearchWindow(tab);
+    if (window->searchTab() != tab || window->centralWidget() != tab) {
+        m_tabWidget->insertTab(index, tab, tab->query());
+        delete window;
+        return nullptr;
+    }
+    const int remainingIndex = m_tabWidget->indexOf(tab);
+    if (remainingIndex >= 0) m_tabWidget->removeTab(remainingIndex);
+    trackSearchWindow(window);
+    window->show(); window->raise(); window->activateWindow();
+    return window;
+}
+
+bool MainWindow::returnSearchToMain(SearchWindow *window)
+{
+    if (!window || !m_searchWindows.contains(window) || !window->searchTab()) return false;
+    auto *tab = window->takeSearchTab();
+    const int index = m_tabWidget->addTab(tab, tab->query());
+    m_tabWidget->setCurrentIndex(index);
+    tab->show();
+    window->close(); // The returned tab is already owned by the main tab widget.
+    show(); raise(); activateWindow();
+    return true;
 }
 
 ResultDetailWindow *MainWindow::openResultDetailsInNewWindow(const SearchResult &result,

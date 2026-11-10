@@ -78,8 +78,8 @@ void ProviderOMDb::onReplyFinished(QNetworkReply *reply)
 
 
 
-    if (reply->error() != QNetworkReply::NoError) {
-        emit searchFailed(id(), reply->errorString());
+    if (reply->error() != QNetworkReply::NoError || !reply->isReadable()) {
+        emit searchFailed(id(), reply->error() == QNetworkReply::NoError ? QStringLiteral("Provider reply closed before completion") : reply->errorString());
         return;
     }
 

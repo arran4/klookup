@@ -19,6 +19,7 @@ add_test(NAME test_searchdashboard COMMAND test_searchdashboard)
 
 add_executable(test_mainwindow test_mainwindow.cpp)
 target_link_libraries(test_mainwindow Qt6::Test klookup_core KF6::WidgetsAddons Qt6::Widgets Qt6::Core Qt6::Gui Qt6::Network Qt6::DBus KF6::CoreAddons KF6::ConfigCore KF6::ConfigGui KF6::I18n KF6::DBusAddons KF6::XmlGui KF6::Wallet KF6::Notifications)
+target_compile_definitions(test_mainwindow PRIVATE PROJECT_SOURCE_DIR=\"${CMAKE_SOURCE_DIR}\")
 add_test(NAME test_mainwindow COMMAND test_mainwindow)
 
 add_executable(test_session_lifecycle test_session_lifecycle.cpp)
@@ -259,6 +260,15 @@ add_test(NAME test_settingspanes COMMAND test_settingspanes)
 add_executable(test_displayfilters test_displayfilters.cpp)
 target_link_libraries(test_displayfilters Qt6::Test klookup_core)
 add_test(NAME test_displayfilters COMMAND test_displayfilters)
+
+# Auth capability v2 must remain binary compatible with the frozen /1.0 header.
+add_library(provider_auth_abi_fixture MODULE provider_auth_abi_fixture.cpp)
+target_link_libraries(provider_auth_abi_fixture klookup_core Qt6::Core)
+add_executable(test_authcapabilities test_authcapabilities.cpp)
+target_link_libraries(test_authcapabilities Qt6::Test klookup_core)
+add_dependencies(test_authcapabilities provider_auth_abi_fixture)
+target_compile_definitions(test_authcapabilities PRIVATE LEGACY_AUTH_LIBRARY="$<TARGET_FILE:provider_auth_abi_fixture>")
+add_test(NAME test_authcapabilities COMMAND test_authcapabilities)
 
 add_executable(test_searcheligibility test_searcheligibility.cpp)
 target_link_libraries(test_searcheligibility Qt6::Test klookup_core)

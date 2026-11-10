@@ -8,6 +8,7 @@
 #include "resultmetadata.h"
 #include "searchcontinuation.h"
 #include "searchprovider.h"
+#include "providerauthentication.h"
 
 #include <QHash>
 #include <QJsonArray>
@@ -186,10 +187,10 @@ private:
 };
 
 // ProviderV1 -> Legacy SearchProvider & SearchProviderContinuation adapter
-class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation
+class ProviderV1ToLegacyAdapter : public SearchProvider, public SearchProviderContinuation, public ProviderAuthentication, public ProviderAuthenticationV2
 {
     Q_OBJECT
-    Q_INTERFACES(SearchProvider SearchProviderContinuation)
+    Q_INTERFACES(SearchProvider SearchProviderContinuation ProviderAuthentication ProviderAuthenticationV2)
 public:
     using Factory = std::function<ProviderV1 *(QObject *parent)>;
 
@@ -199,6 +200,8 @@ public:
 
     QString id() const override;
     QString name() const override;
+    AuthenticationDescriptor authenticationDescriptor() const override { return authenticationDescriptorV2(); }
+    AuthenticationDescriptorV2 authenticationDescriptorV2() const override { return ::authenticationDescriptorV2(static_cast<QObject *>(m_v1)); }
     void search(const QString &query) override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
 

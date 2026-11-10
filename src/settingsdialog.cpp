@@ -44,7 +44,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     if (!m_authentication) {
         for (auto *provider : providers) {
-            if (authenticationDescriptor(provider).mode == AuthenticationMode::OAuth2Pkce) { m_authentication = new ProviderAuthManager(this, this); break; }
+            if (authenticationDescriptorV2(provider).mode == AuthenticationMode::OAuth2Pkce) { m_authentication = new ProviderAuthManager(this, this); break; }
         }
     }
     setWindowTitle(QStringLiteral("Configure KLookup"));
@@ -116,7 +116,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_rememberAuth->setChecked(true);
     auto *authForm = new QFormLayout;
     authForm->addRow(QStringLiteral("Authentication:"), m_authMode);
-    authForm->addRow(QStringLiteral("OAuth client ID:"), m_clientId);
+    m_clientIdLabel = new QLabel(QStringLiteral("OAuth client ID:"), this);
+    m_clientIdLabel->setBuddy(m_clientId);
+    authForm->addRow(m_clientIdLabel, m_clientId);
     providerDetailsLayout->addLayout(authForm);
     providerDetailsLayout->addWidget(m_oauthDetails);
     providerDetailsLayout->addWidget(m_authStatus);
@@ -138,7 +140,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(m_clientId, &QLineEdit::textEdited, this, [this](const QString &text) { if (!m_authProviderId.isEmpty()) m_clientDrafts[m_authProviderId] = text; });
     for (auto *provider : providers) {
         KConfigGroup auth(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Authentication-") + provider->id());
-        m_clientDrafts.insert(provider->id(), auth.readEntry(QStringLiteral("ClientId"), QString()));
+        const auto descriptor = authenticationDescriptorV2(provider);
+        if (descriptor.usable() && descriptor.mode == AuthenticationMode::OAuth2Pkce && descriptor.publicClientId.isEmpty())
+            m_clientDrafts.insert(provider->id(), auth.readEntry(QStringLiteral("ClientId"), QString()));
         if (m_authentication) {
             if (auto *session = m_authentication->sessionFor(provider)) connect(session, &ProviderAuthSession::changed, this, &SettingsDialog::updateAuthenticationUi);
         }
@@ -146,7 +150,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(m_restoreAuth, &QPushButton::clicked, this, [this] {
         auto *item = m_listWidget->currentItem();
         auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
-        if (m_authentication && provider) if (auto *session = m_authentication->sessionFor(provider)) session->restore(m_clientId->text());
+        const auto descriptor = authenticationDescriptorV2(provider);
+        const QString clientId = descriptor.publicClientId.isEmpty() ? m_clientId->text() : descriptor.publicClientId;
+        if (m_authentication && provider) if (auto *session = m_authentication->sessionFor(provider)) session->restore(clientId);
     });
     connect(m_disconnectAuth, &QPushButton::clicked, this, [this] {
         auto *item = m_listWidget->currentItem();
@@ -203,7 +209,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (!selected) { identity->clear(); return; }
         const auto &record = m_packages[row];
         const auto &pkg = record.package;
-        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + ProviderDefaults::reason(pkg.id()) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
+        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + ProviderDefaults::reason(pkg.id()) + QLatin1Char('\n') + (pkg.manifest().authentication.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication: %1 — script credential execution is unavailable (issue #85)").arg(pkg.manifest().authentication.methods().join(QStringLiteral(", ")))) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
             .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
                  pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
                  pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,
@@ -349,32 +355,33 @@ void SettingsDialog::showLoginDialog()
     }
 
     SearchProvider *provider = item->data(Qt::UserRole).value<SearchProvider*>();
-    const auto descriptor = authenticationDescriptor(provider);
-    if (!provider || descriptor.mode == AuthenticationMode::None) {
+    const auto descriptor = authenticationDescriptorV2(provider);
+    if (!provider || !descriptor.usable()) {
         QMessageBox::information(this, QStringLiteral("Not Supported"), QStringLiteral("This provider does not support authentication."));
         return;
     }
 
     if (descriptor.mode == AuthenticationMode::OAuth2Pkce && m_authentication) {
-        const QString clientId = m_clientId->text().trimmed();
+        const QString clientId = descriptor.publicClientId.isEmpty() ? m_clientId->text().trimmed() : descriptor.publicClientId;
         KConfigGroup auth(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Authentication-") + provider->id());
-        auth.writeEntry(QStringLiteral("ClientId"), clientId);
-        auth.sync();
-        m_clientDrafts[provider->id()] = clientId;
-        m_authentication->sessionFor(provider)->connectOAuth(clientId, m_rememberAuth->isChecked());
+        if (descriptor.publicClientId.isEmpty()) {
+            auth.writeEntry(QStringLiteral("ClientId"), clientId);
+            auth.sync(); m_clientDrafts[provider->id()] = clientId;
+        }
+        m_authentication->sessionFor(provider)->connectOAuth(clientId, (m_rememberAuth->isChecked() && descriptor.walletSupported));
         return;
     }
     bool ok;
     QString token = promptForToken(QStringLiteral("Login to %1").arg(provider->name()),
-                                   QStringLiteral("Token/Password/API Key:"),
+                                   descriptor.tokenLabel.toHtmlEscaped() + QLatin1Char(':'),
                                    &ok);
     if (ok) {
         if (m_authentication) {
-            m_authentication->sessionFor(provider)->setManualToken(token, m_rememberAuth->isChecked());
+            m_authentication->sessionFor(provider)->setManualToken(token, (m_rememberAuth->isChecked() && descriptor.walletSupported));
             return;
         }
         provider->setCredentials(QString(), token);
-        if (!m_rememberAuth->isChecked()) { displayInfo(QStringLiteral("Session only"), QStringLiteral("Credentials will only be used for this session.")); return; }
+        if (!(m_rememberAuth->isChecked() && descriptor.walletSupported)) { displayInfo(QStringLiteral("Session only"), QStringLiteral("Credentials will only be used for this session.")); return; }
         SettingsDialog::PersistResult result = performPersistence(provider->id(), token);
         showPersistenceFeedback(result, provider->name());
     }
@@ -384,25 +391,33 @@ void SettingsDialog::updateAuthenticationUi()
 {
     auto *item = m_listWidget->currentItem();
     auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
-    const auto descriptor = authenticationDescriptor(provider);
-    const bool oauth = descriptor.mode == AuthenticationMode::OAuth2Pkce;
-    const bool supported = descriptor.mode != AuthenticationMode::None;
+    const auto descriptor = authenticationDescriptorV2(provider);
+    const bool supported = descriptor.usable();
+    const bool oauth = supported && descriptor.mode == AuthenticationMode::OAuth2Pkce;
+    const bool editableClient = oauth && descriptor.publicClientId.isEmpty();
     const QString id = provider ? provider->id() : QString();
     if (m_authProviderId != id) {
         m_authProviderId = id;
         m_clientId->setText(m_clientDrafts.value(id));
     }
-    m_clientId->setEnabled(oauth);
+    m_clientId->setVisible(editableClient); m_clientId->setEnabled(editableClient);
+    m_clientIdLabel->setVisible(editableClient);
+    if (!editableClient) m_clientId->clear();
+    for (auto *button : {m_loginButton, m_restoreAuth, m_disconnectAuth}) button->setVisible(supported);
+    m_rememberAuth->setVisible(supported && descriptor.walletSupported && isWalletAvailable());
     m_authMode->setText(oauth ? QStringLiteral("OAuth 2.0 Authorization Code + PKCE (system browser)") :
-        (supported ? QStringLiteral("Manually supplied API key / token") : QStringLiteral("No authentication required")));
+        (supported ? QStringLiteral("Manually supplied %1").arg(descriptor.tokenLabel) : (descriptor.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication is not implemented"))));
     auto *session = m_authentication && provider ? m_authentication->sessionFor(provider) : nullptr;
     const bool busy = session && (session->state() == ProviderAuthSession::State::Authorizing || session->state() == ProviderAuthSession::State::Refreshing);
-    m_loginButton->setText(oauth ? QStringLiteral("Connect / reauthorize in browser…") : QStringLiteral("Authenticate Selected Provider…"));
+    m_loginButton->setText(oauth ? QStringLiteral("Connect / reauthorize in browser…") : QStringLiteral("Set %1…").arg(descriptor.tokenLabel));
     m_loginButton->setEnabled(supported && !busy);
+    m_restoreAuth->setVisible(supported && session && descriptor.walletSupported && isWalletAvailable());
     m_restoreAuth->setEnabled(session && !busy);
+    m_disconnectAuth->setVisible(supported && session);
     m_disconnectAuth->setEnabled(session != nullptr);
-    m_cancelAuth->setEnabled(busy);
+    m_cancelAuth->setEnabled(busy); m_cancelAuth->setVisible(supported && busy);
     m_rememberAuth->setEnabled(supported);
+    m_authStatus->setVisible(supported);
     m_authStatus->setText(session ? session->statusText() : (supported ? QStringLiteral("Manual credentials can be saved to KWallet or used for this session only") : QString()));
     QString details;
     if (oauth) {
@@ -411,8 +426,9 @@ void SettingsDialog::updateAuthenticationUi()
         details = QStringLiteral("Register the callback in your developer application: %1\nRequested scopes: %2").arg(redirect, descriptor.oauth.scopes.join(QStringLiteral(", ")));
         if (session && !session->callbackUrl().isEmpty()) details += QStringLiteral("\nCurrent callback: ") + session->callbackUrl().toString();
     }
+    if (!descriptor.guidance.isEmpty()) details += QLatin1Char('\n') + descriptor.guidance;
     m_oauthDetails->setText(details);
-    m_oauthDetails->setVisible(oauth);
+    m_oauthDetails->setVisible(!details.isEmpty());
 }
 
 void SettingsDialog::saveSettings()
@@ -466,7 +482,7 @@ void SettingsDialog::saveSettings()
             provider->setEnabled(enabled && (!m_approvalDrafts.contains(pkg.id()) || m_approvalDrafts.value(pkg.id())));
     }
 
-    if (!m_authProviderId.isEmpty()) m_clientDrafts[m_authProviderId] = m_clientId->text().trimmed();
+    if (m_clientDrafts.contains(m_authProviderId)) m_clientDrafts[m_authProviderId] = m_clientId->text().trimmed();
     for (auto it = m_clientDrafts.cbegin(); it != m_clientDrafts.cend(); ++it) {
         KConfigGroup auth(config, QStringLiteral("Authentication-") + it.key());
         auth.writeEntry(QStringLiteral("ClientId"), it.value());

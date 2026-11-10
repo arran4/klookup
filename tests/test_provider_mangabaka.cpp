@@ -1,3 +1,4 @@
+#include "isolatedguitest.h"
 #include "../providers/mangabaka/provider_mangabaka.h"
 #include "../src/searchtab.h"
 #include "../src/settingsdialog.h"
@@ -122,8 +123,9 @@ private slots:
     void testOversizedTagListIsBounded();
     void init()
     {
-        QStandardPaths::setTestModeEnabled(true);
+
         KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("Provider-mangabaka"));
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("Languages"));
     }
     void testFormatSettings();
     void testFormatLabelsAndUnknownTypes();
@@ -131,6 +133,7 @@ private slots:
     void testContinuationFailureAndCancellation();
     void testUntrustedContinuation();
     void testStructuredMetadata();
+    void testPreferredTitleLanguage();
     void testIdentity();
     void testRequestConstructionAndEncoding();
     void testSearchSuccess();
@@ -142,6 +145,25 @@ private slots:
     void testParseError();
     void testReplaceStale();
 };
+
+void TestProviderMangaBaka::testPreferredTitleLanguage()
+{
+    KConfigGroup languages(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Languages"));
+    languages.writeEntry(QStringLiteral("Preferred"), QStringList{QStringLiteral("de"), QStringLiteral("en")}); languages.sync();
+    TestableProviderMangaBaka provider;
+    provider.mockNam->nextResponse = R"({"data":[{"id":1,"original_language":"de","titles":[{"language":"en","title":"English"},{"language":"de","title":"Ursprung"}]}]})";
+    QSignalSpy ready(&provider, &SearchProvider::searchCompleted);
+    provider.search(QStringLiteral("fixture")); QTRY_COMPARE(ready.count(), 1);
+    auto result = ready.first()[1].value<QList<SearchResult>>().first();
+    QCOMPARE(result.title, QStringLiteral("Ursprung"));
+    QCOMPARE(result.additionalData.value(QStringLiteral("localizedTitles")).toList().size(), 2);
+    languages.writeEntry(QStringLiteral("Preferred"), QStringList{QStringLiteral("en")}); languages.sync();
+    provider.search(QStringLiteral("fixture again")); QTRY_COMPARE(ready.count(), 2);
+    result = ready.last()[1].value<QList<SearchResult>>().first();
+    QCOMPARE(result.title, QStringLiteral("English"));
+    QCOMPARE(result.additionalData.value(QStringLiteral("Original title")).toString(), QStringLiteral("Ursprung"));
+    QCOMPARE(result.additionalData.value(QStringLiteral("Original title language")).toString(), QStringLiteral("de"));
+}
 
 void TestProviderMangaBaka::testIdentity()
 {
@@ -674,5 +696,5 @@ void TestProviderMangaBaka::testFormatLabelsAndUnknownTypes()
     QCOMPARE(results.last().type, QStringLiteral("future_format"));
 }
 
-QTEST_MAIN(TestProviderMangaBaka)
+int main(int argc, char **argv) { return runIsolatedGuiTest<TestProviderMangaBaka>(argc, argv); }
 #include "test_provider_mangabaka.moc"

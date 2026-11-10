@@ -1,5 +1,7 @@
 #include "searchtab.h"
 #include "splitterkeyboard.h"
+#include "languagepreferences.h"
+#include <KLocalizedString>
 #include "providerauthsession.h"
 #include "resultactions.h"
 #include "resultdetailwindow.h"
@@ -696,6 +698,11 @@ QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
         onResultClicked(target, 0);
         loadDetails(true);
     });
+    const auto titles = Languages::fromData(result.additionalData.value(QStringLiteral("localizedTitles")), providerId);
+    if (titles.size() > 1) {
+        auto *action = menu->addAction(i18n("All titles…")); action->setObjectName(QStringLiteral("showAllTitles"));
+        connect(action, &QAction::triggered, this, [this, titles] { Languages::showAllTitles(titles, this); });
+    }
     return menu;
 }
 

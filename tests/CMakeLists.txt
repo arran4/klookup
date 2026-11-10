@@ -270,6 +270,10 @@ add_dependencies(test_authcapabilities provider_auth_abi_fixture)
 target_compile_definitions(test_authcapabilities PRIVATE LEGACY_AUTH_LIBRARY="$<TARGET_FILE:provider_auth_abi_fixture>")
 add_test(NAME test_authcapabilities COMMAND test_authcapabilities)
 
+add_executable(test_languagepreferences test_languagepreferences.cpp)
+target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
+add_test(NAME test_languagepreferences COMMAND test_languagepreferences)
+
 # KRunner query normalization is independent of the Plasma desktop session.
 add_executable(test_runner_query test_runner_query.cpp)
 target_link_libraries(test_runner_query Qt6::Test Qt6::Core)

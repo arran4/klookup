@@ -35,6 +35,8 @@ public:
     bool hasProvider(const QString &id) const { return m_states.contains(id); }
     void setError(const QString &providerName, const QString &errorMsg);
 
+    QString query() const { return m_query; }
+    void setPoppedOut(bool poppedOut);
     QSplitter *mainSplitter() const;
     QSplitter *detailSplitter() const;
     QWidget *emptyStateWidget() const;
@@ -47,7 +49,7 @@ signals:
     void searchSelectedSourcesRequested(const QSet<QString> &sources);
     void resultViewed(const QString &providerId, const SearchResult &result);
     void detailWindowCreated(ResultDetailWindow *window);
-    void openSearchInNewWindowRequested(const QString &query);
+    void popOutRequested();
 
 public slots:
     void loadMore(const QString &providerId);
@@ -104,6 +106,7 @@ private:
     SourceLink *m_sourceLink;
     QPushButton *m_detailsButton;
     QPushButton *m_openDetailsWindowButton = nullptr;
+    QPushButton *m_popOutButton = nullptr;
     QMap<QString, ProviderState> m_states;
     quint64 m_nextRequest = 0;
     quint64 m_detailRequest = 0;

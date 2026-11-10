@@ -64,10 +64,11 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     label->setTextFormat(Qt::PlainText);
     headerLayout->addWidget(label);
     headerLayout->addStretch();
-    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open in New Window"), leftWidget);
-    detachButton->setObjectName(QStringLiteral("openSearchInNewWindow"));
+    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Pop Out to New Window"), leftWidget);
+    detachButton->setObjectName(QStringLiteral("popOutSearch"));
+    m_popOutButton = detachButton;
     connect(detachButton, &QPushButton::clicked, this, [this] {
-        emit openSearchInNewWindowRequested(m_query);
+        emit popOutRequested();
     });
     headerLayout->addWidget(detachButton);
     left->addLayout(headerLayout);
@@ -884,6 +885,11 @@ QWidget *SearchTab::createEmptyStateWidget(QWidget *parent)
     layout->addWidget(descLabel);
 
     return widget;
+}
+
+void SearchTab::setPoppedOut(bool poppedOut)
+{
+    m_popOutButton->setVisible(!poppedOut);
 }
 
 void SearchTab::setSourceChoices(const QList<SearchSourceChoice> &choices)

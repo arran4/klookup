@@ -41,6 +41,8 @@ public slots:
     void clearSearchTabs();
 
     SearchWindow *openSearchInNewWindow(const QString &query);
+    SearchWindow *popOutSearchTab(SearchTab *tab);
+    bool returnSearchToMain(SearchWindow *window);
     ResultDetailWindow *openResultDetailsInNewWindow(const SearchResult &result,
                                                     const QString &providerName = QString(),
                                                     const ResultMetadata &metadata = ResultMetadata(),
@@ -74,6 +76,8 @@ private slots:
     void configureShortcuts();
 
 private:
+    void connectSearchTab(SearchTab *tab);
+    void trackSearchWindow(SearchWindow *window);
     ProviderApiV1::ProviderV1ToLegacyAdapter *createScriptedAdapter(ProviderPackage package, QObject *parent, QString *error = nullptr);
     QList<SearchSourceChoice> searchSourceChoices() const;
     void configureSourceSelection(SearchTab *tab);

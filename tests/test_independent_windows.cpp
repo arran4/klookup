@@ -5,6 +5,9 @@
 #include <QtTest>
 #include <QSignalSpy>
 #include <QPushButton>
+#include <QAction>
+#include <QScrollBar>
+#include <QTabWidget>
 #include <QLineEdit>
 #include <QTreeWidget>
 #include <QTextBrowser>
@@ -44,6 +47,7 @@ public:
         Q_UNUSED(token);
         Q_UNUSED(requestId);
         m_searchInProgress = true;
+        ++m_pageRequests;
     }
 
     void cancelRequests() override {
@@ -51,6 +55,7 @@ public:
         m_cancelled = true;
     }
 
+    int m_pageRequests = 0;
     bool m_searchInProgress = false;
     bool m_cancelled = false;
 };
@@ -186,14 +191,57 @@ private slots:
     void testSearchTabOpenInNewWindowButton()
     {
         SearchTab tab(QStringLiteral("tab query"));
-        auto *newWindowBtn = tab.findChild<QPushButton *>(QStringLiteral("openSearchInNewWindow"));
+        auto *newWindowBtn = tab.findChild<QPushButton *>(QStringLiteral("popOutSearch"));
         QVERIFY(newWindowBtn != nullptr);
 
-        QSignalSpy spy(&tab, &SearchTab::openSearchInNewWindowRequested);
+        QSignalSpy spy(&tab, &SearchTab::popOutRequested);
         newWindowBtn->click();
 
         QCOMPARE(spy.count(), 1);
-        QCOMPARE(spy.first().first().toString(), QStringLiteral("tab query"));
+        QCOMPARE(newWindowBtn->text(), QStringLiteral("Pop Out to New Window"));
+    }
+
+    void testPopOutReturnAndPendingOwnership()
+    {
+        MainWindow main;
+        main.performSearch(QStringLiteral("first")); main.performSearch(QStringLiteral("second"));
+        auto *tabs = qobject_cast<QTabWidget *>(main.centralWidget()); QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 3);
+        auto *tab = qobject_cast<SearchTab *>(tabs->widget(1)); QVERIFY(tab);
+        auto *provider = new MockContinuationProvider(tab); tab->startProvider(provider);
+        QVERIFY(provider->m_searchInProgress);
+        auto *tree = tab->findChild<QTreeWidget *>(QStringLiteral("resultsTree")); QVERIFY(tree);
+        SearchResult result; result.id = QStringLiteral("loaded"); result.title = QStringLiteral("Loaded detail");
+        tab->addResults(QStringLiteral("Fixture"), {result});
+        auto *item = tree->topLevelItem(tree->topLevelItemCount() - 1)->child(0);
+        tree->setCurrentItem(item);
+        auto *browser = tab->findChild<QTextBrowser *>(); const auto content = browser->toPlainText();
+        auto *window = main.popOutSearchTab(tab); QVERIFY(window);
+        QCOMPARE(tabs->count(), 2); QCOMPARE(tabs->tabText(1), QStringLiteral("second"));
+        QCOMPARE(window->searchTab(), tab); QCOMPARE(provider->parent(), tab);
+        QVERIFY(provider->m_searchInProgress && !provider->m_cancelled);
+        QCOMPARE(provider->m_pageRequests, 1);
+        QCOMPARE(tree->currentItem(), item); QCOMPARE(browser->toPlainText(), content);
+        QVERIFY(!tab->findChild<QPushButton *>(QStringLiteral("popOutSearch"))->isVisible());
+        // Results arriving while popped out target the same live tab/provider state.
+        SearchPage page; SearchResult late; late.id = QStringLiteral("late"); late.title = QStringLiteral("Late result"); page.results = {late};
+        // This mock uses legacy completion rather than a tracked page request.
+        emit provider->searchCompleted(provider->id(), {late});
+        QVERIFY(tree->topLevelItem(0)->childCount() > 0);
+        auto *action = window->findChild<QAction *>(QStringLiteral("returnSearchToMainWindow")); QVERIFY(action);
+        QPointer<SearchWindow> closing(window); action->trigger();
+        QCOMPARE(tabs->count(), 3); QCOMPARE(tabs->currentWidget(), tab);
+        QCOMPARE(tree->currentItem(), item); QCOMPARE(provider->parent(), tab);
+        QVERIFY(!provider->m_cancelled);
+        QCOMPARE(provider->m_pageRequests, 1);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); QVERIFY(!closing);
+        // Closing a popped-out window permanently closes that search, leaving the other tab.
+        window = main.popOutSearchTab(tab); QVERIFY(window);
+        QPointer<SearchTab> deleted(tab); QPointer<MockContinuationProvider> cancelled(provider);
+        window->close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(!deleted && !cancelled); QCOMPARE(tabs->count(), 2);
+        QVERIFY(!main.popOutSearchTab(nullptr));
+        QVERIFY(!main.returnSearchToMain(nullptr));
     }
 
     void testSearchTabOpenDetailsButton()

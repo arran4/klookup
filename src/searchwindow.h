@@ -21,13 +21,16 @@ public:
                           const QList<SearchProvider *> &providers,
                           ProviderAuthManager *authManager = nullptr,
                           QWidget *parent = nullptr);
+    explicit SearchWindow(SearchTab *tab, QWidget *parent = nullptr);
     ~SearchWindow() override = default;
+    SearchTab *takeSearchTab();
 
     QString query() const;
     SearchTab *searchTab() const;
 
 signals:
     void windowClosing(SearchWindow *window);
+    void returnToMainRequested(SearchWindow *window);
 
 protected:
     void closeEvent(QCloseEvent *event) override;

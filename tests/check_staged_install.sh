@@ -55,5 +55,5 @@ if [ -x "$build_dir/tests/test_scripted_cheapshark" ]; then
     test -f "$stage/share/klookup/providers.d/cheapshark/main.mjs"
     cp "$build_dir/tests/test_scripted_cheapshark" "$stage/bin/test-installed-cheapshark"
     XDG_DATA_HOME="$stage/empty-user" XDG_DATA_DIRS="$stage/share" XDG_CONFIG_HOME="$stage/config-cheapshark" \
-        KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-cheapshark" normalDiscoveryApprovalAndEnablement
+        KLOOKUP_STAGED_INSTALL=1 "$stage/bin/test-installed-cheapshark" defaultOffSurvivesApprovalAndRediscovery normalDiscoveryApprovalAndEnablement
 fi

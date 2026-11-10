@@ -247,7 +247,7 @@ SearchTab::~SearchTab()
 
 void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *authentication)
 {
-    if (!provider || m_states.contains(provider->id())) {
+    if (!provider || !provider->isEnabled() || m_states.contains(provider->id())) {
         return;
     }
     provider->setParent(this);

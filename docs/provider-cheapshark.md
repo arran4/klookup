@@ -4,7 +4,14 @@
 # CheapShark PC game deals
 
 `cheapshark` is a credential-free ECMAScript provider for explicit PC-game title
-lookups. Search displays ten store/deal records with game/store/deal IDs, sale
+lookups. It is **disabled by default**. Enable it in **Settings → Script packages**
+to include US-dollar game deals. Approval and enablement are separate choices;
+approving or rediscovering the package does not enable it. Existing explicit
+enabled/disabled preferences survive migration and restart. USD is a pricing
+currency, not a claim of US-only availability. There is no geolocation or price
+conversion. Disabled packages perform no search or reference-list requests.
+
+Search displays ten store/deal records with game/store/deal IDs, sale
 and regular prices labelled **USD**, available savings/release/score metadata,
 and CheapShark attribution. A game may have several store-specific deals.
 Search only requests lightweight deals and the store reference list. Selecting
@@ -35,7 +42,13 @@ lazy details, caching, approval/enablement and MainWindow/SearchTab activation.
 The protected staged install verifies assets and first activation without seeded
 approval. Ordinary CI never calls CheapShark or its redirect pages.
 
-This adds a game source; it does not remove DuckDuckGo or complete issue #14.
-The README integration update is coordinated in existing PR #78. Issue #15 can
-close only after the resulting provider documentation/README and tested game
-lookup are included in the final batch.
+## Default-policy audit
+
+CheapShark is the only default-off exception: USD-priced PC-game store deals
+are an opt-in special-purpose source. The other shipped native and scripted
+sources retain their existing default. No documented geographic restriction was
+established for those sources; authentication requirements remain separate.
+All restoration, Settings, diagnostics and missing-package paths use the shared
+provider-default policy. Only stored `_Enabled` keys migrate from QSettings;
+absent values remain absent. Applying unrelated settings does not turn inherited
+defaults into explicit provider overrides.

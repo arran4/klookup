@@ -1,4 +1,7 @@
 #include "providerdefaults.h"
+#include "settingssplitter.h"
+#include <QScrollArea>
+#include <QGridLayout>
 #include "providereligibility.h"
 #include <QSignalBlocker>
 #include <KLocalizedString>
@@ -63,7 +66,13 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         item->setData(Qt::UserRole, QVariant::fromValue(provider));
         item->setToolTip(provider->classification().description().toHtmlEscaped());
     }
-    providersLayout->addWidget(m_listWidget);
+    auto *providerDetails = new QWidget(providersWidget);
+    auto *providerDetailsLayout = new QVBoxLayout(providerDetails);
+    auto *providerScroll = new QScrollArea(providersWidget);
+    providerScroll->setObjectName(QStringLiteral("providerDetailsScroll"));
+    providerScroll->setWidgetResizable(true); providerScroll->setWidget(providerDetails);
+    providersLayout->addWidget(new SettingsSplitter(QStringLiteral("SettingsProvidersSplitter"),
+        i18n("Provider list and details separator"), m_listWidget, providerScroll, providersWidget));
     auto *options = new QStackedWidget(providersWidget);
     options->addWidget(new QWidget(options)); // no options for unrelated providers
     for (auto *provider : m_providers) {
@@ -72,12 +81,12 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
             if (widget) { m_providerOptions.insert(provider, widget); options->addWidget(widget); }
         }
     }
-    providersLayout->addWidget(options);
-    auto *classification = new QLabel(providersWidget);
+    providerDetailsLayout->addWidget(options);
+    auto *classification = new QLabel(providerDetails);
     classification->setObjectName(QStringLiteral("providerClassification"));
     classification->setTextFormat(Qt::PlainText);
     classification->setWordWrap(true);
-    providersLayout->addWidget(classification);
+    providerDetailsLayout->addWidget(classification);
     connect(m_listWidget, &QListWidget::currentRowChanged, this, [this, classification](int row) {
         const auto *item = m_listWidget->item(row);
         auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
@@ -108,10 +117,10 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     auto *authForm = new QFormLayout;
     authForm->addRow(QStringLiteral("Authentication:"), m_authMode);
     authForm->addRow(QStringLiteral("OAuth client ID:"), m_clientId);
-    providersLayout->addLayout(authForm);
-    providersLayout->addWidget(m_oauthDetails);
-    providersLayout->addWidget(m_authStatus);
-    providersLayout->addWidget(m_rememberAuth);
+    providerDetailsLayout->addLayout(authForm);
+    providerDetailsLayout->addWidget(m_oauthDetails);
+    providerDetailsLayout->addWidget(m_authStatus);
+    providerDetailsLayout->addWidget(m_rememberAuth);
     m_loginButton = new QPushButton(QStringLiteral("Authenticate Selected Provider…"), this);
     m_loginButton->setObjectName(QStringLiteral("connectProvider"));
     m_loginButton->setIcon(QIcon::fromTheme(QStringLiteral("dialog-password")));
@@ -121,9 +130,10 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_disconnectAuth->setObjectName(QStringLiteral("disconnectProvider"));
     m_cancelAuth = new QPushButton(QStringLiteral("Cancel authorization"), this);
     m_cancelAuth->setObjectName(QStringLiteral("cancelProviderAuthorization"));
-    auto *authButtons = new QHBoxLayout;
-    for (auto *button : {m_loginButton, m_restoreAuth, m_disconnectAuth, m_cancelAuth}) authButtons->addWidget(button);
-    providersLayout->addLayout(authButtons);
+    auto *authButtons = new QGridLayout;
+    int authButtonIndex = 0;
+    for (auto *button : {m_loginButton, m_restoreAuth, m_disconnectAuth, m_cancelAuth}) authButtons->addWidget(button, authButtonIndex / 2, authButtonIndex % 2), ++authButtonIndex;
+    providerDetailsLayout->addLayout(authButtons);
     connect(m_listWidget, &QListWidget::currentRowChanged, this, &SettingsDialog::updateAuthenticationUi);
     connect(m_clientId, &QLineEdit::textEdited, this, [this](const QString &text) { if (!m_authProviderId.isEmpty()) m_clientDrafts[m_authProviderId] = text; });
     for (auto *provider : providers) {
@@ -163,22 +173,29 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         item->setData(Qt::UserRole + 1, record.package.isEnabled());
         item->setToolTip(ProviderDefaults::reason(record.package.id()));
     }
-    packageLayout->addWidget(m_packageList);
+    auto *packageDetails = new QWidget(packagePage);
+    auto *packageDetailsLayout = new QVBoxLayout(packageDetails);
+    auto *packageScroll = new QScrollArea(packagePage);
+    packageScroll->setObjectName(QStringLiteral("packageDetailsScroll"));
+    packageScroll->setWidgetResizable(true); packageScroll->setWidget(packageDetails);
+    packageLayout->addWidget(new SettingsSplitter(QStringLiteral("SettingsPackagesSplitter"),
+        i18n("Script package list and details separator"), m_packageList, packageScroll, packagePage));
     auto *identity = new QLabel(packagePage);
     identity->setObjectName(QStringLiteral("packageIdentity"));
     identity->setTextFormat(Qt::PlainText);
     identity->setWordWrap(true);
     identity->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    packageLayout->addWidget(identity);
+    packageDetailsLayout->addWidget(identity);
     auto *approve = new QPushButton(QStringLiteral("Review and approve…"), packagePage);
     approve->setObjectName(QStringLiteral("approvePackage"));
     auto *revoke = new QPushButton(QStringLiteral("Revoke approval"), packagePage);
     revoke->setObjectName(QStringLiteral("revokePackage"));
     auto *retry = new QPushButton(QStringLiteral("Apply and retry discovery"), packagePage);
     retry->setObjectName(QStringLiteral("retryPackages"));
-    auto *packageButtons = new QHBoxLayout;
-    for (auto *b : {approve, revoke, retry}) packageButtons->addWidget(b);
-    packageLayout->addLayout(packageButtons);
+    auto *packageButtons = new QGridLayout;
+    int packageButtonIndex = 0;
+    for (auto *b : {approve, revoke, retry}) packageButtons->addWidget(b, packageButtonIndex / 2, packageButtonIndex % 2), ++packageButtonIndex;
+    packageDetailsLayout->addLayout(packageButtons);
     auto updatePackage = [this, identity, approve, revoke](int row) {
         const bool selected = row >= 0 && row < m_packages.size();
         approve->setEnabled(selected && m_packages[row].package.isValid());
@@ -221,19 +238,25 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     healthList->setObjectName(QStringLiteral("diagnosticProviders"));
     const auto diagnosticSources = ProviderDiagnostics::forSettings(m_providers, m_packages);
     for (const auto &source : diagnosticSources) healthList->addItem(source.id + QStringLiteral(" (") + source.type + QStringLiteral(")"));
-    healthLayout->addWidget(healthList);
+    auto *healthDetails = new QWidget(health);
+    auto *healthDetailsLayout = new QVBoxLayout(healthDetails);
+    auto *healthScroll = new QScrollArea(health);
+    healthScroll->setObjectName(QStringLiteral("healthDetailsScroll"));
+    healthScroll->setWidgetResizable(true); healthScroll->setWidget(healthDetails);
+    healthLayout->addWidget(new SettingsSplitter(QStringLiteral("SettingsHealthSplitter"),
+        i18n("Provider health list and details separator"), healthList, healthScroll, health));
     auto *mode = new QComboBox(health);
     mode->addItems({QStringLiteral("Passive preflight"), QStringLiteral("Offline fixtures (execute approved code)"), QStringLiteral("Live probes (allow network, no credentials)")});
     mode->setObjectName(QStringLiteral("diagnosticMode"));
-    healthLayout->addWidget(mode);
+    healthDetailsLayout->addWidget(mode);
     auto *output = new QPlainTextEdit(health); output->setReadOnly(true);
-    output->setObjectName(QStringLiteral("diagnosticOutput")); healthLayout->addWidget(output);
-    auto *buttons = new QHBoxLayout;
+    output->setObjectName(QStringLiteral("diagnosticOutput")); healthDetailsLayout->addWidget(output);
+    auto *buttons = new QGridLayout;
     auto *one = new QPushButton(QStringLiteral("Check selected / Retry"), health);
     auto *all = new QPushButton(QStringLiteral("Check all providers"), health);
     auto *stop = new QPushButton(QStringLiteral("Cancel checks"), health);
     one->setObjectName(QStringLiteral("checkProvider")); all->setObjectName(QStringLiteral("checkAllProviders"));
-    buttons->addWidget(one); buttons->addWidget(all); buttons->addWidget(stop); healthLayout->addLayout(buttons);
+    buttons->addWidget(one, 0, 0); buttons->addWidget(all, 0, 1); buttons->addWidget(stop, 1, 0); healthDetailsLayout->addLayout(buttons);
     auto *diagnostics = new ProviderDiagnostics(health);
     connect(one, &QPushButton::clicked, this, [=] {
         const int row = healthList->currentRow();

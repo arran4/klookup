@@ -23,6 +23,7 @@ nav:
   - Provider architecture:
       - Installing and approving packages: provider-package-approval.md
       - Provider classification: provider-classification.md
+      - Settings panes: settings-panes.md
       - Search source selection: source-selection.md
       - Authentication: provider-authentication.md
       - Request lifecycle: script-provider-lifecycle.md

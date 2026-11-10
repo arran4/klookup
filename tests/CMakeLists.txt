@@ -252,6 +252,10 @@ target_link_libraries(test_closedreplies Qt6::Test klookup_core)
 add_test(NAME test_closedreplies COMMAND test_closedreplies)
 
 
+add_executable(test_settingspanes test_settingspanes.cpp)
+target_link_libraries(test_settingspanes Qt6::Test klookup_core)
+add_test(NAME test_settingspanes COMMAND test_settingspanes)
+
 add_executable(test_searcheligibility test_searcheligibility.cpp)
 target_link_libraries(test_searcheligibility Qt6::Test klookup_core)
 target_compile_definitions(test_searcheligibility PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

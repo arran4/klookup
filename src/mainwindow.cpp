@@ -646,7 +646,6 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
     SearchTab *tab = new SearchTab(query, this);
     tab->setProperty("automaticClipboardQuery", clipboard);
     connectSearchTab(tab);
-    configureSourceSelection(tab);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
@@ -711,6 +710,8 @@ void MainWindow::connectSearchTab(SearchTab *tab)
             });
         }
     });
+    // Install provider eligibility on both ordinary and independent tabs.
+    configureSourceSelection(tab);
 }
 
 void MainWindow::trackSearchWindow(SearchWindow *window)
@@ -730,7 +731,6 @@ SearchWindow *MainWindow::openSearchInNewWindow(const QString &query)
     window->show(); window->raise(); window->activateWindow();
     return window;
 }
-        configureSourceSelection(tab);
 
 SearchWindow *MainWindow::popOutSearchTab(SearchTab *tab)
 {

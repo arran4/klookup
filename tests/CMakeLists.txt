@@ -247,6 +247,11 @@ add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/pr
 target_link_libraries(test_closedreplies Qt6::Test klookup_core)
 add_test(NAME test_closedreplies COMMAND test_closedreplies)
 
+add_executable(test_providerdefaults test_providerdefaults.cpp)
+target_link_libraries(test_providerdefaults Qt6::Test klookup_core)
+target_compile_definitions(test_providerdefaults PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_providerdefaults COMMAND test_providerdefaults)
+
 # Auth capability v2 must remain binary compatible with the frozen /1.0 header.
 add_library(provider_auth_abi_fixture MODULE provider_auth_abi_fixture.cpp)
 target_link_libraries(provider_auth_abi_fixture klookup_core Qt6::Core)

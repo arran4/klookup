@@ -119,5 +119,7 @@ void ProviderDuckDuckGo::onReplyFinished(QNetworkReply *reply)
 
 SearchProvider* ProviderDuckDuckGo::clone(QObject *parent) const
 {
-    return new ProviderDuckDuckGo(parent);
+    auto *copy = new ProviderDuckDuckGo(parent);
+    copy->setEnabled(isEnabled());
+    return copy;
 }

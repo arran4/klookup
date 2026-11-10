@@ -602,6 +602,7 @@ ResultMetadata ProviderSpotify::parseMetadata(const QJsonObject &obj, const QStr
 SearchProvider *ProviderSpotify::clone(QObject *parent) const
 {
     auto *copy = new ProviderSpotify(parent);
+    copy->setEnabled(isEnabled());
     copy->m_accessToken = m_accessToken;
     copy->m_types = m_types;
     return copy;

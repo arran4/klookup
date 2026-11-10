@@ -16,6 +16,7 @@ class QPluginLoader;
 class ProviderAuthManager;
 class GlobalShortcuts;
 class RecentActivity;
+class SearchTab;
 class QNetworkAccessManager;
 
 class MainWindow : public KXmlGuiWindow
@@ -38,6 +39,8 @@ public slots:
     void clearSearchTabs();
 
     SearchWindow *openSearchInNewWindow(const QString &query);
+    SearchWindow *popOutSearchTab(SearchTab *tab);
+    bool returnSearchToMain(SearchWindow *window);
     ResultDetailWindow *openResultDetailsInNewWindow(const SearchResult &result,
                                                     const QString &providerName = QString(),
                                                     const ResultMetadata &metadata = ResultMetadata(),
@@ -71,6 +74,8 @@ private slots:
     void configureShortcuts();
 
 private:
+    void connectSearchTab(SearchTab *tab);
+    void trackSearchWindow(SearchWindow *window);
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
     void loadSettings();
     void saveSettings();

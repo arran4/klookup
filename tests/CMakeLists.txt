@@ -256,6 +256,10 @@ add_executable(test_settingspanes test_settingspanes.cpp)
 target_link_libraries(test_settingspanes Qt6::Test klookup_core)
 add_test(NAME test_settingspanes COMMAND test_settingspanes)
 
+add_executable(test_displayfilters test_displayfilters.cpp)
+target_link_libraries(test_displayfilters Qt6::Test klookup_core)
+add_test(NAME test_displayfilters COMMAND test_displayfilters)
+
 add_executable(test_languagepreferences test_languagepreferences.cpp)
 target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
 add_test(NAME test_languagepreferences COMMAND test_languagepreferences)

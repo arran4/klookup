@@ -23,7 +23,6 @@ KLookupRunner::KLookupRunner(QObject *parent, const KPluginMetaData &metaData)
     setObjectName(QStringLiteral("KLookup"));
     setSyntaxes({
         KRunner::RunnerSyntax(QStringLiteral("lookup :q:"), i18n("Look up a term in KLookup")),
-        KRunner::RunnerSyntax(QStringLiteral(":q:"), i18n("Search the term using KLookup")),
     });
 #endif
 }

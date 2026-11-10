@@ -6,8 +6,8 @@
 namespace KLookupRunnerQuery {
 
 // :q: is a KDE help placeholder, not literal text the user should enter.
-// Keep existing unprefixed searches working. When the explicit "lookup "
-// prefix is used, strip it before handing the query to the application.
+// Only explicitly prefixed KRunner queries should reach KLookup. Strip
+// "lookup " and reject all other input to avoid polluting generic results.
 inline QString searchTerm(const QString &raw)
 {
     const QString input = raw.trimmed();
@@ -18,7 +18,7 @@ inline QString searchTerm(const QString &raw)
         const QString value = input.mid(7).trimmed();
         return value.size() >= 3 ? value : QString{};
     }
-    return input.size() >= 3 ? input : QString{};
+    return {};
 }
 
 }

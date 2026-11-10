@@ -185,11 +185,11 @@ With KLookup **and its KRunner plugin installed**, open KRunner (often **Alt+Spa
 lookup Linux kernel
 ```
 
-The **`lookup `** prefix makes the KLookup action easy to identify. With the
-runner enabled, an ordinary query like `Linux kernel` can also offer a KLookup
-result alongside other KRunner matches. In KDE syntax descriptions, `:q:` means
-*search term*; it is **not** text to type. Choose the KLookup result and press
-Enter to send that query to the application; merely typing it does not submit
+The **`lookup `** prefix explicitly selects KLookup and prevents unwanted
+results during unrelated KRunner searches. A bare query such as `Linux kernel`
+will not trigger KLookup. KDE's `:q:` in the syntax metadata means *search term*;
+it is a help placeholder, **not** text to type. Choose the KLookup result and
+press Enter to send the term to the application; typing alone does not submit
 the query to a remote provider.
 
 Selecting the KLookup result sends the query to the app, starting it if needed through D-Bus activation. A running instance can receive new searches without spawning a separate service for each request.

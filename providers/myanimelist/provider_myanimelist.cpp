@@ -122,5 +122,7 @@ void ProviderMyAnimeList::onReplyFinished(QNetworkReply *reply)
 
 SearchProvider* ProviderMyAnimeList::clone(QObject *parent) const
 {
-    return new ProviderMyAnimeList(parent);
+    auto *copy = new ProviderMyAnimeList(parent);
+    copy->setEnabled(isEnabled());
+    return copy;
 }

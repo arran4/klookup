@@ -136,6 +136,7 @@ void ProviderTheMovieDB::onReplyFinished(QNetworkReply *reply)
 SearchProvider* ProviderTheMovieDB::clone(QObject *parent) const
 {
     ProviderTheMovieDB *cloned = new ProviderTheMovieDB(parent);
+    cloned->setEnabled(isEnabled());
     cloned->m_apiKey = m_apiKey;
     return cloned;
 }

@@ -1,3 +1,4 @@
+#include "providerdefaults.h"
 #include "mainwindow.h"
 #include "appicon.h"
 #include "clipboardinput.h"
@@ -543,14 +544,14 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         pkg.setTrusted(pkg.approved(providersGroup));
         if (pkg.isTrusted() && !providersGroup.hasKey(pkg.id() + QStringLiteral("_Approval")))
             pkg.saveApproval(providersGroup, true);
-        const bool isEnabled = providersGroup.readEntry(pkg.id() + QStringLiteral("_Enabled"), true);
+        const bool isEnabled = ProviderDefaults::enabled(providersGroup, pkg.id());
         pkg.setEnabled(isEnabled);
         providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastPath"), pkg.packageDir());
         providersGroup.writeEntry(pkg.id() + QStringLiteral("_LastProvenance"), pkg.provenance());
         ProviderPackageStatus record{pkg, QStringLiteral("Ready")};
         if (!pkg.isValid()) record.status = pkg.validationError();
         else if (pkg.runtime() != QLatin1String("javascript")) record.status = QStringLiteral("Unsupported runtime: %1").arg(pkg.runtime());
-        else if (!isEnabled) record.status = QStringLiteral("Disabled");
+        else if (!isEnabled) record.status = ProviderDefaults::reason(pkg.id()).isEmpty() ? QStringLiteral("Disabled") : ProviderDefaults::reason(pkg.id());
         else if (!pkg.isTrusted()) record.status = QStringLiteral("Approval required");
         m_packages.append(record);
         if (!pkg.isValid() || pkg.runtime() != QLatin1String("javascript") || !pkg.isTrusted() || !isEnabled) continue;
@@ -613,7 +614,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         const auto type = source == QLatin1String("system") ? ProviderPackage::LocationType::System :
                           source == QLatin1String("user") ? ProviderPackage::LocationType::User : ProviderPackage::LocationType::Custom;
         auto missing = ProviderPackage::fromDirectory(oldPath, type);
-        missing.setEnabled(providersGroup.readEntry(id + QStringLiteral("_Enabled"), true));
+        missing.setEnabled(ProviderDefaults::enabled(providersGroup, id));
         m_packages.append({missing, QStringLiteral("Package missing from discovery; reinstall or retry")});
     }
     providersGroup.sync();
@@ -692,7 +693,7 @@ void MainWindow::restoreProviderState(SearchProvider* provider)
 {
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
-    provider->setEnabled(providersGroup.readEntry(provider->id() + QStringLiteral("_Enabled"), true));
+    provider->setEnabled(ProviderDefaults::enabled(providersGroup, provider->id()));
 }
 void MainWindow::performSearch(const QString &query)
 {

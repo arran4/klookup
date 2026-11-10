@@ -125,6 +125,7 @@ void ProviderOMDb::onReplyFinished(QNetworkReply *reply)
 SearchProvider* ProviderOMDb::clone(QObject *parent) const
 {
     ProviderOMDb *cloned = new ProviderOMDb(parent);
+    cloned->setEnabled(isEnabled());
     cloned->m_apiKey = m_apiKey;
     return cloned;
 }

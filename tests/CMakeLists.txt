@@ -243,6 +243,10 @@ target_include_directories(provider_legacy_abi_fixture PRIVATE ${CMAKE_SOURCE_DI
 add_dependencies(test_providerclassification provider_legacy_abi_fixture)
 target_compile_definitions(test_providerclassification PRIVATE LEGACY_NATIVE_LIBRARY="$<TARGET_FILE:provider_legacy_abi_fixture>")
 
+add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/provider_spotify.cpp)
+target_link_libraries(test_closedreplies Qt6::Test klookup_core)
+add_test(NAME test_closedreplies COMMAND test_closedreplies)
+
 add_executable(test_settingspanes test_settingspanes.cpp)
 target_link_libraries(test_settingspanes Qt6::Test klookup_core)
 add_test(NAME test_settingspanes COMMAND test_settingspanes)

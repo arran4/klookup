@@ -8,8 +8,10 @@ Type=Application
 Categories=Qt;KDE;Utility;Dictionary;
 Terminal=false
 StartupNotify=true
-DBusActivatable=true
-X-DBus-ServiceName=org.kde.klookup
+# The application implements a custom D-Bus search adaptor, not
+# org.freedesktop.Application at /org/kde/klookup. Launch through Exec;
+# KDBusService::Unique still handles subsequent invocations.
+DBusActivatable=false
 
 Actions=show-search;search-clipboard;
 

@@ -1,6 +1,8 @@
 #include <QTest>
 #include <QSignalSpy>
 #include <QClipboard>
+#include <QFile>
+#include <QKeySequence>
 #include <QMimeData>
 #include <QComboBox>
 #include <KActionCollection>
@@ -1045,6 +1047,60 @@ private slots:
         QApplication::sendEvent(&mw, &closeEv);
 
         QCOMPARE(tabs->count(), 3);
+    }
+
+    void testLocalTabShortcutsAndDashboardSafety()
+    {
+        // Other tests exercise session restoration; isolate our keyboard-only test.
+        KConfigGroup openTabs(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("OpenTabs"));
+        openTabs.deleteGroup();
+        openTabs.writeEntry("Count", 0);
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->sync();
+        TestableMainWindow mw;
+        auto *tabs = mw.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        QCOMPARE(tabs->count(), 1);
+        auto *close = mw.actionCollection()->action(QStringLiteral("close_current_tab"));
+        auto *next = mw.actionCollection()->action(QStringLiteral("next_tab"));
+        auto *previous = mw.actionCollection()->action(QStringLiteral("previous_tab"));
+        auto *newSearch = mw.actionCollection()->action(QStringLiteral("new_search"));
+        auto *focus = mw.actionCollection()->action(QStringLiteral("focus_search"));
+        QVERIFY(close && next && previous && newSearch && focus);
+        QCOMPARE(close->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_W));
+        QCOMPARE(newSearch->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_T));
+        QCOMPARE(focus->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_L));
+        QCOMPARE(next->shortcut(), QKeySequence(Qt::CTRL | Qt::Key_Tab));
+        QCOMPARE(previous->shortcut(), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab));
+        QVERIFY(!close->isEnabled()); // Never close the dashboard.
+
+        tabs->addTab(new QWidget(tabs), QStringLiteral("First"));
+        tabs->addTab(new QWidget(tabs), QStringLiteral("Second"));
+        tabs->setCurrentIndex(1);
+        QVERIFY(close->isEnabled());
+        next->trigger();
+        QCOMPARE(tabs->currentIndex(), 2);
+        previous->trigger();
+        QCOMPARE(tabs->currentIndex(), 1);
+        close->trigger();
+        QCOMPARE(tabs->count(), 2);
+        tabs->setCurrentIndex(1);
+        close->trigger();
+        QCOMPARE(tabs->count(), 1);
+        QCOMPARE(tabs->currentIndex(), 0);
+        QVERIFY(!close->isEnabled());
+        newSearch->trigger();
+        QCOMPARE(tabs->currentIndex(), 0);
+    }
+
+    void testDesktopEntryLaunchUsesExec()
+    {
+        QFile desktop(QStringLiteral(PROJECT_SOURCE_DIR "/src/org.kde.klookup.desktop"));
+        QVERIFY(desktop.open(QIODevice::ReadOnly));
+        const QByteArray entry = desktop.readAll();
+        QVERIFY(entry.contains("Exec=klookup %u"));
+        QVERIFY(entry.contains("DBusActivatable=false"));
+        QVERIFY(!entry.contains("DBusActivatable=true"));
+        QVERIFY(!entry.contains("X-DBus-ServiceName="));
     }
 
     void testClearTabsOnCloseSettingsDialog()

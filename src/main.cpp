@@ -12,9 +12,10 @@ int main(int argc, char *argv[])
 {
     QGuiApplication::setDesktopFileName(QStringLiteral("org.kde.klookup"));
     QApplication app(argc, argv);
+    QCoreApplication::setApplicationVersion(QString::fromLatin1(KLOOKUP_VERSION_STRING));
     KLocalizedString::setApplicationDomain("klookup");
 
-    KAboutData aboutData(QStringLiteral("klookup"), i18n("KLookup"), QStringLiteral("0.1"),
+    KAboutData aboutData(QStringLiteral("klookup"), i18n("KLookup"), QString::fromLatin1(KLOOKUP_VERSION_STRING),
                          i18n("Dictionary-style multi-provider search tool"), KAboutLicense::GPL_V3, i18n("(c) 2026"), QString(),
                          QStringLiteral("https://github.com/arran4/klookup"));
     aboutData.setLicense(KAboutLicense::GPL_V3, KAboutLicense::OrLaterVersions);

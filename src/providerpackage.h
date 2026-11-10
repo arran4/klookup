@@ -34,6 +34,7 @@ struct PackageManifest {
     ProviderApiV1::Capabilities capabilities;
     QJsonObject defaultSettings;
     ProviderClassification classification;
+    AuthenticationDescriptorV2 authentication;
 };
 
 class ProviderPackage {

@@ -251,6 +251,11 @@ add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/pr
 target_link_libraries(test_closedreplies Qt6::Test klookup_core)
 add_test(NAME test_closedreplies COMMAND test_closedreplies)
 
+add_executable(test_providerdefaults test_providerdefaults.cpp)
+target_link_libraries(test_providerdefaults Qt6::Test klookup_core)
+target_compile_definitions(test_providerdefaults PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_providerdefaults COMMAND test_providerdefaults)
+
 add_executable(test_searcheligibility test_searcheligibility.cpp)
 target_link_libraries(test_searcheligibility Qt6::Test klookup_core)
 target_compile_definitions(test_searcheligibility PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

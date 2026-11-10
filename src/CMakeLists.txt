@@ -10,6 +10,7 @@ add_library(klookup_core STATIC
     jsprovider.cpp
     providerclassification.cpp
     providerdefaults.cpp
+    providerdefaults.cpp
     providereligibility.cpp
     searchprovider.cpp
     searchdashboard.cpp

@@ -26,7 +26,16 @@ QIcon trayIconForPalette(const QPalette &palette)
     const QIcon symbolic(QStringLiteral(":/icons/org.kde.klookup-symbolic.svg"));
     QIcon trayIcon;
     for (const int size : {16, 22, 24, 32, 48}) {
-        const QPixmap source = symbolic.pixmap(size, size);
+        QPixmap source = symbolic.pixmap(size, size);
+        if (source.isNull()) {
+            // A Qt installation without the SVG icon plugin still needs a
+            // palette-aware tray icon. Use the bundled raster alpha silhouette
+            // rather than returning the uncoloured full-size launcher icon.
+            const QImage fallback(QStringLiteral(":/icons/org.kde.klookup.png"));
+            if (!fallback.isNull())
+                source = QPixmap::fromImage(fallback.scaled(
+                    size, size, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        }
         if (source.isNull()) continue;
         // Recolour *pixels*, not an icon pixmap with an active Qt paint engine:
         // icon rendering can otherwise alter the colour according to a style.

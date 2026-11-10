@@ -115,6 +115,10 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Verify CMake test registrations are independent and unique
+        run: |
+          python3 tests/check_cmake_registrations.py --self-test
+          python3 tests/check_cmake_registrations.py
       - uses: actions/setup-go@v7
         with:
           go-version: stable

@@ -248,38 +248,11 @@ add_executable(test_closedreplies test_closedreplies.cpp ../providers/spotify/pr
 target_link_libraries(test_closedreplies Qt6::Test klookup_core)
 add_test(NAME test_closedreplies COMMAND test_closedreplies)
 
-add_executable(test_providerdefaults test_providerdefaults.cpp)
-target_link_libraries(test_providerdefaults Qt6::Test klookup_core)
-target_compile_definitions(test_providerdefaults PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-add_test(NAME test_providerdefaults COMMAND test_providerdefaults)
-
-add_executable(test_settingspanes test_settingspanes.cpp)
-target_link_libraries(test_settingspanes Qt6::Test klookup_core)
-add_test(NAME test_settingspanes COMMAND test_settingspanes)
-
-add_executable(test_displayfilters test_displayfilters.cpp)
-target_link_libraries(test_displayfilters Qt6::Test klookup_core)
-add_test(NAME test_displayfilters COMMAND test_displayfilters)
-
-# Auth capability v2 must remain binary compatible with the frozen /1.0 header.
-add_library(provider_auth_abi_fixture MODULE provider_auth_abi_fixture.cpp)
-target_link_libraries(provider_auth_abi_fixture klookup_core Qt6::Core)
-add_executable(test_authcapabilities test_authcapabilities.cpp)
-target_link_libraries(test_authcapabilities Qt6::Test klookup_core)
-add_dependencies(test_authcapabilities provider_auth_abi_fixture)
-target_compile_definitions(test_authcapabilities PRIVATE LEGACY_AUTH_LIBRARY="$<TARGET_FILE:provider_auth_abi_fixture>")
-add_test(NAME test_authcapabilities COMMAND test_authcapabilities)
-
-add_executable(test_languagepreferences test_languagepreferences.cpp)
-target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
-add_test(NAME test_languagepreferences COMMAND test_languagepreferences)
-
-add_executable(test_searcheligibility test_searcheligibility.cpp)
-target_link_libraries(test_searcheligibility Qt6::Test klookup_core)
-target_compile_definitions(test_searcheligibility PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
-add_test(NAME test_searcheligibility COMMAND test_searcheligibility)
-
-# KRunner query normalization is independent of the Plasma desktop session.
-add_executable(test_runner_query test_runner_query.cpp)
-target_link_libraries(test_runner_query Qt6::Test Qt6::Core)
-add_test(NAME test_runner_query COMMAND test_runner_query)
+# New standalone test registrations belong in registrations/test_<name>.cmake,
+# not in this shared file. CMake reconfigures when fragments are added or removed.
+file(GLOB test_registration_files CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_LIST_DIR}/registrations/test_*.cmake")
+list(SORT test_registration_files)
+foreach(registration_file IN LISTS test_registration_files)
+    include("${registration_file}")
+endforeach()

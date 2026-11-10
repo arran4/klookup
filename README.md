@@ -182,12 +182,22 @@ These are **source-dependent** features: for example, a provider without a full-
 With KLookup **and its KRunner plugin installed**, open KRunner (often **Alt+Space**) and type:
 
 ```text
-:q: Linux kernel
+lookup Linux kernel
 ```
+
+The **`lookup `** prefix explicitly selects KLookup and prevents unwanted
+results during unrelated KRunner searches. A bare query such as `Linux kernel`
+will not trigger KLookup. KDE's `:q:` in the syntax metadata means *search term*;
+it is a help placeholder, **not** text to type. Choose the KLookup result and
+press Enter to send the term to the application; typing alone does not submit
+the query to a remote provider.
 
 Selecting the KLookup result sends the query to the app, starting it if needed through D-Bus activation. A running instance can receive new searches without spawning a separate service for each request.
 
-If KRunner does not find the plugin immediately after installation, retry after a fresh Plasma session and consult [Troubleshooting](#troubleshooting).
+If KRunner does not find the plugin immediately after installation, make sure the
+**KLookup** runner is enabled in the KRunner settings. Restart KRunner or try a
+fresh Plasma session and consult [Troubleshooting](#troubleshooting). This does
+not bypass the separately tracked cold-start activation issue.
 
 ### Global shortcuts
 

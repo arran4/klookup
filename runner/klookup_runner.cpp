@@ -1,4 +1,5 @@
 #include "klookup_runner.h"
+#include "queryparser.h"
 #include <QDBusConnection>
 #include <QDBusMessage>
 #include <QDBusPendingCall>
@@ -20,7 +21,9 @@ KLookupRunner::KLookupRunner(QObject *parent, const KPluginMetaData &metaData)
 {
 #ifndef Q_OS_WASM
     setObjectName(QStringLiteral("KLookup"));
-    setSyntaxes({KRunner::RunnerSyntax(QStringLiteral(":q:"), i18n("Search KLookup"))});
+    setSyntaxes({
+        KRunner::RunnerSyntax(QStringLiteral("lookup :q:"), i18n("Look up a term in KLookup")),
+    });
 #endif
 }
 
@@ -30,8 +33,8 @@ KLookupRunner::~KLookupRunner()
 
 void KLookupRunner::match(KRunner::RunnerContext &context)
 {
-    QString query = context.query();
-    if (query.length() < 3) {
+    const QString query = KLookupRunnerQuery::searchTerm(context.query());
+    if (query.isEmpty()) {
         return;
     }
 

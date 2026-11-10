@@ -1,4 +1,5 @@
 #include "providerdefaults.h"
+#include "providereligibility.h"
 // SPDX-FileCopyrightText: 2026 KLookup contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -28,9 +29,10 @@ QList<ProviderDiagnostics::Source> ProviderDiagnostics::discover(const QStringLi
     QList<Source> sources;
     QSet<QString> ids;
     const KConfigGroup settings(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+    const KConfigGroup groups(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("ProviderGroups"));
     for (auto package : ProviderPackageDiscovery::discoverPackages(packages)) {
         package.setTrusted(package.approved(settings));
-        package.setEnabled(ProviderDefaults::enabled(settings, package.id()));
+        package.setEnabled(ProviderEligibility::resolve(settings, groups, package.id(), package.manifest().classification).enabled);
         sources.append({package.id(), QStringLiteral("javascript"), package.packageDir(), package.manifest().version, package, {}, package.isEnabled()});
         ids.insert(package.id());
     }
@@ -40,7 +42,7 @@ QList<ProviderDiagnostics::Source> ProviderDiagnostics::discover(const QStringLi
         const auto id = key.chopped(9);
         if (ids.contains(id)) continue;
         const auto path = settings.readEntry(key, QString());
-        sources.append({id, QStringLiteral("javascript"), path, {}, ProviderPackage::fromDirectory(path), {}, ProviderDefaults::enabled(settings, id)});
+        sources.append({id, QStringLiteral("javascript"), path, {}, ProviderPackage::fromDirectory(path), {}, ProviderEligibility::resolve(settings, groups, id, ProviderClassification::builtin(id)).enabled});
         ids.insert(id);
     }
     QStringList paths = nativePaths;
@@ -61,13 +63,13 @@ QList<ProviderDiagnostics::Source> ProviderDiagnostics::discover(const QStringLi
             if (id.startsWith(QStringLiteral("provider_"))) id.remove(0, 9);
             if (id == QLatin1String("tvmaze") || id == QLatin1String("lyrics_ovh") || id == QLatin1String("openlibrary") || id == QLatin1String("anilist") || ids.contains(id)) continue;
             ids.insert(id);
-            sources.append({id, QStringLiteral("native"), file.absoluteFilePath(), {}, {}, {}, ProviderDefaults::enabled(settings, id)});
+            sources.append({id, QStringLiteral("native"), file.absoluteFilePath(), {}, {}, {}, ProviderEligibility::resolve(settings, groups, id, ProviderClassification::builtin(id)).enabled});
         }
     }
     const auto builtin = QString::fromLatin1(KLOOKUP_BUILTIN_NATIVE_IDS).split(QLatin1Char(','), Qt::SkipEmptyParts);
     for (auto id : builtin) {
         id.remove(0, 9); // CMake target prefix provider_
-        if (!ids.contains(id)) sources.append({id, QStringLiteral("native"), QStringLiteral("<missing builtin module>"), {}, {}, {}, ProviderDefaults::enabled(settings, id)});
+        if (!ids.contains(id)) sources.append({id, QStringLiteral("native"), QStringLiteral("<missing builtin module>"), {}, {}, {}, ProviderEligibility::resolve(settings, groups, id, ProviderClassification::builtin(id)).enabled});
     }
     return sources;
 }

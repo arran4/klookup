@@ -3,6 +3,8 @@
 
 #include <KPageDialog>
 #include "providerpackage.h"
+#include "providereligibility.h"
+#include <QSet>
 #include <QListWidget>
 #include <QMap>
 #include <memory>
@@ -61,6 +63,15 @@ private slots:
 
 private:
     LanguagePreferencesWidget *m_languages = nullptr;
+    void setupEligibilityPage();
+    void updateEligibilityUi();
+    QMap<QString, ProviderClassification> m_sourceClassifications;
+    QMap<QString, QString> m_sourceNames;
+    QMap<QString, std::optional<bool>> m_sourceOverrides;
+    QMap<QString, bool> m_groupOverrides;
+    QSet<QString> m_changedSources, m_changedGroups;
+    QListWidget *m_policyGroups = nullptr;
+    QListWidget *m_effectiveSources = nullptr;
     QList<SearchProvider*> m_providers;
     QList<ProviderPackageStatus> m_packages;
     QListWidget *m_packageList = nullptr;

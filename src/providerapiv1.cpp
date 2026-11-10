@@ -792,7 +792,7 @@ QString ProviderV1ToLegacyAdapter::name() const
 
 void ProviderV1ToLegacyAdapter::search(const QString &query)
 {
-    if (!m_v1) return;
+    if (!m_v1 || !isEnabled()) return;
     const quint64 reqId = ++m_searchCounter;
     m_activeSearchId = reqId;
     m_v1->search(query, reqId);
@@ -801,13 +801,16 @@ void ProviderV1ToLegacyAdapter::search(const QString &query)
 SearchProvider *ProviderV1ToLegacyAdapter::clone(QObject *parent) const
 {
     if (m_factory) {
-        return new ProviderV1ToLegacyAdapter(m_factory, parent);
+        auto *adapter = new ProviderV1ToLegacyAdapter(m_factory, parent);
+        adapter->setEnabled(isEnabled());
+        return adapter;
     }
     if (m_v1) {
         auto *v1Clone = m_v1->clone(nullptr);
         if (v1Clone) {
             auto *adapter = new ProviderV1ToLegacyAdapter(v1Clone, parent);
             adapter->m_ownsV1 = true;
+            adapter->setEnabled(isEnabled());
             return adapter;
         }
     }
@@ -816,7 +819,7 @@ SearchProvider *ProviderV1ToLegacyAdapter::clone(QObject *parent) const
 
 void ProviderV1ToLegacyAdapter::requestPage(const QString &query, const QString &token, quint64 requestId)
 {
-    if (!m_v1) return;
+    if (!m_v1 || !isEnabled()) return;
     m_activePageRequests.insert(requestId, query);
     m_v1->getPage(query, token, requestId);
 }
@@ -828,7 +831,7 @@ bool ProviderV1ToLegacyAdapter::supportsDetails() const
 
 void ProviderV1ToLegacyAdapter::requestDetails(const QString &resultId, const QString &token, quint64 requestId)
 {
-    if (!m_v1) return;
+    if (!m_v1 || !isEnabled()) return;
     m_activeDetailsRequests.insert(requestId, resultId);
     if (token.startsWith(QStringLiteral("content:"))) {
         const QString contentToken = token.mid(8);

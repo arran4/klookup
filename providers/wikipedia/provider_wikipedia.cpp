@@ -137,5 +137,7 @@ void ProviderWikipedia::requestDetails(const QString &resultId, const QString &t
 }
 SearchProvider *ProviderWikipedia::clone(QObject *parent) const
 {
-    return new ProviderWikipedia(parent);
+    auto *copy = new ProviderWikipedia(parent);
+    copy->setEnabled(isEnabled());
+    return copy;
 }

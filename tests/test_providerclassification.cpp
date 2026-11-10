@@ -117,6 +117,16 @@ private slots:
         QPluginLoader loader(QStringLiteral(LEGACY_NATIVE_LIBRARY));
         auto *provider = qobject_cast<SearchProvider *>(loader.instance()); QVERIFY2(provider, qPrintable(loader.errorString()));
         QCOMPARE(provider->id(), QStringLiteral("legacy_abi_fixture"));
+        // A plugin compiled against the pre-classification, bool-sized SearchProvider
+        // must remain binary-safe when enabled state is changed and cloned.
+        QVERIFY(provider->isEnabled());
+        provider->setEnabled(false);
+        QVERIFY(!provider->isEnabled());
+        std::unique_ptr<SearchProvider> disabledCopy(provider->cloneForSearch());
+        QVERIFY(disabledCopy);
+        QVERIFY(!disabledCopy->isEnabled());
+        provider->setEnabled(true);
+        QVERIFY(provider->isEnabled());
         QVERIFY(provider->classification().facets.isEmpty());
         provider->setClassification(ProviderClassification::builtin(QStringLiteral("cheapshark")));
         QSignalSpy ready(provider, &SearchProvider::searchCompleted);

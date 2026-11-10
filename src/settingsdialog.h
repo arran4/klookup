@@ -8,6 +8,7 @@
 #include <memory>
 
 class SearchProvider;
+class LanguagePreferencesWidget;
 class ProviderAuthManager;
 class AutostartManager;
 class QLabel;
@@ -59,6 +60,7 @@ private slots:
     void updateAuthenticationUi();
 
 private:
+    LanguagePreferencesWidget *m_languages = nullptr;
     QList<SearchProvider*> m_providers;
     QList<ProviderPackageStatus> m_packages;
     QListWidget *m_packageList = nullptr;

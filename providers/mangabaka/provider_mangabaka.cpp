@@ -1,4 +1,5 @@
 #include "provider_mangabaka.h"
+#include "languagepreferences.h"
 #include "../manga_metadata.h"
 #include "providerrequest.h"
 #include <KConfigGroup>
@@ -60,20 +61,17 @@ SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
         return {}; // Stable IDs must be integral and within the API's int32 range.
     res.id = QString::number(numericId);
 
-    QJsonArray titlesArray = obj.value(QStringLiteral("titles")).toArray();
-    for (const QJsonValue &tVal : titlesArray) {
-        QJsonObject tObj = tVal.toObject();
-        if (tObj.value(QStringLiteral("language")).toString() == QStringLiteral("en")) {
-            res.title = tObj.value(QStringLiteral("title")).toString();
-            break;
-        }
+    QList<Languages::Title> titles;
+    const auto originalCode = Languages::canonicalTag(obj.value(QStringLiteral("original_language")).toString());
+    for (const auto &value : obj.value(QStringLiteral("titles")).toArray()) {
+        const auto title = value.toObject();
+        const auto language = Languages::providerCode(id(), title.value(QStringLiteral("language")).toString());
+        titles.append({language, title.value(QStringLiteral("title")).toString(), !originalCode.isEmpty() && language == originalCode});
+        if (titles.size() == 128) break;
     }
-    if (res.title.isEmpty() && !titlesArray.isEmpty()) {
-        res.title = titlesArray.first().toObject().value(QStringLiteral("title")).toString();
-    }
-    if (res.title.isEmpty()) {
-        res.title = obj.value(QStringLiteral("title")).toString();
-    }
+    const KConfigGroup preferences(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Languages"));
+    const auto selected = Languages::select(titles, Languages::read(preferences), obj.value(QStringLiteral("original_language")).toString());
+    res.title = selected.preferred.text.isEmpty() ? obj.value(QStringLiteral("title")).toString() : selected.preferred.text;
 
     res.description = obj.value(QStringLiteral("description")).toString();
 
@@ -82,6 +80,11 @@ SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
     res.type = formatLabel(upstreamType);
 
     QVariantMap additional;
+    if (titles.size() > 1) additional[QStringLiteral("localizedTitles")] = Languages::toData(titles);
+    if (!selected.original.text.isEmpty() && selected.original.text != res.title) {
+        additional[QStringLiteral("Original title")] = selected.original.text;
+        additional[QStringLiteral("Original title language")] = selected.original.language;
+    }
     if (!upstreamType.isEmpty())
         additional[QStringLiteral("Upstream format")] = upstreamType;
     if (obj.contains(QStringLiteral("status")) && obj.value(QStringLiteral("status")).isString()) {

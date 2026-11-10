@@ -25,6 +25,7 @@ nav:
       - Provider classification: provider-classification.md
       - Settings panes: settings-panes.md
       - Filter loaded results: result-display-filters.md
+      - Preferred title languages: language-preferences.md
       - Authentication: provider-authentication.md
       - Request lifecycle: script-provider-lifecycle.md
       - Continuation: provider-continuation.md

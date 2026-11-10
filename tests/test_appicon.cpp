@@ -1,5 +1,6 @@
 #include "../src/appicon.h"
 #include <QImage>
+#include <QPalette>
 #include <QtTest>
 
 class AppIconTest : public QObject
@@ -26,6 +27,41 @@ private slots:
         QCOMPARE(highDpi.size(), QSize(64, 64));
         QCOMPARE(highDpi.devicePixelRatio(), 2.0);
     }
+    void symbolicTrayUsesLightAndDarkPaletteColours()
+    {
+        QPalette light;
+        light.setColor(QPalette::WindowText, QColor(12, 20, 26));
+        QPalette dark;
+        dark.setColor(QPalette::WindowText, QColor(245, 248, 250));
+        QVERIFY(QFile::exists(QStringLiteral(":/icons/org.kde.klookup-symbolic.svg")));
+
+        for (const auto &palette : {light, dark}) {
+            const QImage image = trayIconForPalette(palette).pixmap(22, 22).toImage();
+            QVERIFY(!image.isNull());
+            int painted = 0;
+            int transparent = 0;
+            int luminanceSum = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    const QColor pixel = image.pixelColor(x, y);
+                    if (pixel.alpha() == 0) { ++transparent; continue; }
+                    if (pixel.alpha() < 250) continue; // Ignore anti-aliased edges.
+                    luminanceSum += (299 * pixel.red() + 587 * pixel.green() + 114 * pixel.blue()) / 1000;
+                    ++painted;
+                }
+            }
+            QVERIFY(painted > 0);
+            QVERIFY(transparent > 0);
+            // Icon rasterisation can transform individual channels slightly;
+            // verify the visible silhouette's contrast, not exact RGB bytes.
+            const int meanLuminance = luminanceSum / painted;
+            if (palette.color(QPalette::WindowText).lightness() < 128)
+                QVERIFY(meanLuminance < 100);
+            else
+                QVERIFY(meanLuminance > 155);
+        }
+    }
+
     void fixedSizeAssets()
     {
         for (int size : {16, 22, 24, 32, 48, 64, 128, 256}) {

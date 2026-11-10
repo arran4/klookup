@@ -34,9 +34,11 @@ add_library(klookup_core STATIC
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)
 set_source_files_properties(../icons/256x256/apps/org.kde.klookup.png PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.png)
+set_source_files_properties(../icons/symbolic/apps/org.kde.klookup-symbolic.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup-symbolic.svg)
 qt_add_resources(klookup_core "klookup_icons" PREFIX "/icons" OUTPUT_TARGETS klookup_icon_resource_targets FILES
     ../icons/scalable/apps/org.kde.klookup.svg
     ../icons/256x256/apps/org.kde.klookup.png
+    ../icons/symbolic/apps/org.kde.klookup-symbolic.svg
 )
 
 # Qt puts static-library resources in separate object targets. They also reach
@@ -81,6 +83,8 @@ target_link_libraries(klookup_core PUBLIC
 add_executable(klookup
     main.cpp
 )
+# Single source of truth for the About dialog and command-line version.
+target_compile_definitions(klookup PRIVATE KLOOKUP_VERSION_STRING=\"${PROJECT_VERSION}\")
 
 qt_add_resources(klookup "klookup_resources" PREFIX "/kxmlgui5/klookup" FILES klookupui.rc)
 

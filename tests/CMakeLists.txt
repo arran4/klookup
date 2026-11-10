@@ -270,6 +270,10 @@ add_dependencies(test_authcapabilities provider_auth_abi_fixture)
 target_compile_definitions(test_authcapabilities PRIVATE LEGACY_AUTH_LIBRARY="$<TARGET_FILE:provider_auth_abi_fixture>")
 add_test(NAME test_authcapabilities COMMAND test_authcapabilities)
 
+add_executable(test_languagepreferences test_languagepreferences.cpp)
+target_link_libraries(test_languagepreferences Qt6::Test klookup_core)
+add_test(NAME test_languagepreferences COMMAND test_languagepreferences)
+
 add_executable(test_searcheligibility test_searcheligibility.cpp)
 target_link_libraries(test_searcheligibility Qt6::Test klookup_core)
 target_compile_definitions(test_searcheligibility PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

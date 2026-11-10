@@ -10,6 +10,7 @@
 #include <memory>
 
 class SearchProvider;
+class LanguagePreferencesWidget;
 class ProviderAuthManager;
 class AutostartManager;
 class QLabel;
@@ -61,6 +62,7 @@ private slots:
     void updateAuthenticationUi();
 
 private:
+    LanguagePreferencesWidget *m_languages = nullptr;
     void setupEligibilityPage();
     void updateEligibilityUi();
     QMap<QString, ProviderClassification> m_sourceClassifications;

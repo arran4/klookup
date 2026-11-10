@@ -6,6 +6,7 @@
 #include <QSignalBlocker>
 #include <KLocalizedString>
 #include "settingsdialog.h"
+#include "languagepreferences.h"
 #include "providerdiagnostics.h"
 #include <QPlainTextEdit>
 #include <QJsonDocument>
@@ -320,6 +321,9 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
 
     addPage(generalWidget, QStringLiteral("General"));
 
+    m_languages = new LanguagePreferencesWidget(this);
+    addPage(m_languages, QStringLiteral("Languages"));
+
     // Load current settings
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup genGroup(config, QStringLiteral("General"));
@@ -433,6 +437,7 @@ void SettingsDialog::updateAuthenticationUi()
 
 void SettingsDialog::saveSettings()
 {
+    m_languages->saveSettings();
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
 

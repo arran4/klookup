@@ -13,6 +13,16 @@
 
 namespace ProviderRequest
 {
+inline bool hasTransportError(const QNetworkReply *reply)
+{
+    const auto error = reply->error();
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    const bool httpError = status >= 400 &&
+        ((error >= QNetworkReply::ContentAccessDenied && error <= QNetworkReply::UnknownContentError) ||
+         (error >= QNetworkReply::InternalServerError && error <= QNetworkReply::UnknownServerError));
+    return error != QNetworkReply::NoError && !httpError;
+}
+
 inline void cancel(QPointer<QNetworkReply> &active, QObject *receiver)
 {
     const auto reply = active;
@@ -71,6 +81,7 @@ inline void getJson(SearchProvider *owner, QNetworkAccessManager *manager, QPoin
             error = reply->error() == QNetworkReply::TimeoutError ? QStringLiteral("Request timed out")
                                                                   : QStringLiteral("Network request failed");
         }
+        if (error.isEmpty() && !reply->isReadable()) error = QStringLiteral("Provider reply closed before completion");
         QJsonParseError parseError;
         const auto doc = error.isEmpty() ? QJsonDocument::fromJson(reply->readAll(), &parseError) : QJsonDocument();
         if (error.isEmpty() && (parseError.error != QJsonParseError::NoError || !doc.isObject()))

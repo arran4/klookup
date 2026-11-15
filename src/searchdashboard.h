@@ -10,12 +10,21 @@
 class QListWidget;
 class QLabel;
 class QPushButton;
+class QComboBox;
 
 class SearchDashboard : public QWidget
 {
     Q_OBJECT
 
 public:
+    enum class ActivityFilter {
+        Searches = 0,
+        All = 1,
+        Viewed = 2,
+        Captured = 3
+    };
+    Q_ENUM(ActivityFilter)
+
     explicit SearchDashboard(QWidget *parent = nullptr);
     ~SearchDashboard();
 
@@ -24,6 +33,9 @@ public:
     QStringList saveHistory() const;
     void setRecentActivity(RecentActivity *activity);
     void prepareQuery(const QString &query, bool focus = true);
+
+    ActivityFilter activityFilter() const;
+    void setActivityFilter(ActivityFilter filter);
 
 signals:
     void searchRequested(const QString &query);
@@ -42,6 +54,7 @@ private:
     QWidget *m_recentSection;
     QListWidget *m_recentList;
     QLabel *m_recentEmpty;
+    QComboBox *m_filterCombo;
     QPushButton *m_removeRecent;
     QPushButton *m_clearRecent;
 };

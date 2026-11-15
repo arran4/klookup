@@ -22,6 +22,16 @@ Open **Actions → CI/CD → Run workflow**, select branch `main`, and choose a 
 
 Release modes use [`arran4/git-tag-inc`](https://github.com/arran4/git-tag-inc) for version arithmetic. The optional `release_version_override` applies to `release-*` modes only. It selects an explicit `vMAJOR.MINOR.PATCH` (optionally with a prerelease suffix) rather than calculating a version. The workflow never moves a pre-existing tag. To recover a failed publication, dispatch **`publish-tag` from the intended tag**, rather than rerunning auto-increment and potentially selecting a different version.
 
+## Versioning mechanism
+
+KLookup defines a single authoritative versioning contract:
+1. An explicit build/packager override: `cmake -DKLOOKUP_VERSION=x.y.z` (supported for package managers and Gentoo ebuilds).
+2. The root `VERSION` file, which tracks the authoritative release version in the source tree and offline source tarballs.
+3. Exact Git tags (`git describe --tags --exact-match`) when building from an exact release tag in a Git checkout.
+4. Fallback default version defined in root `CMakeLists.txt`.
+
+The build exposes `PROJECT_VERSION` (semantic numerical format) and `KLOOKUP_VERSION_STRING` (full version identifier). `KAboutData` and `QCoreApplication::setApplicationVersion` derive directly from `KLOOKUP_VERSION_STRING`. Release workflows verify candidate binaries to ensure installed packages and GitHub release tags agree without manual UI source edits.
+
 ## Release gates and publication
 
 1. The workflow runs normal and sanitizer CTest, REUSE, Actionlint and documentation validation.

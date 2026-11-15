@@ -86,7 +86,7 @@ add_executable(klookup
     main.cpp
 )
 # Single source of truth for the About dialog and command-line version.
-target_compile_definitions(klookup PRIVATE KLOOKUP_VERSION_STRING=\"${PROJECT_VERSION}\")
+target_compile_definitions(klookup PRIVATE KLOOKUP_VERSION_STRING=\"${KLOOKUP_VERSION_STRING}\")
 
 qt_add_resources(klookup "klookup_resources" PREFIX "/kxmlgui5/klookup" FILES klookupui.rc)
 

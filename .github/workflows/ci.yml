@@ -294,6 +294,12 @@ jobs:
           test -x candidate/staged/bin/klookup-provider-check
           test -f candidate/staged/share/klookup/providers.d/tvmaze/main.mjs
           readelf -h candidate/staged/bin/klookup | grep -q ELF64
+          # Verify binary reports expected version and does not report obsolete 0.0.2
+          BIN_VER="$(candidate/staged/bin/klookup --version | awk '{print $2}')"
+          if [[ -z "$BIN_VER" || "$BIN_VER" == "0.0.2" ]]; then
+            echo "Candidate klookup reported invalid or obsolete version: $BIN_VER" >&2
+            exit 1
+          fi
           # Keep this archive an install-layout artifact, not a claim of a portable AppImage.
           find candidate/staged -type f | grep -q .
 

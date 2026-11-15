@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "resultdetailwindow.h"
+#include "languagepreferences.h"
 #include "splitterkeyboard.h"
 #include "appicon.h"
 #include "sourcelink.h"
@@ -99,7 +100,13 @@ void ResultDetailWindow::setupUi(const QString &providerName, const ResultMetada
     m_detailsView->setOpenExternalLinks(false);
     m_detailsView->setOpenLinks(false);
     m_detailsView->document()->setResourceProvider([](const QUrl &) { return QVariant(QByteArray()); });
-    connect(m_detailsView, &QTextBrowser::anchorClicked, this, [](const QUrl &url) {
+    connect(m_detailsView, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
+        if (url.scheme() == QLatin1String("klookup") && url.host() == QLatin1String("more-titles")) {
+            const auto titles = Languages::fromData(m_result.additionalData.value(QStringLiteral("localizedTitles")));
+            if (!titles.isEmpty())
+                Languages::showAllTitles(titles, this);
+            return;
+        }
         const auto safe = Metadata::safeWebUrl(url.toString(QUrl::FullyEncoded));
         if (!safe.isEmpty()) {
             QDesktopServices::openUrl(safe);

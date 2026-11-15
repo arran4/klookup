@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "resultcontent.h"
+#include "languagepreferences.h"
 #include "resultmetadata.h"
 #include "searchprovider.h"
 #include "sourceurl.h"
 
+#include <KConfigGroup>
+#include <KLocalizedString>
+#include <KSharedConfig>
 #include <QFont>
 #include <QRegularExpression>
 #include <QTextBlock>
@@ -369,6 +373,40 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
     if (!result.title.isEmpty()) {
         html += QStringLiteral("<h2>%1</h2>").arg(result.title.toHtmlEscaped());
     }
+    const auto localized = Languages::fromData(result.additionalData.value(QStringLiteral("localizedTitles")));
+    if (!localized.isEmpty()) {
+        const KConfigGroup langGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Languages"));
+        const QStringList prefs = Languages::read(langGroup);
+        const QString origLang = result.additionalData.value(QStringLiteral("originalLanguage")).toString();
+        const Languages::Summary summary = Languages::summarizeTitles(localized, prefs, origLang);
+        QStringList titleNotes;
+        if (!summary.original.text.isEmpty() && summary.original.text.trimmed() != result.title.trimmed()) {
+            const QString tag = summary.original.language;
+            const QString tagLabel = tag.isEmpty() ? i18n("Original") : i18n("Original · %1", tag);
+            const QString tip = tag.isEmpty() ? i18n("Source-original title") : Languages::label(tag);
+            titleNotes.append(QStringLiteral("<span title=\"%1\"><b>[%2]</b> %3</span>")
+                                  .arg(tip.toHtmlEscaped(), tagLabel.toHtmlEscaped(), summary.original.text.toHtmlEscaped()));
+        } else if (!summary.original.text.isEmpty()) {
+            const QString tag = summary.original.language;
+            const QString tagLabel = tag.isEmpty() ? i18n("Original") : i18n("Original · %1", tag);
+            const QString tip = tag.isEmpty() ? i18n("Source-original title") : Languages::label(tag);
+            titleNotes.append(QStringLiteral("<span title=\"%1\"><b>[%2]</b></span>")
+                                  .arg(tip.toHtmlEscaped(), tagLabel.toHtmlEscaped()));
+        }
+        if (!summary.uiLocaleTitle.text.isEmpty() && summary.uiLocaleTitle.text.trimmed() != result.title.trimmed()) {
+            const QString tag = summary.uiLocaleTitle.language;
+            const QString tip = tag.isEmpty() ? i18n("UI language title") : Languages::label(tag);
+            titleNotes.append(QStringLiteral("<span title=\"%1\"><b>[%2]</b> %3</span>")
+                                  .arg(tip.toHtmlEscaped(), tag.toHtmlEscaped(), summary.uiLocaleTitle.text.toHtmlEscaped()));
+        }
+        if (summary.omittedCount > 0) {
+            titleNotes.append(QStringLiteral("<a href=\"klookup://more-titles\">%1</a>")
+                                  .arg(i18n("More titles (%1)…", summary.omittedCount).toHtmlEscaped()));
+        }
+        if (!titleNotes.isEmpty()) {
+            html += QStringLiteral("<p>%1</p>").arg(titleNotes.join(QStringLiteral(" &nbsp; ")));
+        }
+    }
 
     QStringList subInfo;
     if (!providerName.isEmpty()) {
@@ -423,13 +461,21 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
             }
             return text + QStringLiteral("</li>");
         };
+        bool hasAdditional = false;
+        QString additionalHtml;
         for (auto it = result.additionalData.cbegin(), end = result.additionalData.cend(); it != end; ++it) {
+            if (it.key() == QLatin1String("localizedTitles"))
+                continue;
             if (totalNodes > kMaxTreeNodes)
                 break;
+            hasAdditional = true;
             const auto node = Metadata::fromVariant(it.key(), it.value());
-            html += renderNode(node, 1);
+            additionalHtml += renderNode(node, 1);
         }
-        html += QStringLiteral("</ul>");
+        if (hasAdditional)
+            html += additionalHtml + QStringLiteral("</ul>");
+        else
+            html.chop(QStringLiteral("<h3>Additional Info</h3><ul>").size());
     }
 
     return html;

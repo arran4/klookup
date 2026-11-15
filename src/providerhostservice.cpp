@@ -5,6 +5,7 @@
 #include "providerrequest.h"
 #include <QDeadlineTimer>
 #include <QNetworkRequest>
+#include <QUrlQuery>
 #include <QRegularExpression>
 #include <QTimer>
 #include <QDateTime>
@@ -139,7 +140,10 @@ ProviderHostService::~ProviderHostService() { cancelAllRequests(); }
 
 void ProviderHostService::setPackage(const ProviderPackage &package)
 {
-    if (!package.isTrusted() || m_package.approvalFingerprint() != package.approvalFingerprint()) cancelAllRequests();
+    if (!package.isTrusted() || m_package.approvalFingerprint() != package.approvalFingerprint()) {
+        cancelAllRequests();
+        m_sessionCredential.clear();
+    }
     m_package = package;
 }
 
@@ -164,7 +168,23 @@ void ProviderHostService::retire(const Request &request)
 
 void ProviderHostService::cancelRequest(quint64 id)
 {
-    if (auto request = m_requests.take(id)) { request->finished = true; retire(request); }
+    if (auto request = m_requests.take(id)) {
+        request->finished = true;
+        if (m_credentialStore && !request->options.secretKey.isEmpty()) {
+            const auto storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), request->options.secretKey);
+            bool otherWaiting = false;
+            for (const auto &req : m_requests) {
+                if (!req->finished && req->options.secretKey == request->options.secretKey) {
+                    otherWaiting = true;
+                    break;
+                }
+            }
+            if (!otherWaiting) {
+                m_credentialStore->cancelPending(storeKey);
+            }
+        }
+        retire(request);
+    }
 }
 
 void ProviderHostService::cancelAllRequests()
@@ -231,12 +251,30 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
         if (!m_package.isSecretAllowed(options.secretKey)) {
             fail(request, QStringLiteral("Secret '%1' is not declared in package manifest permissions.").arg(options.secretKey)); return id;
         }
+        if (!m_sessionCredential.isEmpty()) {
+            startRequest(request, options, 0, m_sessionCredential);
+            return id;
+        }
         if (m_credentialStore) {
             const auto storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
             QPointer<ProviderHostService> guard(this);
-            m_credentialStore->read(storeKey, true, [guard, request, options](const CredentialStoreResult &result) {
+            m_credentialStore->read(storeKey, true, [guard, request, options, storeKey](const CredentialStoreResult &result) {
                 if (!guard || !guard->current(request)) return;
-                guard->startRequest(request, options, 0, result.ok ? result.value : QString());
+                if (result.ok) {
+                    guard->startRequest(request, options, 0, result.value);
+                } else {
+                    const auto authKey = QStringLiteral("credentials/v1/") +
+                        QString::fromLatin1(guard->m_package.id().toUtf8().toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)) +
+                        QStringLiteral("/manual");
+                    if (guard->m_credentialStore) {
+                        guard->m_credentialStore->read(authKey, true, [guard, request, options](const CredentialStoreResult &authResult) {
+                            if (!guard || !guard->current(request)) return;
+                            guard->startRequest(request, options, 0, authResult.ok ? authResult.value : QString());
+                        });
+                    } else {
+                        guard->startRequest(request, options, 0, QString());
+                    }
+                }
             });
             return id;
         }
@@ -263,7 +301,13 @@ void ProviderHostService::startRequest(const Request &state, const HttpRequestOp
     if (method != QLatin1String("GET") && method != QLatin1String("POST")) {
         fail(state, QStringLiteral("Unsupported HTTP method")); return;
     }
-    QNetworkRequest request(options.url);
+    QUrl requestUrl = options.url;
+    if (!secret.isEmpty() && !options.secretQueryParam.isEmpty()) {
+        QUrlQuery query(requestUrl);
+        query.addQueryItem(options.secretQueryParam, secret);
+        requestUrl.setQuery(query);
+    }
+    QNetworkRequest request(requestUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("KLookup/1.0 (XDG Provider Package)"));
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
     request.setAttribute(QNetworkRequest::CookieLoadControlAttribute, QNetworkRequest::Manual);
@@ -329,7 +373,11 @@ void ProviderHostService::startRequest(const Request &state, const HttpRequestOp
     state->body.clear();
     state->decoder.reset();
     state->encodingInitialized = false;
-    auto *reply = method == QLatin1String("POST") ? m_nam->post(request, options.body) : m_nam->get(request);
+    QByteArray requestBody = options.body;
+    if (!secret.isEmpty() && !options.secretBodyPlaceholder.isEmpty()) {
+        requestBody.replace(options.secretBodyPlaceholder.toUtf8(), secret.toUtf8());
+    }
+    auto *reply = method == QLatin1String("POST") ? m_nam->post(request, requestBody) : m_nam->get(request);
     reply->setReadBufferSize(64 * 1024);
     state->reply = reply;
     connect(reply, &QNetworkReply::metaDataChanged, this, [this, state] {
@@ -429,6 +477,15 @@ void ProviderHostService::complete(const Request &state)
                     it.key().compare(injected, Qt::CaseInsensitive) == 0) it = next.headers.erase(it); else ++it;
             }
             next.secretKey.clear(); next.secretHeader.clear(); nextSecret.clear();
+            if (!next.secretQueryParam.isEmpty()) {
+                QUrlQuery q(next.url);
+                q.removeQueryItem(next.secretQueryParam);
+                next.url.setQuery(q);
+                next.secretQueryParam.clear();
+            }
+            if (!next.secretBodyPlaceholder.isEmpty()) {
+                next.secretBodyPlaceholder.clear();
+            }
         }
         if (status == 303 || ((status == 301 || status == 302) && next.method.compare(QStringLiteral("POST"), Qt::CaseInsensitive) == 0)) {
             next.method = QStringLiteral("GET"); next.body.clear(); removeHeader(next.headers, QStringLiteral("Content-Type"));

@@ -62,6 +62,7 @@ public slots:
     void setPackageTrusted(const QString &id, bool trusted);
     bool isPackageTrusted(const QString &id) const;
     const QList<ProviderPackageStatus> &packages() const { return m_packages; }
+    ProviderAuthManager *authManager() const { return m_authManager; }
 
 signals:
     void packageReloaded(const QString &id);

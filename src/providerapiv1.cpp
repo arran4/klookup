@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "providerapiv1.h"
+#include "jsprovider.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -804,6 +805,9 @@ SearchProvider *ProviderV1ToLegacyAdapter::clone(QObject *parent) const
     if (m_factory) {
         auto *adapter = new ProviderV1ToLegacyAdapter(m_factory, parent);
         adapter->setEnabled(isEnabled());
+        if (!m_credentialUsername.isEmpty() || !m_credentialPassword.isEmpty()) {
+            adapter->setCredentials(m_credentialUsername, m_credentialPassword);
+        }
         return adapter;
     }
     if (m_v1) {
@@ -812,10 +816,22 @@ SearchProvider *ProviderV1ToLegacyAdapter::clone(QObject *parent) const
             auto *adapter = new ProviderV1ToLegacyAdapter(v1Clone, parent);
             adapter->m_ownsV1 = true;
             adapter->setEnabled(isEnabled());
+            if (!m_credentialUsername.isEmpty() || !m_credentialPassword.isEmpty()) {
+                adapter->setCredentials(m_credentialUsername, m_credentialPassword);
+            }
             return adapter;
         }
     }
     return nullptr;
+}
+
+void ProviderV1ToLegacyAdapter::setCredentials(const QString &username, const QString &password)
+{
+    m_credentialUsername = username;
+    m_credentialPassword = password;
+    if (auto *js = qobject_cast<JsProvider *>(m_v1)) {
+        js->setSessionCredential(password);
+    }
 }
 
 void ProviderV1ToLegacyAdapter::requestPage(const QString &query, const QString &token, quint64 requestId)

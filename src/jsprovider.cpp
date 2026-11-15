@@ -255,6 +255,12 @@ public:
             if (options.hasProperty(QStringLiteral("secretKey"))) {
                 opts.secretKey = options.property(QStringLiteral("secretKey")).toString();
                 opts.secretHeader = options.property(QStringLiteral("secretHeader")).toString();
+                if (options.hasProperty(QStringLiteral("secretQueryParam"))) {
+                    opts.secretQueryParam = options.property(QStringLiteral("secretQueryParam")).toString();
+                }
+                if (options.hasProperty(QStringLiteral("secretBodyPlaceholder"))) {
+                    opts.secretBodyPlaceholder = options.property(QStringLiteral("secretBodyPlaceholder")).toString();
+                }
             }
         }
 
@@ -397,9 +403,37 @@ bool JsProvider::event(QEvent *event)
     return ProviderV1::event(event);
 }
 
+void JsProvider::setSessionCredential(const QString &secret)
+{
+    if (m_hostService) {
+        m_hostService->setSessionCredential(secret);
+    }
+}
+
+QString JsProvider::sessionCredential() const
+{
+    return m_hostService ? m_hostService->sessionCredential() : QString();
+}
+
 ProviderApiV1::ProviderV1 *JsProvider::clone(QObject *parent) const
 {
-    auto *copy = new JsProvider(m_package, parent);
+    ProviderHost::ProviderHostService *clonedHost = nullptr;
+    if (m_hostService) {
+        clonedHost = new ProviderHost::ProviderHostService(m_package, parent, nullptr);
+        if (m_hostService->credentialStore()) {
+            clonedHost->setCredentialStore(m_hostService->credentialStore());
+        }
+        if (m_hostService->secretResolver()) {
+            clonedHost->setSecretResolver(m_hostService->secretResolver());
+        }
+        if (!m_hostService->sessionCredential().isEmpty()) {
+            clonedHost->setSessionCredential(m_hostService->sessionCredential());
+        }
+    }
+    auto *copy = new JsProvider(m_package, parent, clonedHost);
+    if (clonedHost) {
+        clonedHost->setParent(copy);
+    }
     copy->setOperationTimeoutMs(m_operationTimeoutMs);
     return copy;
 }

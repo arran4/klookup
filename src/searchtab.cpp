@@ -1,4 +1,5 @@
 #include "searchtab.h"
+#include "flowlayout.h"
 #include "splitterkeyboard.h"
 #include "languagepreferences.h"
 #include <KLocalizedString>
@@ -95,21 +96,29 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_filterStatus->setObjectName(QStringLiteral("displayFilterStatus"));
     m_filterStatus->setTextFormat(Qt::PlainText);
     filterHeader->addWidget(m_filterStatus);
-    auto *showAll = new QPushButton(i18n("Show all"), this);
+    auto *showAll = new QPushButton(QStringLiteral("×"), this);
     showAll->setObjectName(QStringLiteral("resetDisplayFilters"));
+    showAll->setToolTip(i18n("Clear active display filters and show all loaded results"));
+    showAll->setAccessibleName(i18n("Clear active display filters"));
     showAll->setAccessibleDescription(i18n("Show all already loaded provider results. No new search is performed."));
+    showAll->setFlat(true);
+    showAll->setCursor(Qt::PointingHandCursor);
+    showAll->setStyleSheet(QStringLiteral(
+        "QPushButton { border-radius: 9px; font-weight: bold; font-size: 13px; min-width: 20px; max-width: 20px; min-height: 20px; max-height: 20px; padding: 0px; border: 1px solid palette(mid); }"
+        "QPushButton:hover { background: palette(midlight); }"
+    ));
     filterHeader->addWidget(showAll);
+    filterHeader->addStretch();
     left->addLayout(filterHeader);
     auto *chips = new QWidget(this);
-    m_filterLayout = new QHBoxLayout(chips);
-    m_filterLayout->setContentsMargins(0, 0, 0, 0);
-    m_filterLayout->addStretch();
+    m_filterLayout = new FlowLayout(chips, 0, 4, 4);
     auto *scroll = new QScrollArea(this);
     scroll->setObjectName(QStringLiteral("displayFilterChips"));
     scroll->setAccessibleName(i18n("Filter already loaded results"));
     scroll->setWidgetResizable(true); scroll->setWidget(chips);
-    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    scroll->setMaximumHeight(fontMetrics().height() + 48);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setMaximumHeight(fontMetrics().height() * 3 + 32);
     left->addWidget(scroll);
     connect(showAll, &QPushButton::clicked, this, [this] {
         m_selectedFacets.clear();
@@ -944,10 +953,17 @@ void SearchTab::updateDisplayFilters()
             button->setFocusPolicy(Qt::StrongFocus);
             button->setProperty("providerFacet", id);
             button->setObjectName(QStringLiteral("displayFacet-") + id);
-            button->setAccessibleName(i18n("Show loaded results: %1", label));
-            button->setToolTip(i18n("Display only; no network requests. Match any selected value within a facet, and every selected facet."));
+            button->setAccessibleName(i18n("Filter loaded results: %1", label));
+            button->setToolTip(i18n("Toggle filter for %1. Multiple selected tags show matching results from any selected category (inclusive union).", label));
+            button->setCursor(Qt::PointingHandCursor);
+            button->setStyleSheet(QStringLiteral(
+                "QToolButton { border-radius: 10px; padding: 2px 8px; border: 1px solid palette(mid); background: palette(window); }"
+                "QToolButton:checked { background: palette(highlight); color: palette(highlighted-text); border: 1px solid palette(highlight); font-weight: bold; }"
+                "QToolButton:hover:!checked { background: palette(button); }"
+                "QToolButton:focus { border: 1px solid palette(highlight); }"
+            ));
             m_filterButtons.insert(id, button);
-            m_filterLayout->insertWidget(m_filterLayout->count() - 1, button);
+            m_filterLayout->insertWidget(m_filterLayout->count(), button);
             connect(button, &QToolButton::toggled, this, [this, id](bool checked) {
                 if (checked) m_selectedFacets.insert(id); else m_selectedFacets.remove(id);
                 applyDisplayFilters();
@@ -959,22 +975,21 @@ void SearchTab::updateDisplayFilters()
 
 void SearchTab::applyDisplayFilters()
 {
-    QMap<QString, QSet<QString>> selectedByFacet;
-    for (const auto &id : m_selectedFacets) if (!id.startsWith(QLatin1String("display:")))
-        selectedByFacet[id.section(QLatin1Char(':'), 0, 0)].insert(id);
     int visible = 0;
     const int count = m_resultsTree->topLevelItemCount();
     for (int i = 0; i < count; ++i) {
         auto *group = m_resultsTree->topLevelItem(i);
         const auto facets = group->data(0, Qt::UserRole + 20).value<ProviderClassification>().facets;
         bool matches = m_selectedFacets.isEmpty();
-        if (!matches && facets.isEmpty()) matches = m_selectedFacets.contains(QStringLiteral("display:unclassified"));
-        else if (!matches && !selectedByFacet.isEmpty()) {
-            matches = true;
-            for (const auto &choices : selectedByFacet) {
-                bool facetMatches = false;
-                for (const auto &id : facets) if (choices.contains(id)) { facetMatches = true; break; }
-                matches = matches && facetMatches;
+        if (!matches && facets.isEmpty()) {
+            matches = m_selectedFacets.contains(QStringLiteral("display:unclassified"));
+        } else if (!matches) {
+            matches = false;
+            for (const auto &id : facets) {
+                if (m_selectedFacets.contains(id)) {
+                    matches = true;
+                    break;
+                }
             }
         }
         group->setHidden(!matches);

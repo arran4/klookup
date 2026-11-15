@@ -22,6 +22,8 @@ class ResultDetailWindow;
 class QSplitter;
 class QStackedWidget;
 
+class FlowLayout;
+
 class SearchTab : public QWidget
 {
     Q_OBJECT
@@ -92,7 +94,7 @@ private:
     void applyDisplayFilters();
     QMap<QString, QToolButton *> m_filterButtons;
     QSet<QString> m_selectedFacets;
-    QHBoxLayout *m_filterLayout = nullptr;
+    FlowLayout *m_filterLayout = nullptr;
     QLabel *m_filterStatus = nullptr;
     bool sourceEligible(SearchProvider *provider) const;
     bool m_respectSourcePolicy = false;

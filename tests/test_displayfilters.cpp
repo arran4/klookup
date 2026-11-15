@@ -74,11 +74,11 @@ private slots:
         QVERIFY(g->isHidden() && !a->isHidden() && u->isHidden());
         chip(QStringLiteral("topic:games"))->click(); // OR within topic
         QVERIFY(!g->isHidden() && !a->isHidden());
-        chip(QStringLiteral("currency:USD"))->click(); // AND across facets
-        QVERIFY(!g->isHidden() && a->isHidden());
+        chip(QStringLiteral("currency:USD"))->click(); // OR across facets
+        QVERIFY(!g->isHidden() && !a->isHidden());
         QCOMPARE(tree->currentItem(), selected); QCOMPARE(details->toPlainText(), cached);
         chip(QStringLiteral("display:unclassified"))->click();
-        QVERIFY(!g->isHidden() && !u->isHidden());
+        QVERIFY(!g->isHidden() && !a->isHidden() && !u->isHidden());
         // Asynchronous results in a hidden source remain cached and hidden.
         SearchResult late; late.id = QStringLiteral("late"); late.title = QStringLiteral("Late");
         emit anime->searchCompleted(anime->id(), {late});
@@ -103,6 +103,56 @@ private slots:
         QVERIFY(!tree->topLevelItem(0)->isHidden()); QVERIFY(tree->topLevelItem(1)->isHidden());
         tab.findChild<QPushButton *>(QStringLiteral("resetDisplayFilters"))->click();
         QVERIFY(!tree->topLevelItem(1)->isHidden());
+    }
+    void inclusiveOrAcrossAudienceAndTopicAndWrapping() {
+        FilterNetwork network;
+        SearchTab tab(QStringLiteral("fixture"));
+        tab.resize(320, 600);
+        tab.show();
+
+        auto *wiki = new FilterProvider(QStringLiteral("wikipedia"), {QStringLiteral("audience:general"), QStringLiteral("topic:reference")}, &network);
+        auto *github = new FilterProvider(QStringLiteral("github"), {QStringLiteral("audience:technical"), QStringLiteral("topic:software")}, &network);
+        auto *manga = new FilterProvider(QStringLiteral("mangadex"), {QStringLiteral("topic:manga")}, &network);
+        tab.startProvider(wiki); tab.startProvider(github); tab.startProvider(manga);
+        wiki->finish(QStringLiteral("w1")); github->finish(QStringLiteral("gh1")); manga->finish(QStringLiteral("m1"));
+        QCoreApplication::processEvents();
+
+        auto *tree = tab.findChild<QTreeWidget *>(); QVERIFY(tree);
+        auto *wItem = tree->topLevelItem(0);
+        auto *gItem = tree->topLevelItem(1);
+        auto *mItem = tree->topLevelItem(2);
+
+        auto chip = [&tab](const QString &id) { return tab.findChild<QToolButton *>(QStringLiteral("displayFacet-") + id); };
+        auto *generalChip = chip(QStringLiteral("audience:general"));
+        auto *softwareChip = chip(QStringLiteral("topic:software"));
+        auto *mangaChip = chip(QStringLiteral("topic:manga"));
+        QVERIFY(generalChip && softwareChip && mangaChip);
+
+        // Selecting General + Software must show BOTH Wikipedia and GitHub (OR union across categories), hiding Manga.
+        generalChip->click();
+        QVERIFY(!wItem->isHidden() && gItem->isHidden() && mItem->isHidden());
+        softwareChip->click();
+        QVERIFY(!wItem->isHidden() && !gItem->isHidden() && mItem->isHidden());
+
+        // Clear button uses compact '×' affordance and resets without new network requests.
+        auto *reset = tab.findChild<QPushButton *>(QStringLiteral("resetDisplayFilters"));
+        QVERIFY(reset);
+        QCOMPARE(reset->text(), QStringLiteral("×"));
+        const int requestsBefore = network.requests;
+        reset->click();
+        QCOMPARE(network.requests, requestsBefore);
+        QVERIFY(!wItem->isHidden() && !gItem->isHidden() && !mItem->isHidden());
+
+        // Verify chips wrap vertically at narrow width instead of staying on a single horizontal line.
+        bool wrapped = false;
+        const int firstY = generalChip->y();
+        for (auto *btn : {softwareChip, mangaChip, chip(QStringLiteral("topic:reference")), chip(QStringLiteral("audience:technical"))}) {
+            if (btn && btn->y() > firstY) {
+                wrapped = true;
+                break;
+            }
+        }
+        QVERIFY(wrapped);
     }
 };
 int main(int argc, char **argv) { return runIsolatedGuiTest<DisplayFiltersTest>(argc, argv); }

@@ -166,7 +166,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (m_authentication && provider) if (auto *session = m_authentication->sessionFor(provider)) session->cancel();
     });
     updateAuthenticationUi();
-    addPage(providersWidget, QStringLiteral("Providers"));
+    m_providersPage = addPage(providersWidget, QStringLiteral("Providers"));
 
     // Package metadata remains available even when no provider can be created.
     auto *packagePage = new QWidget(this);
@@ -237,7 +237,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     });
     connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; m_retryPackages = true; saveSettings(); });
     updatePackage(-1);
-    addPage(packagePage, QStringLiteral("Script packages"));
+    m_packagesPage = addPage(packagePage, QStringLiteral("Script packages"));
 
     auto *health = new QWidget(this);
     auto *healthLayout = new QVBoxLayout(health);
@@ -712,7 +712,59 @@ void SettingsDialog::setupEligibilityPage()
         const auto id = m_packages[row].package.id();
         m_sourceOverrides[id] = item->checkState() == Qt::Checked; m_changedSources.insert(id); updateEligibilityUi();
     });
-    updateEligibilityUi(); addPage(page, i18n("Source selection"));
+    updateEligibilityUi(); m_eligibilityPage = addPage(page, i18n("Source selection"));
+}
+
+bool SettingsDialog::focusProvider(const QString &providerId, const QString &target)
+{
+    if (target == QLatin1String("eligibility") && m_eligibilityPage) {
+        setCurrentPage(m_eligibilityPage);
+        if (m_effectiveSources && !providerId.isEmpty()) {
+            for (int row = 0; row < m_effectiveSources->count(); ++row) {
+                auto *item = m_effectiveSources->item(row);
+                if (item && item->data(Qt::UserRole).toString() == providerId) {
+                    m_effectiveSources->setCurrentRow(row);
+                    break;
+                }
+            }
+        }
+        return true;
+    }
+    if (target == QLatin1String("packages") && m_packagesPage) {
+        setCurrentPage(m_packagesPage);
+        if (m_packageList) {
+            for (int row = 0; row < m_packages.size() && row < m_packageList->count(); ++row) {
+                if (m_packages[row].package.id() == providerId) {
+                    m_packageList->setCurrentRow(row);
+                    break;
+                }
+            }
+        }
+        return true;
+    }
+    if (m_listWidget && m_providersPage) {
+        for (int row = 0; row < m_listWidget->count(); ++row) {
+            auto *item = m_listWidget->item(row);
+            auto *provider = item ? item->data(Qt::UserRole).value<SearchProvider *>() : nullptr;
+            if (provider && provider->id() == providerId) {
+                setCurrentPage(m_providersPage);
+                m_listWidget->setCurrentRow(row);
+                return true;
+            }
+        }
+    }
+    if (m_packageList && m_packagesPage) {
+        for (int row = 0; row < m_packages.size() && row < m_packageList->count(); ++row) {
+            if (m_packages[row].package.id() == providerId) {
+                setCurrentPage(m_packagesPage);
+                m_packageList->setCurrentRow(row);
+                return true;
+            }
+        }
+    }
+    if (m_providersPage)
+        setCurrentPage(m_providersPage);
+    return false;
 }
 
 void SettingsDialog::updateEligibilityUi()

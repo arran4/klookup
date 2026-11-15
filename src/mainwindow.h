@@ -73,6 +73,7 @@ protected:
 private slots:
     void onClipboardChanged();
     void showSettingsDialog();
+    void openProviderSettings(const QString &providerId, const QString &target = {});
     void configureShortcuts();
 
 private:

@@ -338,7 +338,14 @@ void MainWindow::searchClipboardNow()
 
 void MainWindow::showSettingsDialog()
 {
+    openProviderSettings({}, {});
+}
+
+void MainWindow::openProviderSettings(const QString &providerId, const QString &target)
+{
     SettingsDialog dialog(m_providers, this, m_authManager, m_packages);
+    if (!providerId.isEmpty() || !target.isEmpty())
+        dialog.focusProvider(providerId, target);
     connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
     bool reloadPackages = false;
     QStringList changedPackages;
@@ -742,6 +749,7 @@ void MainWindow::connectSearchTab(SearchTab *tab)
 {
     connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
     connect(tab, &SearchTab::popOutRequested, this, [this, tab] { popOutSearchTab(tab); });
+    connect(tab, &SearchTab::settingsRequested, this, &MainWindow::openProviderSettings);
     connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
         if (win) {
             m_detailWindows.append(win);

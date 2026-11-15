@@ -166,8 +166,12 @@ MainWindow::MainWindow(QWidget *parent)
     });
     loadPlugins();
 
-    connect(m_dashboard, &SearchDashboard::searchRequested, this, &MainWindow::performSearch);
-    connect(m_dashboard, &SearchDashboard::searchInNewWindowRequested, this, &MainWindow::openSearchInNewWindow);
+    connect(m_dashboard, &SearchDashboard::searchScopedRequested, this, [this](const QString &query, const QSet<QString> &sourceIds) {
+        performSearchScoped(query, sourceIds, false, true);
+    });
+    connect(m_dashboard, &SearchDashboard::searchInNewWindowScopedRequested, this, [this](const QString &query, const QSet<QString> &sourceIds) {
+        openSearchInNewWindow(query, sourceIds);
+    });
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
 
@@ -349,6 +353,7 @@ void MainWindow::showSettingsDialog()
     });
     dialog.exec();
     if (reloadPackages) loadPlugins(m_customPackagePaths, m_customPluginPaths, changedPackages);
+    else refreshDashboardScopes();
 
     m_recent->reloadPolicy();
     // We re-check clipboard monitoring if settings change
@@ -602,8 +607,21 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
     for (SearchProvider *provider : m_providers) {
         restoreProviderState(provider);
     }
+    refreshDashboardScopes();
 
     qCDebug(KLOOKUP_PLUGINS) << "Plugin discovery finished. Total loaded providers:" << m_providers.size();
+}
+
+void MainWindow::refreshDashboardScopes()
+{
+    if (!m_dashboard)
+        return;
+    QList<QPair<QString, ProviderClassification>> scopes;
+    for (SearchProvider *provider : std::as_const(m_providers)) {
+        if (provider && provider->isEnabled())
+            scopes.append({provider->id(), provider->classification()});
+    }
+    m_dashboard->setAvailableScopes(scopes);
 }
 
 SearchProvider *MainWindow::provider(const QString &id) const
@@ -681,16 +699,24 @@ void MainWindow::performSearch(const QString &query)
 }
 void MainWindow::performSearchInternal(const QString &query, bool clipboard, bool recordActivity)
 {
+    performSearchScoped(query, {}, clipboard, recordActivity);
+}
+
+void MainWindow::performSearchScoped(const QString &query, const QSet<QString> &allowedSourceIds, bool clipboard, bool recordActivity)
+{
     if (recordActivity)
         m_recent->recordSearch(query, clipboard);
     SearchTab *tab = new SearchTab(query, this);
     tab->setProperty("automaticClipboardQuery", clipboard);
     connectSearchTab(tab);
+    if (!allowedSourceIds.isEmpty())
+        tab->applySourceEligibility(allowedSourceIds);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
+        if (!allowedSourceIds.isEmpty() && !allowedSourceIds.contains(providerTemplate->id())) continue;
 
         tab->startProvider(providerTemplate->cloneForSearch(tab), m_authManager->sessionFor(providerTemplate));
     }
@@ -763,11 +789,13 @@ void MainWindow::trackSearchWindow(SearchWindow *window)
     connect(window, &SearchWindow::returnToMainRequested, this, [this](SearchWindow *source) { returnSearchToMain(source); });
 }
 
-SearchWindow *MainWindow::openSearchInNewWindow(const QString &query)
+SearchWindow *MainWindow::openSearchInNewWindow(const QString &query, const QSet<QString> &allowedSourceIds)
 {
-    auto *window = new SearchWindow(query, m_providers, m_authManager);
+    auto *window = new SearchWindow(query, m_providers, m_authManager, nullptr, allowedSourceIds);
     trackSearchWindow(window);
     connectSearchTab(window->searchTab());
+    if (!allowedSourceIds.isEmpty() && window->searchTab())
+        window->searchTab()->applySourceEligibility(allowedSourceIds);
     window->show(); window->raise(); window->activateWindow();
     return window;
 }

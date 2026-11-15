@@ -15,11 +15,15 @@
 SearchWindow::SearchWindow(const QString &query,
                            const QList<SearchProvider *> &providers,
                            ProviderAuthManager *authManager,
-                           QWidget *parent)
+                           QWidget *parent,
+                           const QSet<QString> &allowedSourceIds)
     : SearchWindow(new SearchTab(query), parent)
 {
+    if (!allowedSourceIds.isEmpty())
+        m_tab->applySourceEligibility(allowedSourceIds);
     for (auto *providerTemplate : providers) {
         if (!providerTemplate || !providerTemplate->isEnabled()) continue;
+        if (!allowedSourceIds.isEmpty() && !allowedSourceIds.contains(providerTemplate->id())) continue;
         m_tab->startProvider(providerTemplate->cloneForSearch(m_tab), authManager ? authManager->sessionFor(providerTemplate) : nullptr);
     }
 }

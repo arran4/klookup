@@ -8,6 +8,7 @@
 #include "searchprovider.h"
 #include <QMainWindow>
 #include <QPointer>
+#include <QSet>
 
 class SearchTab;
 class ProviderAuthManager;
@@ -20,7 +21,8 @@ public:
     explicit SearchWindow(const QString &query,
                           const QList<SearchProvider *> &providers,
                           ProviderAuthManager *authManager = nullptr,
-                          QWidget *parent = nullptr);
+                          QWidget *parent = nullptr,
+                          const QSet<QString> &allowedSourceIds = {});
     explicit SearchWindow(SearchTab *tab, QWidget *parent = nullptr);
     ~SearchWindow() override = default;
     SearchTab *takeSearchTab();

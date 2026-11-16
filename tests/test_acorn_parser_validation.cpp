@@ -3,6 +3,7 @@
 
 #include "providerpackage.h"
 
+#include <QCryptographicHash>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -152,6 +153,15 @@ private slots:
         QString error;
         QVERIFY(!pkg.writeVerifiedSnapshot(snapDir.path(), &error));
         QVERIFY(error.contains(QStringLiteral("Module syntax/import validation failed")));
+    }
+
+    void testBundledAcornIntegrityChecksum()
+    {
+        QFile bundled(QStringLiteral(":/klookup/acorn.js"));
+        QVERIFY(bundled.open(QIODevice::ReadOnly));
+        const QByteArray digest = QCryptographicHash::hash(bundled.readAll(), QCryptographicHash::Sha256).toHex();
+        QCOMPARE(QString::fromLatin1(digest),
+                 QStringLiteral("16bcf7923b6c8ddfa536e09cd407b1d0068fe20efbdad5330a50f3280923e414"));
     }
 };
 

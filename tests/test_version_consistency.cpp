@@ -35,8 +35,65 @@ private slots:
             QVERIFY(versionFile.open(QIODevice::ReadOnly | QIODevice::Text));
             const QString fileVersion = QString::fromUtf8(versionFile.readAll()).trimmed();
             QVERIFY(!fileVersion.isEmpty());
-            QVERIFY(versionString.startsWith(fileVersion) || fileVersion.startsWith(projectVersion));
+            QVERIFY(semverRegex.match(fileVersion).hasMatch());
         }
+    }
+
+    void tagOverridesVersionFileAndOverrideWins()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString srcDir = dir.filePath(QStringLiteral("src"));
+        QVERIFY(QDir().mkpath(srcDir + QStringLiteral("/cmake")));
+        QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/cmake/KLookupVersion.cmake"),
+                            srcDir + QStringLiteral("/cmake/KLookupVersion.cmake")));
+
+        QFile verFile(srcDir + QStringLiteral("/VERSION"));
+        QVERIFY(verFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        verFile.write("0.1.0\n");
+        verFile.close();
+
+        QFile cmFile(srcDir + QStringLiteral("/CMakeLists.txt"));
+        QVERIFY(cmFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        cmFile.write("cmake_minimum_required(VERSION 3.16)\n"
+                     "include(\"${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupVersion.cmake\")\n"
+                     "project(dummy VERSION ${KLOOKUP_NUMERIC_VERSION} LANGUAGES NONE)\n"
+                     "message(STATUS \"TEST_VER=${KLOOKUP_VERSION_STRING}|${PROJECT_VERSION}\")\n");
+        cmFile.close();
+
+        auto runCmake = [&](const QStringList &extraArgs) -> QString {
+            QTemporaryDir buildDir;
+            QProcess p;
+            QStringList args{QStringLiteral("-S"), srcDir, QStringLiteral("-B"), buildDir.path()};
+            args.append(extraArgs);
+            p.start(QStringLiteral("cmake"), args);
+            if (!p.waitForFinished(15000) || p.exitCode() != 0)
+                return {};
+            return QString::fromUtf8(p.readAllStandardOutput());
+        };
+
+        // 1. Archive/untagged tree uses VERSION
+        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=0.1.0|0.1.0")));
+
+        // 2. Git repo with exact tag v1.2.3-rc1 overrides stale VERSION 0.1.0
+        auto git = [&](const QStringList &args) {
+            QProcess p;
+            p.setWorkingDirectory(srcDir);
+            p.start(QStringLiteral("git"), args);
+            QVERIFY(p.waitForFinished(10000));
+            QCOMPARE(p.exitCode(), 0);
+        };
+        git({QStringLiteral("init")});
+        git({QStringLiteral("config"), QStringLiteral("user.email"), QStringLiteral("test@example.invalid")});
+        git({QStringLiteral("config"), QStringLiteral("user.name"), QStringLiteral("Test")});
+        git({QStringLiteral("add"), QStringLiteral(".")});
+        git({QStringLiteral("commit"), QStringLiteral("-m"), QStringLiteral("init")});
+        git({QStringLiteral("tag"), QStringLiteral("v1.2.3-rc1")});
+
+        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=1.2.3-rc1|1.2.3")));
+
+        // 3. Explicit -DKLOOKUP_VERSION overrides both tag and VERSION
+        QVERIFY(runCmake({QStringLiteral("-DKLOOKUP_VERSION=9.8.7")}).contains(QStringLiteral("TEST_VER=9.8.7|9.8.7")));
     }
 
     void binaryReportsExpectedVersion()

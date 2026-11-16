@@ -25,9 +25,9 @@ Release modes use [`arran4/git-tag-inc`](https://github.com/arran4/git-tag-inc) 
 ## Versioning mechanism
 
 KLookup defines a single authoritative versioning contract:
-1. An explicit build/packager override: `cmake -DKLOOKUP_VERSION=x.y.z` (supported for package managers and Gentoo ebuilds).
-2. The root `VERSION` file, which tracks the authoritative release version in the source tree and offline source tarballs.
-3. Exact Git tags (`git describe --tags --exact-match`) when building from an exact release tag in a Git checkout.
+1. An explicit build/packager override: `cmake -DKLOOKUP_VERSION=x.y.z` (supported for package managers, Gentoo ebuilds, and tag CI builds).
+2. Exact Git tags (`git describe --tags --exact-match`) when building from an exact release tag in a Git checkout (takes precedence over the static `VERSION` file so release tags never embed a stale version).
+3. The root `VERSION` file, which tracks the baseline version in offline source tarballs and untagged development builds.
 4. Fallback default version defined in root `CMakeLists.txt`.
 
 The build exposes `PROJECT_VERSION` (semantic numerical format) and `KLOOKUP_VERSION_STRING` (full version identifier). `KAboutData` and `QCoreApplication::setApplicationVersion` derive directly from `KLOOKUP_VERSION_STRING`. Release workflows verify candidate binaries to ensure installed packages and GitHub release tags agree without manual UI source edits.

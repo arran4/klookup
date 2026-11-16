@@ -162,14 +162,26 @@ jobs:
       - name: Verify REUSE licensing
         run: ./.jules/run.sh reuse lint
       - name: Configure normal build
-        run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXTRA_ARGS+=("-DKLOOKUP_VERSION=${GITHUB_REF_NAME#v}")
+          fi
+          ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON "${EXTRA_ARGS[@]}"
       - name: Build application, providers and tests
         run: ./.jules/run.sh cmake --build build --parallel
       - name: Run normal CTest including staged install
         run: ./.jules/run.sh ctest --test-dir build --output-on-failure
       - name: Configure ASan/UBSan build
         run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXTRA_ARGS+=("-DKLOOKUP_VERSION=${GITHUB_REF_NAME#v}")
+          fi
           ./.jules/run.sh cmake -S . -B build-san -G Ninja -DBUILD_TESTING=ON \
+            "${EXTRA_ARGS[@]}" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -DCMAKE_MODULE_LINKER_FLAGS="-fsanitize=address,undefined" \
@@ -295,10 +307,18 @@ jobs:
           test -f candidate/staged/share/klookup/providers.d/tvmaze/main.mjs
           readelf -h candidate/staged/bin/klookup | grep -q ELF64
           # Verify binary .rodata contains valid release version and does not contain obsolete 0.0.2
-          readelf -p .rodata candidate/staged/bin/klookup | grep -qE "0\.[0-9]+\.[0-9]+"
+          readelf -p .rodata candidate/staged/bin/klookup | grep -qE "[0-9]+\.[0-9]+\.[0-9]+"
           if readelf -p .rodata candidate/staged/bin/klookup | grep -q "0\.0\.2"; then
             echo "Candidate klookup unexpectedly contains obsolete version 0.0.2" >&2
             exit 1
+          fi
+          # Release-time equality gate: on tag builds, embedded binary version must match the tag
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXPECTED_VER="${GITHUB_REF_NAME#v}"
+            if ! readelf -p .rodata candidate/staged/bin/klookup | grep -qF "$EXPECTED_VER"; then
+              echo "Release version mismatch: expected '$EXPECTED_VER' in candidate klookup .rodata" >&2
+              exit 1
+            fi
           fi
           # Keep this archive an install-layout artifact, not a claim of a portable AppImage.
           find candidate/staged -type f | grep -q .

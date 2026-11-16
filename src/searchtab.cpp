@@ -38,6 +38,16 @@ constexpr int DetailLoadedRole = Qt::UserRole + 2;
 constexpr int DetailTokenRole = Qt::UserRole + 3;
 constexpr int MetadataRole = Qt::UserRole + 4;
 constexpr int ContentRole = Qt::UserRole + 5;
+
+QString formatListTitle(const QString &providerId, const SearchResult &result)
+{
+    if (providerId == QLatin1String("mangabaka")) {
+        const QString type = result.type.trimmed();
+        if (!type.isEmpty())
+            return QStringLiteral("%1 (%2)").arg(result.title, type);
+    }
+    return result.title;
+}
 } // namespace
 
 SearchTab::SearchTab(const QString &query, QWidget *parent)
@@ -363,7 +373,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
             item->setData(0, DetailLoadedRole, true);
             const QString previousToken = item->data(0, DetailTokenRole).toString();
             item->setData(0, DetailTokenRole, details.nextToken == previousToken ? QString() : details.nextToken);
-            item->setText(0, details.result.title);
+            item->setText(0, formatListTitle(id, details.result));
             if (item == m_selected)
                 renderResult(item);
         }
@@ -440,7 +450,7 @@ QTreeWidgetItem *SearchTab::groupForName(const QString &name)
     return group;
 }
 
-void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state)
+void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state, const QString &providerIdOverride)
 {
     if (results.isEmpty() && (!state || state->items.isEmpty())) {
         // Attached providers use their status row for empty state.
@@ -486,8 +496,9 @@ void SearchTab::appendResults(QTreeWidgetItem *group, const QList<SearchResult> 
             if (!identity.isEmpty() && itemById.contains(identity))
                 return;
 
+            const QString effectiveProviderId = state && state->provider ? state->provider->id() : providerIdOverride;
             auto *item = new QTreeWidgetItem;
-            item->setText(0, result.title);
+            item->setText(0, formatListTitle(effectiveProviderId, result));
             item->setData(0, Qt::UserRole, QVariant::fromValue(result));
             if (!identity.isEmpty()) {
                 itemById.insert(identity, item);
@@ -542,7 +553,7 @@ void SearchTab::addResults(const QString &providerName, const QList<SearchResult
     auto *group = groupForName(providerName);
     group->setData(0, Qt::UserRole + 20, QVariant::fromValue(ProviderClassification::builtin(providerId)));
     const int first = group->childCount();
-    appendResults(group, results);
+    appendResults(group, results, nullptr, providerId);
     for (int index = first; index < group->childCount(); ++index) {
         auto *item = group->child(index);
         if (item->data(0, Qt::UserRole).canConvert<SearchResult>())

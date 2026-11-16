@@ -78,7 +78,7 @@ private:
         QDateTime detailRetryAt;
     };
     QTreeWidgetItem *groupForName(const QString &name);
-    void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr);
+    void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr, const QString &providerIdOverride = {});
     void showResultMenu(QTreeWidgetItem *item, const QPoint &globalPosition);
     void pageStatus(ProviderState &state, const QString &text, bool actionable);
     void renderResult(QTreeWidgetItem *item);

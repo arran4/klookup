@@ -52,6 +52,7 @@ add_subdirectory(providers/myanimelist)
 add_subdirectory(providers/mangadex)
 add_subdirectory(providers/mangabaka)
 add_subdirectory(providers/spotify)
+add_subdirectory(providers/localdocs)
 add_subdirectory(runner)
 
 if(BUILD_TESTING)
@@ -70,6 +71,7 @@ set(KLOOKUP_PROVIDERS
     provider_mangadex
     provider_mangabaka
     provider_spotify
+    provider_localdocs
 )
 
 string(REPLACE ";" "," builtin_native_ids "${KLOOKUP_PROVIDERS}")

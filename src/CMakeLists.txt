@@ -4,6 +4,7 @@ add_library(klookup_core STATIC
     resultactions.cpp
     sourcelink.cpp
     resultcontent.cpp
+    localdocscanner.cpp
     providerapiv1.cpp
     providerdiagnostics.cpp
     providerpackage.cpp

@@ -6,7 +6,7 @@
 
 bool ProviderDefaults::enabled(const QString &id)
 {
-    return id != QLatin1String("cheapshark");
+    return id != QLatin1String("cheapshark") && id != QLatin1String("localdocs");
 }
 
 bool ProviderDefaults::enabled(const KConfigGroup &settings, const QString &id)
@@ -16,6 +16,9 @@ bool ProviderDefaults::enabled(const KConfigGroup &settings, const QString &id)
 
 QString ProviderDefaults::reason(const QString &id)
 {
-    return id == QLatin1String("cheapshark")
-        ? i18n("US-dollar PC-game deals; enable to include this source in searches.") : QString();
+    if (id == QLatin1String("cheapshark"))
+        return i18n("US-dollar PC-game deals; enable to include this source in searches.");
+    if (id == QLatin1String("localdocs"))
+        return i18n("Offline local documentation directories (.md, .html, .txt); configure scan roots and enable.");
+    return {};
 }

@@ -136,13 +136,37 @@ ProviderHostService::ProviderHostService(const ProviderPackage &package, QObject
     });
 }
 
-ProviderHostService::~ProviderHostService() { cancelAllRequests(); }
+ProviderHostService::~ProviderHostService()
+{
+    cancelAllRequests();
+    m_sessionCredentials.clear();
+}
+
+void ProviderHostService::setSessionCredential(const QString &secret, const QString &secretKey)
+{
+    const QString targetKey = secretKey.isEmpty() ? m_package.manifest().permissions.secrets.value(0) : secretKey;
+    if (secret.isEmpty()) {
+        if (secretKey.isEmpty())
+            m_sessionCredentials.clear();
+        else
+            m_sessionCredentials.remove(targetKey);
+        return;
+    }
+    if (!targetKey.isEmpty())
+        m_sessionCredentials.insert(targetKey, secret);
+}
+
+QString ProviderHostService::sessionCredential(const QString &secretKey) const
+{
+    const QString targetKey = secretKey.isEmpty() ? m_package.manifest().permissions.secrets.value(0) : secretKey;
+    return targetKey.isEmpty() ? QString() : m_sessionCredentials.value(targetKey);
+}
 
 void ProviderHostService::setPackage(const ProviderPackage &package)
 {
     if (!package.isTrusted() || m_package.approvalFingerprint() != package.approvalFingerprint()) {
         cancelAllRequests();
-        m_sessionCredential.clear();
+        m_sessionCredentials.clear();
     }
     m_package = package;
 }
@@ -181,6 +205,12 @@ void ProviderHostService::cancelRequest(quint64 id)
             }
             if (!otherWaiting) {
                 m_credentialStore->cancelPending(storeKey);
+                if (request->options.secretKey == m_package.manifest().permissions.secrets.value(0)) {
+                    const auto authKey = QStringLiteral("credentials/v1/") +
+                        QString::fromLatin1(m_package.id().toUtf8().toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)) +
+                        QStringLiteral("/manual");
+                    m_credentialStore->cancelPending(authKey);
+                }
             }
         }
         retire(request);
@@ -211,7 +241,14 @@ void ProviderHostService::fail(const Request &request, const QString &message, b
     if (!current(request)) return;
     HttpResponse response;
     if (request->reply) response.statusCode = request->reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
-    response.errorMessage = message;
+    QString sanitized = message;
+    if (!request->secret.isEmpty()) {
+        sanitized.replace(request->secret, QStringLiteral("[REDACTED]"));
+        const QString encoded = QString::fromUtf8(QUrl::toPercentEncoding(request->secret));
+        if (!encoded.isEmpty())
+            sanitized.replace(encoded, QStringLiteral("[REDACTED]"));
+    }
+    response.errorMessage = sanitized;
     response.truncated = truncated;
     request->body.clear();
     finish(request, response);
@@ -251,18 +288,20 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
         if (!m_package.isSecretAllowed(options.secretKey)) {
             fail(request, QStringLiteral("Secret '%1' is not declared in package manifest permissions.").arg(options.secretKey)); return id;
         }
-        if (!m_sessionCredential.isEmpty()) {
-            startRequest(request, options, 0, m_sessionCredential);
+        const QString sessionSecret = m_sessionCredentials.value(options.secretKey);
+        if (!sessionSecret.isEmpty()) {
+            startRequest(request, options, 0, sessionSecret);
             return id;
         }
         if (m_credentialStore) {
             const auto storeKey = QStringLiteral("provider_pkg:%1:%2").arg(m_package.id(), options.secretKey);
+            const bool allowManualFallback = (options.secretKey == m_package.manifest().permissions.secrets.value(0));
             QPointer<ProviderHostService> guard(this);
-            m_credentialStore->read(storeKey, true, [guard, request, options, storeKey](const CredentialStoreResult &result) {
+            m_credentialStore->read(storeKey, true, [guard, request, options, storeKey, allowManualFallback](const CredentialStoreResult &result) {
                 if (!guard || !guard->current(request)) return;
                 if (result.ok) {
                     guard->startRequest(request, options, 0, result.value);
-                } else {
+                } else if (allowManualFallback) {
                     const auto authKey = QStringLiteral("credentials/v1/") +
                         QString::fromLatin1(guard->m_package.id().toUtf8().toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)) +
                         QStringLiteral("/manual");
@@ -274,6 +313,8 @@ quint64 ProviderHostService::executeHttpRequest(const HttpRequestOptions &option
                     } else {
                         guard->startRequest(request, options, 0, QString());
                     }
+                } else {
+                    guard->startRequest(request, options, 0, QString());
                 }
             });
             return id;

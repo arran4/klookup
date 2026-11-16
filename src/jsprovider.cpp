@@ -426,8 +426,8 @@ ProviderApiV1::ProviderV1 *JsProvider::clone(QObject *parent) const
         if (m_hostService->secretResolver()) {
             clonedHost->setSecretResolver(m_hostService->secretResolver());
         }
-        if (!m_hostService->sessionCredential().isEmpty()) {
-            clonedHost->setSessionCredential(m_hostService->sessionCredential());
+        if (!m_hostService->sessionCredentials().isEmpty()) {
+            clonedHost->setSessionCredentials(m_hostService->sessionCredentials());
         }
     }
     auto *copy = new JsProvider(m_package, parent, clonedHost);

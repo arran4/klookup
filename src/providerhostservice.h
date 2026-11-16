@@ -70,8 +70,10 @@ public:
     }
     CredentialStore *credentialStore() const { return m_credentialStore; }
 
-    void setSessionCredential(const QString &secret) { m_sessionCredential = secret; }
-    QString sessionCredential() const { return m_sessionCredential; }
+    void setSessionCredential(const QString &secret, const QString &secretKey = {});
+    QString sessionCredential(const QString &secretKey = {}) const;
+    void setSessionCredentials(const QMap<QString, QString> &credentials) { m_sessionCredentials = credentials; }
+    QMap<QString, QString> sessionCredentials() const { return m_sessionCredentials; }
 
     bool isDiagnosticMode() const { return m_diagnosticMode; }
     void setDiagnosticPolicy(bool allowNetwork) { m_diagnosticMode = true; m_allowNetwork = allowNetwork; }
@@ -101,7 +103,7 @@ private:
     quint64 m_requestCounter = 0;
     std::function<QString(const QString &)> m_secretResolver;
     QPointer<CredentialStore> m_credentialStore;
-    QString m_sessionCredential;
+    QMap<QString, QString> m_sessionCredentials;
     QHash<quint64, Request> m_requests;
 };
 

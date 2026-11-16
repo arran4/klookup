@@ -116,6 +116,16 @@ public:
         });
     }
 
+    void respondTransportError(NetworkError code, const QString &message)
+    {
+        setError(code, message);
+        QTimer::singleShot(0, this, [this] {
+            setFinished(true);
+            emit errorOccurred(error());
+            emit finished();
+        });
+    }
+
     void abort() override {
         setError(QNetworkReply::OperationCanceledError, QStringLiteral("Operation canceled"));
         setFinished(true);
@@ -597,6 +607,80 @@ private slots:
         auto resp = hostSpy.first().at(1).value<ProviderHost::HttpResponse>();
         QVERIFY(!resp.success);
         QVERIFY(resp.errorMessage.contains(QStringLiteral("diagnostic")));
+    }
+
+    void testDistinctSecretsIsolationAndErrorRedaction()
+    {
+        QTemporaryDir tempDir;
+        QVERIFY(tempDir.isValid());
+
+        // Package declares TWO distinct secrets: primary_key and secondary_key
+        auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("multi_secret_pkg"),
+                                        {QStringLiteral("https://api.secure.example.com")},
+                                        {QStringLiteral("primary_key"), QStringLiteral("secondary_key")},
+                                        QStringLiteral("export function search() { return []; }\n"));
+
+        auto *store = new MockCredentialStore(this);
+        // Only manual fallback key is stored (and only primary_key may use it)
+        const QString manualKey = QStringLiteral("credentials/v1/") +
+            QString::fromLatin1(QByteArrayLiteral("multi_secret_pkg").toBase64(QByteArray::Base64UrlEncoding | QByteArray::OmitTrailingEquals)) +
+            QStringLiteral("/manual");
+        store->values[manualKey] = QStringLiteral("MANUAL_PRIMARY_SECRET");
+
+        auto *mockNam = new ScriptCredentialNam(this);
+        auto *hostService = new ProviderHost::ProviderHostService(pkg, this, mockNam);
+        hostService->setCredentialStore(store);
+
+        // 1. Secondary secret must NOT receive manual fallback secret
+        QSignalSpy spy(hostService, &ProviderHost::ProviderHostService::httpResponseReady);
+        ProviderHost::HttpRequestOptions secOpts;
+        secOpts.url = QUrl(QStringLiteral("https://api.secure.example.com/v1"));
+        secOpts.secretKey = QStringLiteral("secondary_key");
+        secOpts.secretHeader = QStringLiteral("X-Secondary");
+        secOpts.requestId = 10;
+        hostService->executeHttpRequest(secOpts);
+        QVERIFY(spy.wait(500));
+        QCOMPARE(mockNam->captured.size(), 1);
+        QVERIFY(!mockNam->captured.last().request.hasRawHeader("X-Secondary"));
+
+        // 2. Primary secret DOES receive manual fallback secret
+        ProviderHost::HttpRequestOptions primOpts;
+        primOpts.url = QUrl(QStringLiteral("https://api.secure.example.com/v1"));
+        primOpts.secretKey = QStringLiteral("primary_key");
+        primOpts.secretHeader = QStringLiteral("X-Primary");
+        primOpts.requestId = 11;
+        hostService->executeHttpRequest(primOpts);
+        QVERIFY(spy.wait(500));
+        QCOMPARE(mockNam->captured.size(), 2);
+        QCOMPARE(mockNam->captured.last().request.rawHeader("X-Primary"), QByteArray("MANUAL_PRIMARY_SECRET"));
+
+        // 3. Single-argument setSessionCredential binds ONLY primary_key, NEVER secondary_key
+        hostService->setSessionCredential(QStringLiteral("SESSION_PRIMARY_ONLY"));
+        secOpts.requestId = 12;
+        hostService->executeHttpRequest(secOpts);
+        QVERIFY(spy.wait(500));
+        QCOMPARE(mockNam->captured.size(), 3);
+        QVERIFY(!mockNam->captured.last().request.hasRawHeader("X-Secondary"));
+
+        // 4. Transport error with secretQueryParam must redact the secret from errorMessage
+        hostService->setSessionCredential(QStringLiteral("TOP_SECRET_QUERY_VAL"), QStringLiteral("secondary_key"));
+        mockNam->handler = [](const QNetworkRequest &req, QNetworkAccessManager::Operation, const QByteArray &) -> ScriptCredentialReply * {
+            auto *reply = new ScriptCredentialReply(req);
+            reply->respondTransportError(QNetworkReply::ConnectionRefusedError,
+                                         QStringLiteral("Connection refused for ") + req.url().toString());
+            return reply;
+        };
+        ProviderHost::HttpRequestOptions errOpts;
+        errOpts.url = QUrl(QStringLiteral("https://api.secure.example.com/v1"));
+        errOpts.secretKey = QStringLiteral("secondary_key");
+        errOpts.secretQueryParam = QStringLiteral("token");
+        errOpts.requestId = 13;
+        hostService->executeHttpRequest(errOpts);
+        QVERIFY(spy.wait(500));
+        const auto errResp = spy.last().at(1).value<ProviderHost::HttpResponse>();
+        QVERIFY(!errResp.success);
+        QVERIFY(!errResp.errorMessage.contains(QStringLiteral("TOP_SECRET_QUERY_VAL")));
+        QVERIFY(errResp.errorMessage.contains(QStringLiteral("[REDACTED]")));
     }
 };
 

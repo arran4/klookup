@@ -103,12 +103,26 @@ private slots:
         bar->setText(QStringLiteral("qt6"));
         QTest::keyClick(bar, Qt::Key_Return);
         QCOMPARE(scopedSpy.count(), 1);
-        QCOMPARE(scopedSpy.at(0).at(1).value<QSet<QString>>(),
-                 (QSet<QString>{QStringLiteral("wikipedia"), QStringLiteral("github")}));
+        const auto emittedScope = scopedSpy.at(0).at(1).value<QueryScope>();
+        QVERIFY(emittedScope.restricted);
+        QCOMPARE(emittedScope.sourceIds, (QSet<QString>{QStringLiteral("wikipedia"), QStringLiteral("github")}));
+        QCOMPARE(dashboard.selectedScope(), QueryScope::all());
         QVERIFY(dashboard.selectedSourceIds().isEmpty());
     }
 
-    void testScopedDispatchInTabAndNewWindowAndIncrementalExpansion()
+    void testExplicitEmptyScopeMeansZeroProviders()
+    {
+        int wikiCalls = 0;
+        auto *wiki = new CountingScopeProvider(QStringLiteral("wikipedia"), QStringLiteral("Wikipedia"),
+                                               ProviderClassification::builtin(QStringLiteral("wikipedia")), &wikiCalls);
+        // Explicit empty QueryScope::only({}) must start ZERO providers, not all!
+        SearchWindow emptyScopeWin(QStringLiteral("zero query"), {wiki}, nullptr, nullptr, QueryScope::only({}));
+        QCOMPARE(wikiCalls, 0);
+        QVERIFY(!emptyScopeWin.searchTab()->hasProvider(QStringLiteral("wikipedia")));
+        delete wiki;
+    }
+
+    void testScopedDispatchInTabAndNewWindowAndUiFacetExpansion()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -127,21 +141,49 @@ private slots:
 
         // New-window search with only Manga selected -> zero Wikipedia/GitHub calls
         SearchWindow win(QStringLiteral("manga query"), {wiki, github, manga}, nullptr, nullptr,
-                         {QStringLiteral("mangadex")});
+                         QueryScope::only({QStringLiteral("mangadex")}));
         QCOMPARE(wikiCalls, 0);
         QCOMPARE(githubCalls, 0);
         QCOMPARE(mangaCalls, 1);
 
-        // Incremental expansion on SearchTab: adding Wikipedia only queries Wikipedia once, not MangaDex again
         auto *tab = win.searchTab();
         QVERIFY(tab != nullptr);
-        QVERIFY(tab->hasProvider(QStringLiteral("mangadex")));
-        QVERIFY(!tab->hasProvider(QStringLiteral("wikipedia")));
-        tab->applySourceEligibility({QStringLiteral("mangadex"), QStringLiteral("wikipedia")});
-        tab->startProvider(wiki->clone(tab));
-        QCOMPARE(wikiCalls, 1);
-        QCOMPARE(mangaCalls, 1);
+        tab->setSourceChoices({
+            {QStringLiteral("mangadex"), QStringLiteral("MangaDex"), QStringLiteral("Enabled"), true, true, ProviderClassification::builtin(QStringLiteral("mangadex"))},
+            {QStringLiteral("github"), QStringLiteral("GitHub"), QStringLiteral("Available"), false, true, ProviderClassification::builtin(QStringLiteral("github"))},
+            {QStringLiteral("wikipedia"), QStringLiteral("Wikipedia"), QStringLiteral("Disabled"), false, false, ProviderClassification::builtin(QStringLiteral("wikipedia"))},
+        });
+        QObject::connect(tab, &SearchTab::searchSelectedSourcesRequested, tab, [&](const QSet<QString> &selected) {
+            tab->applySourceEligibility(selected);
+            if (selected.contains(QStringLiteral("github")) && !tab->hasProvider(QStringLiteral("github")))
+                tab->startProvider(github->clone(tab));
+        });
+
+        // Toggle Software facet chip -> 0 network calls, shows "Search 1 additional source(s)"
+        auto *softwareChip = tab->findChild<QToolButton *>(QStringLiteral("displayFacet-topic:software"));
+        auto *expandBtn = tab->findChild<QPushButton *>(QStringLiteral("expandScopeSources"));
+        QVERIFY(softwareChip != nullptr);
+        QVERIFY(expandBtn != nullptr);
+        softwareChip->click();
         QCOMPARE(githubCalls, 0);
+        QCOMPARE(wikiCalls, 0);
+        QVERIFY(!expandBtn->isHidden());
+        QVERIFY(expandBtn->text().contains(QStringLiteral("1")));
+
+        // Deliberately click "Search 1 additional source(s)" -> queries GitHub once, does not re-query MangaDex or disabled Wikipedia
+        expandBtn->click();
+        QCOMPARE(githubCalls, 1);
+        QCOMPARE(mangaCalls, 1);
+        QCOMPARE(wikiCalls, 0);
+        QVERIFY(expandBtn->isHidden());
+
+        // Clearing visual filter does NOT trigger any network calls
+        auto *clearBtn = tab->findChild<QPushButton *>(QStringLiteral("resetDisplayFilters"));
+        QVERIFY(clearBtn != nullptr);
+        clearBtn->click();
+        QCOMPARE(githubCalls, 1);
+        QCOMPARE(mangaCalls, 1);
+        QCOMPARE(wikiCalls, 0);
 
         delete wiki;
         delete github;

@@ -1,4 +1,5 @@
 #include "searchdashboard.h"
+#include "flowlayout.h"
 #include <KLocalizedString>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -51,9 +52,7 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     connect(m_clearScope, &QToolButton::clicked, this, &SearchDashboard::clearScopeSelection);
     scopeHeader->addWidget(m_clearScope);
     scopeBox->addLayout(scopeHeader);
-    m_scopeLayout = new QHBoxLayout;
-    m_scopeLayout->setContentsMargins(0, 0, 0, 0);
-    m_scopeLayout->setSpacing(4);
+    m_scopeLayout = new FlowLayout(4, 4);
     scopeBox->addLayout(m_scopeLayout);
     m_scopeWidget->setVisible(false);
     layout->addWidget(m_scopeWidget);
@@ -114,8 +113,8 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     connect(searchNewWindowButton, &QPushButton::clicked, this, [this] {
         const QString query = m_searchBar->text().trimmed();
         if (!query.isEmpty()) {
-            const QSet<QString> scoped = selectedSourceIds();
-            emit searchInNewWindowScopedRequested(query, scoped);
+            const QueryScope scope = selectedScope();
+            emit searchInNewWindowScopedRequested(query, scope);
             emit searchInNewWindowRequested(query);
             clearScopeSelection();
         }
@@ -154,8 +153,8 @@ void SearchDashboard::onSearchTriggered()
         }
 
         m_completer->setModel(new QStringListModel(m_history, m_completer));
-        const QSet<QString> scoped = selectedSourceIds();
-        emit searchScopedRequested(query, scoped);
+        const QueryScope scope = selectedScope();
+        emit searchScopedRequested(query, scope);
         emit searchRequested(query);
         clearScopeSelection();
     }
@@ -206,11 +205,16 @@ void SearchDashboard::setAvailableScopes(const QList<QPair<QString, ProviderClas
         if (m_scopeLayout)
             m_scopeLayout->addWidget(button);
     }
-    if (m_scopeLayout)
-        m_scopeLayout->addStretch(1);
     if (m_scopeWidget)
         m_scopeWidget->setVisible(!m_scopeButtons.isEmpty());
     updateScopePreview();
+}
+
+QueryScope SearchDashboard::selectedScope() const
+{
+    if (m_selectedScopeFacets.isEmpty())
+        return QueryScope::all();
+    return QueryScope::only(selectedSourceIds());
 }
 
 QSet<QString> SearchDashboard::selectedSourceIds() const

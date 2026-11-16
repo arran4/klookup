@@ -32,6 +32,7 @@ add_library(klookup_core STATIC
     providerauthentication.cpp
     globalshortcuts.cpp
     autostartmanager.cpp
+    flowlayout.cpp
 )
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)

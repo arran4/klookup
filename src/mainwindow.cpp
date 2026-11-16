@@ -166,11 +166,11 @@ MainWindow::MainWindow(QWidget *parent)
     });
     loadPlugins();
 
-    connect(m_dashboard, &SearchDashboard::searchScopedRequested, this, [this](const QString &query, const QSet<QString> &sourceIds) {
-        performSearchScoped(query, sourceIds, false, true);
+    connect(m_dashboard, &SearchDashboard::searchScopedRequested, this, [this](const QString &query, const QueryScope &scope) {
+        performSearchScoped(query, scope, false, true);
     });
-    connect(m_dashboard, &SearchDashboard::searchInNewWindowScopedRequested, this, [this](const QString &query, const QSet<QString> &sourceIds) {
-        openSearchInNewWindow(query, sourceIds);
+    connect(m_dashboard, &SearchDashboard::searchInNewWindowScopedRequested, this, [this](const QString &query, const QueryScope &scope) {
+        openSearchInNewWindow(query, scope);
     });
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
@@ -699,24 +699,24 @@ void MainWindow::performSearch(const QString &query)
 }
 void MainWindow::performSearchInternal(const QString &query, bool clipboard, bool recordActivity)
 {
-    performSearchScoped(query, {}, clipboard, recordActivity);
+    performSearchScoped(query, QueryScope::all(), clipboard, recordActivity);
 }
 
-void MainWindow::performSearchScoped(const QString &query, const QSet<QString> &allowedSourceIds, bool clipboard, bool recordActivity)
+void MainWindow::performSearchScoped(const QString &query, const QueryScope &scope, bool clipboard, bool recordActivity)
 {
     if (recordActivity)
         m_recent->recordSearch(query, clipboard);
     SearchTab *tab = new SearchTab(query, this);
     tab->setProperty("automaticClipboardQuery", clipboard);
     connectSearchTab(tab);
-    if (!allowedSourceIds.isEmpty())
-        tab->applySourceEligibility(allowedSourceIds);
+    if (scope.restricted)
+        tab->applySourceEligibility(scope.sourceIds);
     int index = m_tabWidget->addTab(tab, query);
     m_tabWidget->setCurrentIndex(index);
 
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
-        if (!allowedSourceIds.isEmpty() && !allowedSourceIds.contains(providerTemplate->id())) continue;
+        if (!scope.includes(providerTemplate->id())) continue;
 
         tab->startProvider(providerTemplate->cloneForSearch(tab), m_authManager->sessionFor(providerTemplate));
     }
@@ -789,13 +789,13 @@ void MainWindow::trackSearchWindow(SearchWindow *window)
     connect(window, &SearchWindow::returnToMainRequested, this, [this](SearchWindow *source) { returnSearchToMain(source); });
 }
 
-SearchWindow *MainWindow::openSearchInNewWindow(const QString &query, const QSet<QString> &allowedSourceIds)
+SearchWindow *MainWindow::openSearchInNewWindow(const QString &query, const QueryScope &scope)
 {
-    auto *window = new SearchWindow(query, m_providers, m_authManager, nullptr, allowedSourceIds);
+    auto *window = new SearchWindow(query, m_providers, m_authManager, nullptr, scope);
     trackSearchWindow(window);
     connectSearchTab(window->searchTab());
-    if (!allowedSourceIds.isEmpty() && window->searchTab())
-        window->searchTab()->applySourceEligibility(allowedSourceIds);
+    if (scope.restricted && window->searchTab())
+        window->searchTab()->applySourceEligibility(scope.sourceIds);
     window->show(); window->raise(); window->activateWindow();
     return window;
 }
@@ -993,7 +993,7 @@ QList<SearchSourceChoice> MainWindow::searchSourceChoices() const
     for (auto *provider : m_providers) {
         const auto decision = ProviderEligibility::resolve(providers, groups, provider->id(), provider->classification());
         const bool explicitOff = providers.hasKey(provider->id() + QStringLiteral("_Enabled")) && !providers.readEntry(provider->id() + QStringLiteral("_Enabled"), false);
-        choices.insert(provider->id(), {provider->id(), provider->name(), decision.reason, decision.enabled, !explicitOff});
+        choices.insert(provider->id(), {provider->id(), provider->name(), decision.reason, decision.enabled, !explicitOff, provider->classification()});
     }
     for (const auto &record : m_packages) {
         const auto &package = record.package;
@@ -1002,7 +1002,7 @@ QList<SearchSourceChoice> MainWindow::searchSourceChoices() const
         if (!available && choices.contains(package.id()) && provider(package.id()) &&
             !qobject_cast<ProviderApiV1::ProviderV1ToLegacyAdapter *>(provider(package.id()))) continue;
         const bool explicitOff = providers.hasKey(package.id() + QStringLiteral("_Enabled")) && !providers.readEntry(package.id() + QStringLiteral("_Enabled"), false);
-        choices.insert(package.id(), {package.id(), package.name(), available ? decision.reason : record.status, decision.enabled && available, available && !explicitOff});
+        choices.insert(package.id(), {package.id(), package.name(), available ? decision.reason : record.status, decision.enabled && available, available && !explicitOff, package.manifest().classification});
     }
     return choices.values();
 }

@@ -17,5 +17,6 @@ struct SearchSourceChoice {
     QString id, name, explanation;
     bool selected = false;
     bool selectable = true;
+    ProviderClassification classification = {};
 };
 #endif

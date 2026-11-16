@@ -22,7 +22,7 @@ public:
                           const QList<SearchProvider *> &providers,
                           ProviderAuthManager *authManager = nullptr,
                           QWidget *parent = nullptr,
-                          const QSet<QString> &allowedSourceIds = {});
+                          const QueryScope &scope = QueryScope::all());
     explicit SearchWindow(SearchTab *tab, QWidget *parent = nullptr);
     ~SearchWindow() override = default;
     SearchTab *takeSearchTab();

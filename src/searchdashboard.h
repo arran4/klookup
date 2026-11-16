@@ -11,7 +11,7 @@
 #include <QLineEdit>
 #include <QCompleter>
 
-class QHBoxLayout;
+class FlowLayout;
 class QListWidget;
 class QLabel;
 class QPushButton;
@@ -31,14 +31,15 @@ public:
     void setRecentActivity(RecentActivity *activity);
     void prepareQuery(const QString &query, bool focus = true);
     void setAvailableScopes(const QList<QPair<QString, ProviderClassification>> &sources);
+    QueryScope selectedScope() const;
     QSet<QString> selectedSourceIds() const;
     void clearScopeSelection();
 
 signals:
     void searchRequested(const QString &query);
-    void searchScopedRequested(const QString &query, const QSet<QString> &sourceIds);
+    void searchScopedRequested(const QString &query, const QueryScope &scope);
     void searchInNewWindowRequested(const QString &query);
-    void searchInNewWindowScopedRequested(const QString &query, const QSet<QString> &sourceIds);
+    void searchInNewWindowScopedRequested(const QString &query, const QueryScope &scope);
     void recentActivated(const RecentItem &item);
 
 private slots:
@@ -52,7 +53,7 @@ private:
     QStringList m_history;
     QPointer<RecentActivity> m_recent;
     QWidget *m_scopeWidget = nullptr;
-    QHBoxLayout *m_scopeLayout = nullptr;
+    FlowLayout *m_scopeLayout = nullptr;
     QLabel *m_scopePreview = nullptr;
     QToolButton *m_clearScope = nullptr;
     QList<QPair<QString, ProviderClassification>> m_availableSources;

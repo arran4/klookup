@@ -40,7 +40,7 @@ public slots:
     void restoreFromTray();
     void clearSearchTabs();
 
-    SearchWindow *openSearchInNewWindow(const QString &query, const QSet<QString> &allowedSourceIds = {});
+    SearchWindow *openSearchInNewWindow(const QString &query, const QueryScope &scope = QueryScope::all());
     SearchWindow *popOutSearchTab(SearchTab *tab);
     bool returnSearchToMain(SearchWindow *window);
     ResultDetailWindow *openResultDetailsInNewWindow(const SearchResult &result,
@@ -83,7 +83,7 @@ private:
     void configureSourceSelection(SearchTab *tab);
     void searchSelectedSources(SearchTab *tab, const QSet<QString> &selected);
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
-    void performSearchScoped(const QString &query, const QSet<QString> &allowedSourceIds, bool clipboard, bool recordActivity);
+    void performSearchScoped(const QString &query, const QueryScope &scope, bool clipboard, bool recordActivity);
     void refreshDashboardScopes();
     void loadSettings();
     void saveSettings();

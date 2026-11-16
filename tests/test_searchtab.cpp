@@ -192,10 +192,14 @@ private slots:
         emit treeWidget->itemClicked(childItem, 0);
 
         QString html = detailsView->toHtml();
-        QVERIFY(!html.contains("<b>Key</b>")); // it should be escaped
-        QVERIFY(html.contains("&lt;b&gt;Key&lt;/b&gt;"));
+        QVERIFY(!html.contains("<b>Key</b>"));
         QVERIFY(!html.contains("<script>"));
-        QVERIFY(html.contains("&lt;script&gt;"));
+        QVERIFY(!html.contains("Additional Info"));
+        const QString rawHtml = Content::renderResultHtml(res, {}, QStringLiteral("Provider"), Content::RenderOptions{false, true});
+        QVERIFY(!rawHtml.contains("<b>Key</b>")); // it should be escaped
+        QVERIFY(rawHtml.contains("&lt;b&gt;Key&lt;/b&gt;"));
+        QVERIFY(!rawHtml.contains("<script>"));
+        QVERIFY(rawHtml.contains("&lt;script&gt;"));
     }
     void nestedLegacyMetadataFallback()
     {
@@ -209,12 +213,17 @@ private slots:
         tab.addResults(QStringLiteral("Provider"), {result});
         auto *tree = tab.findChild<QTreeWidget *>();
         emit tree->itemClicked(tree->topLevelItem(0)->child(0), 0);
-        const auto plain = tab.findChild<QTextBrowser *>()->toPlainText();
-        QVERIFY(plain.contains(QStringLiteral("One")));
-        QVERIFY(plain.contains(QStringLiteral("Two")));
-        QVERIFY(plain.contains(QStringLiteral("Theme")));
-        QVERIFY(plain.contains(QStringLiteral("Journey")));
-        QVERIFY(plain.contains(QStringLiteral("<b>plain</b>")));
+        const auto summaryPlain = tab.findChild<QTextBrowser *>()->toPlainText();
+        QVERIFY(!summaryPlain.contains(QStringLiteral("Additional Info")));
+        const QString rawRendered = Content::renderResultHtml(result, {}, QStringLiteral("Provider"), Content::RenderOptions{false, true});
+        QVERIFY(rawRendered.contains(QStringLiteral("One")));
+        QVERIFY(rawRendered.contains(QStringLiteral("Two")));
+        QVERIFY(rawRendered.contains(QStringLiteral("Theme")));
+        QVERIFY(rawRendered.contains(QStringLiteral("Journey")));
+        QVERIFY(rawRendered.contains(QStringLiteral("&lt;b&gt;plain&lt;/b&gt;")));
+        const auto rawSources = Content::extractRawSources(result);
+        QCOMPARE(rawSources.size(), 1);
+        QVERIFY(rawSources.first().content.contains(QStringLiteral("Journey")));
         QVERIFY(Metadata::safeWebUrl(QStringLiteral("https://user:secret@example.org/")).isEmpty());
         QVERIFY(Metadata::safeWebUrl(QStringLiteral("file:///etc/passwd")).isEmpty());
     }

@@ -718,6 +718,20 @@ QMenu *SearchTab::createResultMenu(QTreeWidgetItem *item)
         auto *action = menu->addAction(i18n("All titles…")); action->setObjectName(QStringLiteral("showAllTitles"));
         connect(action, &QAction::triggered, this, [this, titles] { Languages::showAllTitles(titles, this); });
     }
+    const auto rawSources = Content::extractRawSources(result, item->data(0, MetadataRole).value<ResultMetadata>());
+    if (rawSources.size() == 1) {
+        auto *rawAction = menu->addAction(i18n("Show Raw Data (%1)…", rawSources.first().label));
+        rawAction->setObjectName(QStringLiteral("showRawData"));
+        connect(rawAction, &QAction::triggered, this, [this, src = rawSources.first()] { Content::showRawSourceDialog(src, this); });
+    } else if (rawSources.size() > 1) {
+        auto *rawMenu = menu->addMenu(i18n("Show Raw Data"));
+        rawMenu->setObjectName(QStringLiteral("showRawDataMenu"));
+        for (const auto &src : rawSources) {
+            auto *act = rawMenu->addAction(src.label);
+            act->setObjectName(QStringLiteral("rawSource-") + src.id);
+            connect(act, &QAction::triggered, this, [this, src] { Content::showRawSourceDialog(src, this); });
+        }
+    }
     return menu;
 }
 

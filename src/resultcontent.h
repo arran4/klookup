@@ -53,10 +53,23 @@ struct ResultContent {
 };
 Q_DECLARE_METATYPE(ResultContent)
 
+struct ResultMetadata;
+class QWidget;
+
 namespace Content
 {
 struct RenderOptions {
     bool allowRemoteImages = false;
+    bool includeRawAdditionalInfo = false;
+};
+
+struct RawSourceDescriptor {
+    QString id;
+    QString label;
+    QString mimeType;
+    QString provenance;
+    QString content;
+    bool lazy = false;
 };
 
 struct Rendered {
@@ -70,6 +83,13 @@ Rendered render(const ResultContent &content, const RenderOptions &options = Ren
 
 // Standardized unified HTML renderer for search results across SearchTab and ResultDetailWindow
 QString renderResultHtml(const SearchResult &result, const ResultContent &content, const QString &providerName = QString(), const RenderOptions &options = RenderOptions());
+
+// Extract bounded, secret-redacted raw source representations for contextual inspection
+QList<RawSourceDescriptor> extractRawSources(const SearchResult &result);
+QList<RawSourceDescriptor> extractRawSources(const SearchResult &result, const ResultMetadata &metadata);
+
+// Display a single raw source in a safe, read-only, searchable, copyable plain-text dialog
+void showRawSourceDialog(const RawSourceDescriptor &source, QWidget *parent = nullptr);
 
 } // namespace Content
 

@@ -132,7 +132,7 @@ Find catalogue information through **Spotify** (after connecting it) or find son
 
 ## Search providers
 
-After the selective JavaScript provider batch, KLookup ships **15 lookup providers**: **10 native C++ modules** and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Merge this README after the batch and its shared approval, lifecycle, transport and diagnostics PRs. Providers can be enabled or disabled independently. CheapShark is **off by default**: enable it in Settings → Script packages to include USD-priced PC-game deals. Explicit saved choices survive upgrades.
+KLookup ships **16 lookup providers**: **10 native C++ modules** and **6 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList, CheapShark and Novel Updates). Providers can be enabled or disabled independently. CheapShark is **off by default**: enable it in Settings → Script packages to include USD-priced PC-game deals. Explicit saved choices survive upgrades.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |
@@ -140,7 +140,7 @@ After the selective JavaScript provider batch, KLookup ships **15 lookup provide
 | General | DuckDuckGo | Instant answers and supported related information | No account |
 | Development | GitHub | Repositories | Public search; token optional |
 | Games | CheapShark | PC-game store/deal prices in USD and CheapShark deal links | No account |
-| Books | Open Library | Books and publication records | No account |
+| Books | Open Library | Books and publication records | No account |\n| Web/light novels | Novel Updates | Public series title search and links | No login; HTML endpoint may reject automated requests |
 | Film/TV | The Movie Database (TMDb) | Film and TV catalogue entries | API token required |
 | Film/TV | OMDb | Film and TV catalogue entries | API key required |
 | Television | TVMaze | Television series information | No account |
@@ -392,13 +392,13 @@ KRunner activation and shortcut delivery must also be checked in a real desktop 
 
 KLookup supports **both native C++ Qt plugins and scripted providers** using its versioned Provider API v1. Native providers are loaded from KDE plugin directories. Scripted providers use ECMAScript modules (`.mjs`) and a `provider.json` manifest in `klookup/providers.d/`, discovered via XDG user/system data paths: `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d` and each directory in `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}/klookup/providers.d`.
 
-TVMaze, Lyrics.ovh, Open Library and AniList are shipped **only as JavaScript providers**; obsolete native modules for those IDs are ignored after migration. CheapShark is also an ECMAScript package. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
+TVMaze, Lyrics.ovh, Open Library and AniList are shipped **only as JavaScript providers**; obsolete native modules for those IDs are ignored after migration. CheapShark and Novel Updates are also ECMAScript packages. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
 
 Scripts can provide lightweight search results, supported pagination, lazy details and common structured content. Host services enforce declared origins and response limits; operations have deadlines and an execution-interruption strategy. Package approval binds to validated contents/assets, canonical source path, provenance and permissions. A first protected root-owned distribution installation may activate automatically; user/custom packages require deliberate approval. Explicit revocation and disablement persist, and changed packages require review. See [package approval](docs/provider-package-approval.md), [operation lifecycle](docs/script-provider-lifecycle.md) and [HTTP transport](docs/provider-http-transport.md).
 
 Build-tree runs do not silently load packages from the current directory or source checkout. Install the package assets under a normal XDG/install data prefix, then review user-owned packages in Script packages settings. Package managers should remove obsolete files belonging to their own earlier package versions; KLookup does not delete arbitrary files in users' prefixes.
 
-Scripted KWallet provisioning/restoration remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); the five shipped scripts require no credentials. Native providers' authentication continues separately. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their permissions. The old custom HTTP configuration wizard was superseded ([#57](https://github.com/arran4/klookup/issues/57)); the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor is not shipped.
+Scripted KWallet provisioning/restoration remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); the six shipped scripts require no credentials. Native providers' authentication continues separately. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their permissions. The old custom HTTP configuration wizard was superseded ([#57](https://github.com/arran4/klookup/issues/57)); the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor is not shipped.
 
 Relevant implementation guides:
 
@@ -406,7 +406,7 @@ Relevant implementation guides:
 - [Lyrics.ovh suggestions](docs/provider-lyrics-ovh.md)
 - [Open Library books](docs/provider-openlibrary.md)
 - [AniList anime search](docs/provider-anilist.md)
-- [CheapShark PC-game deals](docs/provider-cheapshark.md)
+- [CheapShark PC-game deals](docs/provider-cheapshark.md)\n- [Novel Updates series search and limits](docs/provider-novelupdates.md)
 - [Provider continuation and pagination](docs/provider-continuation.md)
 - [Structured result metadata](docs/structured-metadata.md)
 - [Provider authentication](docs/provider-authentication.md)

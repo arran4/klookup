@@ -1,0 +1,12 @@
+{
+  "query": "Björk 雪 & + / ?",
+  "valid": "<ul class=\"search_results\"><li class=\"search_li_results\"><a class=\"a_search\" href=\"https://www.novelupdates.com/series/fixture-snow/\"><img src=\"/cover.jpg\">Fixture &amp; 雪</a></li></ul>",
+  "partial": "<ul><li class=\"search_li_results\"><a class=\"a_search\" href=\"javascript:alert(1)\">Bad</a></li><li class='search_li_results other'><a href='/series/fixture-snow/' class='a_search selected'>Fixture &amp; 雪</a></li><li class=\"search_li_results\"><a class=\"a_search\" href=\"https://evil.example/series/fake/\">Evil</a></li></ul>",
+  "empty": "0",
+  "invalid": "<html><title>Just a moment...</title><body>Checking your browser before accessing Novel Updates</body></html>",
+  "expected": {
+    "id": "fixture-snow",
+    "title": "Fixture & 雪",
+    "url": "https://www.novelupdates.com/series/fixture-snow/"
+  }
+}

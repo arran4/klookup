@@ -24,6 +24,8 @@ add_library(klookup_core STATIC
     appicon.cpp
     clipboardinput.cpp
     clipboardpolicy.cpp
+    selectedtextpolicy.cpp
+    selectionpopupwindow.cpp
     credentialstore.cpp
     providerauthsession.cpp
     oauthreplyhandler.cpp

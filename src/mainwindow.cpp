@@ -178,6 +178,7 @@ MainWindow::MainWindow(QWidget *parent)
     setXMLFile(QStringLiteral("klookupui.rc"));
     setupGUI();
     loadSettings();
+    syncSelectionObserver();
     m_clipboardReady = true;
 }
 
@@ -205,13 +206,18 @@ void MainWindow::setupActions()
     clipboard->setText(QStringLiteral("Search clipboard now"));
     clipboard->setIcon(QIcon::fromTheme(QStringLiteral("edit-paste")));
     clipboard->setToolTip(QStringLiteral("Explicitly look up current plain clipboard text, including URLs"));
-    for (auto *action : {show, clipboard}) {
+    auto *lookupSelection = actionCollection()->addAction(QStringLiteral("lookup_selected_text"));
+    lookupSelection->setText(QStringLiteral("Look up selected text"));
+    lookupSelection->setIcon(QIcon::fromTheme(QStringLiteral("edit-select-all")));
+    lookupSelection->setToolTip(QStringLiteral("Opt-in explicit selected-text definition popup (off by default)"));
+    for (auto *action : {show, clipboard, lookupSelection}) {
         action->setProperty("componentName", QStringLiteral("org.kde.klookup"));
         action->setProperty("componentDisplayName", QStringLiteral("KLookup"));
     }
     connect(show, &QAction::triggered, this, &MainWindow::showSearchViaShortcut);
     connect(clipboard, &QAction::triggered, this, &MainWindow::searchClipboardNow);
-    m_globalShortcuts = new GlobalShortcuts({show, clipboard}, this);
+    connect(lookupSelection, &QAction::triggered, this, &MainWindow::lookupSelectedTextNow);
+    m_globalShortcuts = new GlobalShortcuts({show, clipboard, lookupSelection}, this);
 
     // Local shortcuts are active only in the KLookup window. Global shortcuts
     // remain opt-in and must not claim keys through KGlobalAccel by default.
@@ -351,6 +357,7 @@ void MainWindow::showSettingsDialog()
     if (reloadPackages) loadPlugins(m_customPackagePaths, m_customPluginPaths, changedPackages);
 
     m_recent->reloadPolicy();
+    syncSelectionObserver();
     // We re-check clipboard monitoring if settings change
 }
 
@@ -387,6 +394,87 @@ void MainWindow::restoreFromTray()
 void MainWindow::notifyClipboardShortcutUsed()
 {
     handleClipboardEvent(ClipboardPolicy::Event::GlobalShortcut);
+}
+
+SelectionPopupWindow *MainWindow::ensureSelectionPopup()
+{
+    if (!m_selectionPopup) {
+        m_selectionPopup = new SelectionPopupWindow(this);
+        connect(m_selectionPopup, &SelectionPopupWindow::lookupDispatched, this, [this](const QString &, const QString &query) {
+            const KConfigGroup selGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("SelectedText"));
+            const auto policy = SelectedTextPolicy::read(selGroup);
+            if (policy.recordHistory && m_recent)
+                m_recent->recordSearch(query, false);
+        });
+    }
+    return m_selectionPopup;
+}
+
+void MainWindow::syncSelectionObserver()
+{
+    const KConfigGroup selGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("SelectedText"));
+    const auto policy = SelectedTextPolicy::read(selGroup);
+    const bool wantAuto = policy.enabled && policy.autoPopup && QGuiApplication::clipboard()->supportsSelection();
+    if (wantAuto && !m_selectionObserver) {
+        m_selectionObserver = connect(QGuiApplication::clipboard(), &QClipboard::selectionChanged,
+                                      this, &MainWindow::onPrimarySelectionChanged);
+    } else if (!wantAuto && m_selectionObserver) {
+        disconnect(m_selectionObserver);
+        m_selectionObserver = QMetaObject::Connection();
+    }
+}
+
+void MainWindow::lookupSelectedTextNow()
+{
+    const KConfigGroup selGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("SelectedText"));
+    const auto policy = SelectedTextPolicy::read(selGroup);
+    if (!policy.enabled)
+        return;
+
+    auto *popup = ensureSelectionPopup();
+    QClipboard *cb = QGuiApplication::clipboard();
+    if (!cb || !cb->supportsSelection()) {
+        popup->openFallbackPrompt(i18n("Primary text selection is not supported by this desktop session. Enter or paste a term below to look it up."),
+                                  m_providers, policy);
+        popup->show();
+        popup->raise();
+        popup->activateWindow();
+        return;
+    }
+
+    const QMimeData *mime = cb->mimeData(QClipboard::Selection);
+    const QString text = cb->text(QClipboard::Selection);
+    if (!policy.isEligibleSelection(text, false, mime)) {
+        popup->openFallbackPrompt(i18n("No eligible primary selection was available. Enter or paste a term below to look it up."),
+                                  m_providers, policy);
+    } else {
+        popup->lookupText(text, m_providers, policy, false);
+    }
+    popup->show();
+    popup->raise();
+    popup->activateWindow();
+}
+
+void MainWindow::onPrimarySelectionChanged()
+{
+    const KConfigGroup selGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("SelectedText"));
+    const auto policy = SelectedTextPolicy::read(selGroup);
+    if (!policy.enabled || !policy.autoPopup)
+        return;
+    QClipboard *cb = QGuiApplication::clipboard();
+    if (!cb || !cb->supportsSelection())
+        return;
+    const QMimeData *mime = cb->mimeData(QClipboard::Selection);
+    const QString text = cb->text(QClipboard::Selection);
+    if (!policy.isEligibleSelection(text, true, mime))
+        return;
+    const QString trimmed = text.trimmed();
+    if (trimmed == m_lastAutoSelectedText)
+        return;
+    m_lastAutoSelectedText = trimmed;
+    auto *popup = ensureSelectionPopup();
+    popup->lookupText(trimmed, m_providers, policy, true);
+    popup->show();
 }
 
 void MainWindow::changeEvent(QEvent *event)

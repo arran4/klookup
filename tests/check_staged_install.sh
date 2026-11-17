@@ -14,6 +14,8 @@ trap 'rm -rf -- "$stage"' EXIT
 cmake --install "$build_dir" --prefix "$stage" > "$stage/install.log"
 test -f "$stage/share/klookup/providers.d/tvmaze/provider.json"
 test -f "$stage/share/klookup/providers.d/tvmaze/main.mjs"
+test -f "$stage/share/klookup/providers.d/novelupdates/provider.json"
+test -f "$stage/share/klookup/providers.d/novelupdates/main.mjs"
 if sed -n '/tvmaze.*\.so/p' "$stage/install.log" | read -r obsolete; then
     echo "Obsolete TVMaze library is still installed"
     exit 1

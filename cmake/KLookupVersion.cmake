@@ -4,8 +4,9 @@
 # Authoritative version determination:
 # 1. Explicit user/packager override: -DKLOOKUP_VERSION=x.y.z
 # 2. Exact git tag if building in a git tree (must win over static VERSION on release tags)
-# 3. VERSION file in source root (for source archives / Gentoo tarballs / untagged builds)
-# 4. Fallback default version
+# 3. Git archive export-subst tag metadata (for GitHub tag archives without .git)
+# 4. VERSION file in source root (for version-stamped source tarballs / untagged builds)
+# 5. Fallback default version
 set(KLOOKUP_DEFAULT_VERSION "0.1.0")
 
 if(DEFINED KLOOKUP_VERSION AND NOT KLOOKUP_VERSION STREQUAL "")
@@ -23,6 +24,15 @@ elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
         if(_GIT_EXACT_TAG MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+.*)$")
             set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
         endif()
+    endif()
+endif()
+
+if(NOT DEFINED _KLOOKUP_DETECTED_VERSION AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupArchiveVersion.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupArchiveVersion.cmake")
+    if(DEFINED _KLOOKUP_GIT_ARCHIVE_REFS
+       AND NOT _KLOOKUP_GIT_ARCHIVE_REFS MATCHES "\\\$Format:"
+       AND _KLOOKUP_GIT_ARCHIVE_REFS MATCHES "tag:[ ]*v?([0-9]+\\.[0-9]+\\.[0-9]+[^, )]*)")
+        set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
     endif()
 endif()
 

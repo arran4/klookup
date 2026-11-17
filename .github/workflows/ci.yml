@@ -173,6 +173,29 @@ jobs:
         run: ./.jules/run.sh cmake --build build --parallel
       - name: Run normal CTest including staged install
         run: ./.jules/run.sh ctest --test-dir build --output-on-failure
+      - name: Verify v0.1.1 source archive without .git builds matching klookup --version
+        run: |
+          set -euo pipefail
+          rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
+          mkdir -p dist/archive-check-repo dist/archive-check-src
+          git archive --format=tar HEAD | tar -xf - -C dist/archive-check-repo
+          (
+            cd dist/archive-check-repo
+            git init -q
+            git config user.email "ci@example.invalid"
+            git config user.name "CI"
+            git add -A
+            git commit -q -m "snapshot"
+            git tag v0.1.1
+            git archive --format=tar v0.1.1 | tar -xf - -C /workspace/dist/archive-check-src
+          )
+          test ! -e dist/archive-check-src/.git
+          ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF
+          ./.jules/run.sh cmake --build /workspace/dist/archive-check-build --target klookup --parallel
+          ARCHIVE_VER="$(./.jules/run.sh /workspace/dist/archive-check-build/src/klookup --version)"
+          echo "Archive klookup --version: $ARCHIVE_VER"
+          [[ "$ARCHIVE_VER" == *"0.1.1"* ]] || { echo "Expected 0.1.1 in archive --version, got: $ARCHIVE_VER" >&2; exit 1; }
+          rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
       - name: Configure ASan/UBSan build
         run: |
           set -euo pipefail
@@ -205,9 +228,18 @@ jobs:
           test -x dist/staged/bin/klookup-provider-check
           test -f dist/staged/share/klookup/providers.d/tvmaze/main.mjs
           tar -czf dist/release-candidates/klookup-linux-amd64.tar.gz -C dist staged
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            SRC_PREFIX="klookup-${GITHUB_REF_NAME#v}"
+            rm -rf "dist/$SRC_PREFIX"
+            mkdir -p "dist/$SRC_PREFIX"
+            git archive --format=tar HEAD | tar -xf - -C "dist/$SRC_PREFIX"
+            printf '%s\n' "${GITHUB_REF_NAME#v}" > "dist/$SRC_PREFIX/VERSION"
+            tar -czf "dist/release-candidates/klookup-${GITHUB_REF_NAME}-src.tar.gz" -C dist "$SRC_PREFIX"
+            rm -rf "dist/$SRC_PREFIX"
+          fi
           (
             cd dist/release-candidates
-            sha256sum klookup-linux-amd64.tar.gz > klookup-linux-amd64.tar.gz.sha256
+            sha256sum *.tar.gz > klookup-linux-amd64.tar.gz.sha256
           )
       - name: Upload release candidates for smoke testing
         uses: actions/upload-artifact@v7

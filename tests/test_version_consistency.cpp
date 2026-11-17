@@ -96,6 +96,94 @@ private slots:
         QVERIFY(runCmake({QStringLiteral("-DKLOOKUP_VERSION=9.8.7")}).contains(QStringLiteral("TEST_VER=9.8.7|9.8.7")));
     }
 
+    void gitArchiveWithoutDotGitResolvesTagVersion()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString repoDir = dir.filePath(QStringLiteral("repo"));
+        QVERIFY(QDir().mkpath(repoDir + QStringLiteral("/cmake")));
+
+        QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/.gitattributes"),
+                            repoDir + QStringLiteral("/.gitattributes")));
+        QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/cmake/KLookupVersion.cmake"),
+                            repoDir + QStringLiteral("/cmake/KLookupVersion.cmake")));
+        QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/cmake/KLookupArchiveVersion.cmake"),
+                            repoDir + QStringLiteral("/cmake/KLookupArchiveVersion.cmake")));
+
+        QFile verFile(repoDir + QStringLiteral("/VERSION"));
+        QVERIFY(verFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        verFile.write("0.1.0\n");
+        verFile.close();
+
+        QFile cmFile(repoDir + QStringLiteral("/CMakeLists.txt"));
+        QVERIFY(cmFile.open(QIODevice::WriteOnly | QIODevice::Text));
+        cmFile.write("cmake_minimum_required(VERSION 3.16)\n"
+                     "include(\"${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupVersion.cmake\")\n"
+                     "project(dummy VERSION ${KLOOKUP_NUMERIC_VERSION} LANGUAGES NONE)\n"
+                     "message(STATUS \"TEST_VER=${KLOOKUP_VERSION_STRING}|${PROJECT_VERSION}\")\n");
+        cmFile.close();
+
+        auto runGit = [&](const QStringList &args, const QString &cwd) -> QByteArray {
+            QProcess p;
+            p.setWorkingDirectory(cwd);
+            p.start(QStringLiteral("git"), args);
+            if (!p.waitForFinished(15000) || p.exitCode() != 0)
+                return {};
+            return p.readAllStandardOutput();
+        };
+
+        QVERIFY(!runGit({QStringLiteral("init")}, repoDir).isNull());
+        runGit({QStringLiteral("config"), QStringLiteral("user.email"), QStringLiteral("test@example.invalid")}, repoDir);
+        runGit({QStringLiteral("config"), QStringLiteral("user.name"), QStringLiteral("Test")}, repoDir);
+        runGit({QStringLiteral("add"), QStringLiteral(".")}, repoDir);
+        runGit({QStringLiteral("commit"), QStringLiteral("-m"), QStringLiteral("init")}, repoDir);
+
+        auto extractAndConfigure = [&](const QString &ref, const QString &name, const QStringList &cmakeArgs) -> QString {
+            const QString tarPath = dir.filePath(name + QStringLiteral(".tar"));
+            const QString outDir = dir.filePath(name);
+            if (!QDir().mkpath(outDir))
+                return {};
+
+            QProcess arch;
+            arch.setWorkingDirectory(repoDir);
+            arch.setStandardOutputFile(tarPath);
+            arch.start(QStringLiteral("git"), QStringList{QStringLiteral("archive"), QStringLiteral("--format=tar"), ref});
+            if (!arch.waitForFinished(15000) || arch.exitCode() != 0)
+                return {};
+
+            QProcess untar;
+            untar.start(QStringLiteral("tar"), QStringList{QStringLiteral("-xf"), tarPath, QStringLiteral("-C"), outDir});
+            if (!untar.waitForFinished(15000) || untar.exitCode() != 0)
+                return {};
+
+            if (QFileInfo::exists(outDir + QStringLiteral("/.git")))
+                return {};
+
+            QTemporaryDir buildDir;
+            QProcess cmakeProc;
+            QStringList args{QStringLiteral("-S"), outDir, QStringLiteral("-B"), buildDir.path()};
+            args.append(cmakeArgs);
+            cmakeProc.start(QStringLiteral("cmake"), args);
+            if (!cmakeProc.waitForFinished(15000) || cmakeProc.exitCode() != 0)
+                return {};
+            return QString::fromUtf8(cmakeProc.readAllStandardOutput());
+        };
+
+        // 1. Archive of untagged commit falls back to VERSION (0.1.0)
+        QVERIFY(extractAndConfigure(QStringLiteral("HEAD"), QStringLiteral("untagged"), {})
+                    .contains(QStringLiteral("TEST_VER=0.1.0|0.1.0")));
+
+        // 2. Archive of v0.1.1 tag (no .git, no -DKLOOKUP_VERSION) resolves 0.1.1 despite stale VERSION=0.1.0
+        runGit({QStringLiteral("tag"), QStringLiteral("v0.1.1")}, repoDir);
+        QVERIFY(extractAndConfigure(QStringLiteral("v0.1.1"), QStringLiteral("tagged-v0.1.1"), {})
+                    .contains(QStringLiteral("TEST_VER=0.1.1|0.1.1")));
+
+        // 3. Explicit -DKLOOKUP_VERSION still overrides archive tag
+        QVERIFY(extractAndConfigure(QStringLiteral("v0.1.1"), QStringLiteral("override-v0.1.1"),
+                                    {QStringLiteral("-DKLOOKUP_VERSION=0.1.2")})
+                    .contains(QStringLiteral("TEST_VER=0.1.2|0.1.2")));
+    }
+
     void binaryReportsExpectedVersion()
     {
         const QString binaryPath = QString::fromUtf8(KLOOKUP_TEST_BINARY_PATH);

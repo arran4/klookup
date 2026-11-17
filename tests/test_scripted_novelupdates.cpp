@@ -12,6 +12,7 @@
 #include <QTimer>
 #include <QUrlQuery>
 #include <cstring>
+#include <utility>
 
 class NovelUpdatesFixtureReply : public QNetworkReply {
     Q_OBJECT

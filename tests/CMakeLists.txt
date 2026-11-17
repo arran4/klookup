@@ -221,6 +221,11 @@ set_target_properties(provider_mock_anilist PROPERTIES LIBRARY_OUTPUT_DIRECTORY 
 add_dependencies(test_scripted_anilist provider_mock_anilist)
 target_compile_definitions(test_scripted_anilist PRIVATE OBSOLETE_DIR="$<TARGET_FILE_DIR:provider_mock_anilist>")
 
+add_executable(test_scripted_novelupdates test_scripted_novelupdates.cpp)
+target_link_libraries(test_scripted_novelupdates Qt6::Test klookup_core)
+target_compile_definitions(test_scripted_novelupdates PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME test_scripted_novelupdates COMMAND test_scripted_novelupdates)
+
 add_executable(test_scripted_cheapshark test_scripted_cheapshark.cpp)
 target_link_libraries(test_scripted_cheapshark Qt6::Test klookup_core)
 target_compile_definitions(test_scripted_cheapshark PRIVATE PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}")

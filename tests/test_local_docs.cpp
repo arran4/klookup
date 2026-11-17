@@ -8,10 +8,13 @@
 #include <KConfig>
 #include <KConfigGroup>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
+#include <QLabel>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 namespace
 {
@@ -109,13 +112,64 @@ private slots:
         QSignalSpy okSpy(&provider, &SearchProvider::searchCompleted);
         provider.setRootsForTesting(restored);
         provider.search(QStringLiteral("match_beta"));
-        QCOMPARE(okSpy.count(), 1);
+        QTRY_COMPARE_WITH_TIMEOUT(okSpy.count(), 1, 5000);
         const auto results = okSpy.first().at(1).value<QList<SearchResult>>();
         QCOMPARE(results.size(), 1);
         QCOMPARE(results.first().title, QStringLiteral("readme.markdown"));
         QCOMPARE(results.first().additionalData.value(QStringLiteral("root")).toString(), QStringLiteral("Docs"));
         // Never leak full local filesystem path in SearchResult
         QVERIFY(!results.first().id.contains(docsDir.path()));
+    }
+
+    void testAsyncSearchAndPreviewResponsivenessAndCancellation()
+    {
+        QTemporaryDir largeDir;
+        QVERIFY(largeDir.isValid());
+        for (int i = 0; i < 400; ++i) {
+            const QString sub = QStringLiteral("bucket_%1/doc_%2.md").arg(i % 10).arg(i);
+            const QByteArray payload = (i == 399)
+                ? QByteArrayLiteral("# Final\nkeyword_fresh_only\n")
+                : QByteArrayLiteral("# Note\nkeyword_stale_many filler content for async scan test\n");
+            QVERIFY(writeDoc(largeDir.filePath(sub), payload));
+        }
+
+        LocalScanRoot root{QStringLiteral("big"), QStringLiteral("Large Docs"), largeDir.path(), 3, true};
+        ProviderLocalDocs provider;
+        provider.setRootsForTesting({root});
+
+        // 1. search() is non-blocking and GUI event loop stays responsive
+        QSignalSpy okSpy(&provider, &SearchProvider::searchCompleted);
+        bool timerFired = false;
+        QTimer::singleShot(0, &provider, [&timerFired]() { timerFired = true; });
+        provider.search(QStringLiteral("keyword_stale_many"));
+        QCOMPARE(okSpy.count(), 0); // async: not emitted synchronously on GUI thread
+        QCoreApplication::processEvents();
+        QVERIFY(timerFired);
+
+        // 2. Cancelling stale search prevents stale result emission; superseding search delivers only fresh results
+        provider.cancel();
+        QTest::qWait(80);
+        QCOMPARE(okSpy.count(), 0);
+
+        provider.search(QStringLiteral("keyword_stale_many"));
+        provider.search(QStringLiteral("keyword_fresh_only"));
+        QTRY_COMPARE_WITH_TIMEOUT(okSpy.count(), 1, 5000);
+        const auto results = okSpy.first().at(1).value<QList<SearchResult>>();
+        QCOMPARE(results.size(), 1);
+        QCOMPARE(results.first().title, QStringLiteral("bucket_9/doc_399.md"));
+
+        // 3. Options widget preview runs asynchronously and survives immediate destruction
+        QWidget *opts = provider.createOptionsWidget();
+        QVERIFY(opts != nullptr);
+        auto *previewLabel = opts->findChild<QLabel *>(QStringLiteral("localDocPreview"));
+        QVERIFY(previewLabel != nullptr);
+        QTRY_VERIFY_WITH_TIMEOUT(previewLabel->text().contains(QStringLiteral("400 readable file(s)")), 5000);
+        delete opts;
+
+        // Destroy mid-scan guard
+        QWidget *opts2 = provider.createOptionsWidget();
+        delete opts2;
+        QTest::qWait(50);
     }
 };
 

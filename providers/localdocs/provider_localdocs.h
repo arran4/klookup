@@ -8,6 +8,7 @@
 #include "provideroptions.h"
 #include "searchprovider.h"
 #include <atomic>
+#include <memory>
 
 class ProviderLocalDocs : public SearchProvider, public SearchProviderOptions
 {
@@ -28,11 +29,13 @@ public:
 
     void setRootsForTesting(const QList<LocalScanRoot> &roots);
     QList<LocalScanRoot> roots() const;
+    void cancel();
 
 private:
     QList<LocalScanRoot> m_roots;
     bool m_hasCustomRoots = false;
-    std::atomic_bool m_cancelled{false};
+    quint64 m_requestSeq = 0;
+    std::shared_ptr<std::atomic_bool> m_activeCancel;
 };
 
 #endif // PROVIDER_LOCALDOCS_H

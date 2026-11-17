@@ -54,7 +54,10 @@ bool isBroadOrHomeRoot(const QString &path);
 QList<LocalScanRoot> readRoots(const KConfigGroup &group);
 void writeRoots(KConfigGroup &group, const QList<LocalScanRoot> &roots);
 
-LocalScanPreview preview(const QList<LocalScanRoot> &roots, const LocalScanPolicy &policy = LocalScanPolicy());
+LocalScanPreview preview(const QList<LocalScanRoot> &roots,
+                         const LocalScanPolicy &policy = LocalScanPolicy(),
+                         const std::atomic_bool *cancelled = nullptr,
+                         bool *wasCancelled = nullptr);
 QList<LocalDocMatch> search(const QString &query,
                             const QList<LocalScanRoot> &roots,
                             const LocalScanPolicy &policy = LocalScanPolicy(),

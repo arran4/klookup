@@ -10,9 +10,36 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
+#include <QMetaObject>
+#include <QPointer>
 #include <QPushButton>
+#include <QRunnable>
 #include <QSpinBox>
+#include <QThreadPool>
 #include <QVBoxLayout>
+
+namespace
+{
+QThreadPool *localDocThreadPool()
+{
+    static QThreadPool *pool = []() {
+        auto *p = new QThreadPool;
+        p->setMaxThreadCount(2);
+        return p;
+    }();
+    return pool;
+}
+
+QString formatPreviewMessage(const LocalScanPreview &prev)
+{
+    QString msg = i18n("Discovered %1 readable file(s) (%2 KiB).", prev.fileCount, (prev.totalBytes + 1023) / 1024);
+    if (prev.truncated)
+        msg += QLatin1Char(' ') + i18n("Scan limits reached.");
+    if (!prev.warnings.isEmpty())
+        msg += QLatin1Char(' ') + prev.warnings.join(QLatin1String("; "));
+    return msg;
+}
+} // namespace
 
 ProviderLocalDocs::ProviderLocalDocs(QObject *parent)
     : SearchProvider(parent)
@@ -21,7 +48,15 @@ ProviderLocalDocs::ProviderLocalDocs(QObject *parent)
 
 ProviderLocalDocs::~ProviderLocalDocs()
 {
-    m_cancelled.store(true);
+    cancel();
+}
+
+void ProviderLocalDocs::cancel()
+{
+    ++m_requestSeq;
+    if (m_activeCancel)
+        m_activeCancel->store(true);
+    m_activeCancel.reset();
 }
 
 QString ProviderLocalDocs::name() const
@@ -50,31 +85,50 @@ QList<LocalScanRoot> ProviderLocalDocs::roots() const
 
 void ProviderLocalDocs::search(const QString &query)
 {
-    m_cancelled.store(false);
+    cancel();
     const QList<LocalScanRoot> activeRoots = roots();
+    const QString providerId = id();
     if (activeRoots.isEmpty()) {
-        emit searchFailed(id(), i18n("No local documentation scan roots configured in Settings."));
+        emit searchFailed(providerId, i18n("No local documentation scan roots configured in Settings."));
         return;
     }
 
-    bool cancelled = false;
-    const QList<LocalDocMatch> matches = LocalDocScanner::search(query, activeRoots, LocalScanPolicy(), &m_cancelled, &cancelled);
-    if (cancelled)
-        return;
+    const quint64 generation = m_requestSeq;
+    auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+    m_activeCancel = cancelFlag;
+    QPointer<ProviderLocalDocs> self(this);
 
-    QList<SearchResult> results;
-    results.reserve(matches.size());
-    for (const auto &match : matches) {
-        SearchResult res;
-        res.id = match.id;
-        res.title = match.title;
-        res.description = match.snippet;
-        res.type = QStringLiteral("local-document");
-        res.additionalData.insert(QStringLiteral("root"), match.rootLabel);
-        res.additionalData.insert(QStringLiteral("relativePath"), match.relativePath);
-        results.append(res);
-    }
-    emit searchCompleted(id(), results);
+    localDocThreadPool()->start(QRunnable::create([self, generation, providerId, query, activeRoots, cancelFlag]() {
+        if (cancelFlag->load() || !self)
+            return;
+        bool wasCancelled = false;
+        const QList<LocalDocMatch> matches =
+            LocalDocScanner::search(query, activeRoots, LocalScanPolicy(), cancelFlag.get(), &wasCancelled);
+        if (wasCancelled || cancelFlag->load() || !self)
+            return;
+
+        QList<SearchResult> results;
+        results.reserve(matches.size());
+        for (const auto &match : matches) {
+            SearchResult res;
+            res.id = match.id;
+            res.title = match.title;
+            res.description = match.snippet;
+            res.type = QStringLiteral("local-document");
+            res.additionalData.insert(QStringLiteral("root"), match.rootLabel);
+            res.additionalData.insert(QStringLiteral("relativePath"), match.relativePath);
+            results.append(res);
+        }
+
+        QMetaObject::invokeMethod(
+            self,
+            [self, generation, providerId, results]() {
+                if (!self || self->m_requestSeq != generation)
+                    return;
+                emit self->searchCompleted(providerId, results);
+            },
+            Qt::QueuedConnection);
+    }));
 }
 
 SearchProvider *ProviderLocalDocs::clone(QObject *parent) const
@@ -108,20 +162,53 @@ QWidget *ProviderLocalDocs::createOptionsWidget(QWidget *parent) const
     layout->addWidget(previewLabel);
 
     auto currentRoots = std::make_shared<QList<LocalScanRoot>>(roots());
-    auto refreshUi = [list, previewLabel, currentRoots]() {
-        list->clear();
-        for (const auto &r : *currentRoots) {
-            auto *item = new QListWidgetItem(QStringLiteral("%1 (%2, depth %3)").arg(r.label, r.path).arg(r.maxDepth), list);
-            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-            item->setCheckState(r.enabled ? Qt::Checked : Qt::Unchecked);
+    auto previewCancel = std::make_shared<std::shared_ptr<std::atomic_bool>>();
+    auto previewSeq = std::make_shared<quint64>(0);
+    QPointer<QWidget> safeWidget(widget);
+    QPointer<QLabel> safePreviewLabel(previewLabel);
+
+    connect(widget, &QObject::destroyed, [previewCancel, previewSeq]() {
+        ++(*previewSeq);
+        if (*previewCancel)
+            (*previewCancel)->store(true);
+    });
+
+    auto refreshUi = [list, safeWidget, safePreviewLabel, currentRoots, previewCancel, previewSeq]() {
+        {
+            const QSignalBlocker blocker(list);
+            list->clear();
+            for (const auto &r : *currentRoots) {
+                auto *item = new QListWidgetItem(QStringLiteral("%1 (%2, depth %3)").arg(r.label, r.path).arg(r.maxDepth), list);
+                item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+                item->setCheckState(r.enabled ? Qt::Checked : Qt::Unchecked);
+            }
         }
-        const LocalScanPreview prev = LocalDocScanner::preview(*currentRoots);
-        QString msg = i18n("Discovered %1 readable file(s) (%2 KiB).", prev.fileCount, (prev.totalBytes + 1023) / 1024);
-        if (prev.truncated)
-            msg += QLatin1Char(' ') + i18n("Scan limits reached.");
-        if (!prev.warnings.isEmpty())
-            msg += QLatin1Char(' ') + prev.warnings.join(QLatin1String("; "));
-        previewLabel->setText(msg);
+        if (*previewCancel)
+            (*previewCancel)->store(true);
+        const quint64 gen = ++(*previewSeq);
+        auto cancelFlag = std::make_shared<std::atomic_bool>(false);
+        *previewCancel = cancelFlag;
+        const QList<LocalScanRoot> snapshot = *currentRoots;
+        if (safePreviewLabel)
+            safePreviewLabel->setText(i18n("Scanning local documentation…"));
+
+        localDocThreadPool()->start(QRunnable::create([safeWidget, safePreviewLabel, previewSeq, gen, snapshot, cancelFlag]() {
+            if (cancelFlag->load() || !safeWidget)
+                return;
+            bool wasCancelled = false;
+            const LocalScanPreview prev = LocalDocScanner::preview(snapshot, LocalScanPolicy(), cancelFlag.get(), &wasCancelled);
+            if (wasCancelled || cancelFlag->load() || !safeWidget)
+                return;
+            const QString msg = formatPreviewMessage(prev);
+            QMetaObject::invokeMethod(
+                safeWidget,
+                [safeWidget, safePreviewLabel, previewSeq, gen, msg]() {
+                    if (!safeWidget || !safePreviewLabel || *previewSeq != gen)
+                        return;
+                    safePreviewLabel->setText(msg);
+                },
+                Qt::QueuedConnection);
+        }));
     };
     auto persist = [currentRoots]() {
         KConfigGroup cfg(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Provider-localdocs"));

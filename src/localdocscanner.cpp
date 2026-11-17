@@ -215,11 +215,14 @@ void LocalDocScanner::writeRoots(KConfigGroup &group, const QList<LocalScanRoot>
     }
 }
 
-LocalScanPreview LocalDocScanner::preview(const QList<LocalScanRoot> &roots, const LocalScanPolicy &policy)
+LocalScanPreview LocalDocScanner::preview(const QList<LocalScanRoot> &roots,
+                                          const LocalScanPolicy &policy,
+                                          const std::atomic_bool *cancelled,
+                                          bool *wasCancelled)
 {
     LocalScanPreview result;
     QList<ScannedFile> files;
-    collectFiles(roots, policy, &files, &result, nullptr, nullptr);
+    collectFiles(roots, policy, &files, &result, cancelled, wasCancelled);
     return result;
 }
 

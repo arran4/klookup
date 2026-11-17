@@ -1,0 +1,28 @@
+{
+  "id": "novelupdates",
+  "name": "Novel Updates",
+  "description": "Asian web and light novel series from Novel Updates (HTML live search; may be access-restricted)",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "https://www.novelupdates.com"
+    ]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": false,
+    "separateContent": false,
+    "authentication": false
+  },
+  "classification": {
+    "version": "1.0.0",
+    "facets": [
+      "topic:books",
+      "topic:novels"
+    ]
+  }
+}

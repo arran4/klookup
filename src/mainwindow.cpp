@@ -934,13 +934,21 @@ ProviderApiV1::ProviderV1ToLegacyAdapter *MainWindow::createScriptedAdapter(Prov
 {
     pkg.setEnabled(true); // This instance is authorized for a deliberately selected search.
     auto namFactory = m_namFactory;
-    ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
+    CredentialStore *store = m_authManager ? m_authManager->credentialStore() : nullptr;
+    ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, store, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
         QNetworkAccessManager *nam = namFactory ? namFactory(parent) : nullptr;
         auto *hostService = new ProviderHost::ProviderHostService(pkg, parent, nam);
+        CredentialStore *actualStore = store;
+        if (!actualStore && window && window->authManager()) {
+            actualStore = window->authManager()->credentialStore();
+        }
+        if (actualStore) {
+            hostService->setCredentialStore(actualStore);
+        }
         auto *provider = new JsProvider(pkg, parent, hostService);
         hostService->setParent(provider);
         if (window) connect(window, &MainWindow::packageReloaded, provider, [provider, pkg](const QString &id) {
-        if (id == pkg.id()) provider->invalidate();
+            if (id == pkg.id()) provider->invalidate();
         });
         if (nam && nam->parent() == parent) nam->setParent(hostService);
         return provider;

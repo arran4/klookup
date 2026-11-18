@@ -6,6 +6,7 @@
 #include <QSignalBlocker>
 #include <KLocalizedString>
 #include "settingsdialog.h"
+#include "cataloguebrowserwidget.h"
 #include "languagepreferences.h"
 #include "providerdiagnostics.h"
 #include <QPlainTextEdit>
@@ -238,6 +239,11 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     connect(retry, &QPushButton::clicked, this, [this] { m_packagesChanged = true; m_retryPackages = true; saveSettings(); });
     updatePackage(-1);
     addPage(packagePage, QStringLiteral("Script packages"));
+
+    auto *catalogueWidget = new CatalogueBrowserWidget(this);
+    connect(catalogueWidget, &CatalogueBrowserWidget::packageInstalled, this, [this](const QString &) { m_packagesChanged = true; });
+    connect(catalogueWidget, &CatalogueBrowserWidget::packageRolledBack, this, [this](const QString &) { m_packagesChanged = true; });
+    addPage(catalogueWidget, QStringLiteral("Provider catalogue"));
 
     auto *health = new QWidget(this);
     auto *healthLayout = new QVBoxLayout(health);

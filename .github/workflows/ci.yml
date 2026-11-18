@@ -198,7 +198,7 @@ jobs:
           [[ "$ARCHIVE_VER" == *"0.1.1"* ]] || { echo "Expected 0.1.1 in archive --version, got: $ARCHIVE_VER" >&2; exit 1; }
 
           # Also verify version-stamped release source tarball (unsubstituted export-subst, VERSION=0.1.2)
-          rm -rf dist/archive-check-build
+          sudo rm -rf dist/archive-check-build
           cp cmake/KLookupArchiveVersion.cmake dist/archive-check-src/cmake/KLookupArchiveVersion.cmake
           printf '0.1.2\n' > dist/archive-check-src/VERSION
           ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF
@@ -208,14 +208,14 @@ jobs:
           [[ "$STAMPED_VER" == *"0.1.2"* ]] || { echo "Expected 0.1.2 in stamped --version, got: $STAMPED_VER" >&2; exit 1; }
 
           # Also verify Gentoo ebuild -DKLOOKUP_VERSION=${PV} override
-          rm -rf dist/archive-check-build
+          sudo rm -rf dist/archive-check-build
           ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF -DKLOOKUP_VERSION=0.1.3
           ./.jules/run.sh cmake --build /workspace/dist/archive-check-build --target klookup --parallel
           EBUILD_VER="$(./.jules/run.sh /workspace/dist/archive-check-build/src/klookup --version)"
           echo "Gentoo override klookup --version: $EBUILD_VER"
           [[ "$EBUILD_VER" == *"0.1.3"* ]] || { echo "Expected 0.1.3 in override --version, got: $EBUILD_VER" >&2; exit 1; }
 
-          rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
+          sudo rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
       - name: Configure ASan/UBSan build
         run: |
           set -euo pipefail

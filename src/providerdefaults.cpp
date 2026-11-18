@@ -6,7 +6,7 @@
 
 bool ProviderDefaults::enabled(const QString &id)
 {
-    return id != QLatin1String("cheapshark") && id != QLatin1String("duckduckgo");
+    return id != QLatin1String("cheapshark") && id != QLatin1String("duckduckgo") && id != QLatin1String("localdocs");
 }
 
 bool ProviderDefaults::enabled(const KConfigGroup &settings, const QString &id)
@@ -20,5 +20,7 @@ QString ProviderDefaults::reason(const QString &id)
         return i18n("US-dollar PC-game deals; enable to include this source in searches.");
     if (id == QLatin1String("duckduckgo"))
         return i18n("DuckDuckGo Instant Answer API (encyclopedic abstracts, definitions, and related topics; not full web search). Enable to include this source in searches.");
+    if (id == QLatin1String("localdocs"))
+        return i18n("Offline local documentation directories (.md, .html, .txt); configure scan roots and enable.");
     return {};
 }

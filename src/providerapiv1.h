@@ -204,6 +204,7 @@ public:
     AuthenticationDescriptorV2 authenticationDescriptorV2() const override { return ::authenticationDescriptorV2(static_cast<QObject *>(m_v1)); }
     void search(const QString &query) override;
     SearchProvider *clone(QObject *parent = nullptr) const override;
+    void setCredentials(const QString &username, const QString &password) override;
 
     // SearchProviderContinuation overrides
     void requestPage(const QString &query, const QString &token, quint64 requestId) override;
@@ -225,6 +226,8 @@ private:
     ProviderV1 *m_v1 = nullptr;
     Factory m_factory;
     bool m_ownsV1 = false;
+    QString m_credentialUsername;
+    QString m_credentialPassword;
     quint64 m_searchCounter = 0;
     quint64 m_activeSearchId = 0;
     QHash<quint64, QString> m_activePageRequests;

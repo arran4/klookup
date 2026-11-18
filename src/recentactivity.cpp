@@ -2,6 +2,7 @@
 #include "clipboardinput.h"
 #include "sourceurl.h"
 #include <KConfigGroup>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QTimer>
@@ -65,6 +66,21 @@ RecentActivity::RecentActivity(KSharedConfig::Ptr config, QObject *parent) : QOb
         item.url = QUrl(object.value(QStringLiteral("url")).toString(), QUrl::StrictMode);
         item.timestamp = QDateTime::fromString(object.value(QStringLiteral("timestamp")).toString(), Qt::ISODateWithMs);
         item.clipboard = object.value(QStringLiteral("clipboard")).toBool();
+        item.count = object.value(QStringLiteral("count")).toInt(1);
+        if (item.count < 1)
+            item.count = 1;
+        const auto jsonTimestamps = object.value(QStringLiteral("timestamps")).toArray();
+        for (const auto &tsVal : jsonTimestamps) {
+            const auto dt = QDateTime::fromString(tsVal.toString(), Qt::ISODateWithMs);
+            if (dt.isValid() && dt <= QDateTime::currentDateTimeUtc().addSecs(300)) {
+                item.timestamps.append(dt);
+                if (item.timestamps.size() >= 5)
+                    break;
+            }
+        }
+        if (item.timestamps.isEmpty() && item.timestamp.isValid()) {
+            item.timestamps.append(item.timestamp);
+        }
         if ((!item.clipboard || m_persistClipboard) && permitted(item))
             m_items.append(item);
     }
@@ -112,15 +128,25 @@ void RecentActivity::append(RecentItem item)
     for (int i = 0; i < m_items.size(); ++i) {
         const auto &old = m_items.at(i);
         const bool same = item.kind == old.kind && item.clipboard == old.clipboard && item.source == old.source &&
-                          (item.kind == RecentItem::Kind::Viewed ? (item.resultId == old.resultId && item.url == old.url &&
-                                                                    (!item.resultId.isEmpty() || item.title == old.title))
-                                                                 : item.query == old.query);
+                          (item.kind == RecentItem::Kind::Viewed
+                               ? (item.resultId == old.resultId && item.url == old.url &&
+                                  (!item.resultId.isEmpty() || item.title == old.title))
+                               : (item.query.simplified().compare(old.query.simplified(), Qt::CaseInsensitive) == 0));
         if (same) {
             item.key = old.key;
+            item.count = old.count + 1;
+            item.timestamps = old.timestamps;
+            item.timestamps.prepend(item.timestamp);
+            while (item.timestamps.size() > 5)
+                item.timestamps.removeLast();
             m_items.removeAt(i);
             break;
         }
     }
+    if (item.count < 1)
+        item.count = 1;
+    if (item.timestamps.isEmpty())
+        item.timestamps.append(item.timestamp);
     m_items.prepend(item);
     while (m_items.size() > 50)
         m_items.removeLast();
@@ -186,6 +212,10 @@ void RecentActivity::save()
     for (const auto &item : m_items) {
         if (item.clipboard && !m_persistClipboard)
             continue;
+        QJsonArray jsonTimestamps;
+        for (const auto &dt : item.timestamps) {
+            jsonTimestamps.append(dt.toString(Qt::ISODateWithMs));
+        }
         const QJsonObject object{{QStringLiteral("key"), item.key},
                                  {QStringLiteral("kind"), int(item.kind)},
                                  {QStringLiteral("title"), item.title},
@@ -195,7 +225,9 @@ void RecentActivity::save()
                                  {QStringLiteral("resultId"), item.resultId},
                                  {QStringLiteral("url"), item.url.toString(QUrl::FullyEncoded)},
                                  {QStringLiteral("timestamp"), item.timestamp.toString(Qt::ISODateWithMs)},
-                                 {QStringLiteral("clipboard"), item.clipboard}};
+                                 {QStringLiteral("clipboard"), item.clipboard},
+                                 {QStringLiteral("count"), item.count},
+                                 {QStringLiteral("timestamps"), jsonTimestamps}};
         saved.append(QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)));
     }
     KConfigGroup group(m_config, QStringLiteral("RecentActivity"));

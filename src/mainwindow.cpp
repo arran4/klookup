@@ -38,6 +38,7 @@ Q_LOGGING_CATEGORY(KLOOKUP_PLUGINS, "klookup.plugins", QtWarningMsg)
 #include <QSystemTrayIcon>
 #include <QMenu>
 #include <QCloseEvent>
+#include <QLabel>
 #include <QEvent>
 #include <QClipboard>
 #include <QApplication>
@@ -177,6 +178,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     setXMLFile(QStringLiteral("klookupui.rc"));
     setupGUI();
+    actionCollection()->readSettings();
     loadSettings();
     syncSelectionObserver();
     m_clipboardReady = true;
@@ -200,12 +202,17 @@ void MainWindow::setupActions()
     KStandardAction::preferences(this, &MainWindow::showSettingsDialog, actionCollection());
     KStandardAction::keyBindings(this, &MainWindow::configureShortcuts, actionCollection());
     auto *show = actionCollection()->addAction(QStringLiteral("show_search"));
-    show->setText(QStringLiteral("Show/focus KLookup search"));
+    show->setText(i18n("Show/focus KLookup search"));
     show->setIcon(QIcon::fromTheme(QStringLiteral("edit-find")));
+    show->setProperty("klookupSuggestedGlobalShortcut", QStringLiteral("Meta+Alt+K"));
+    show->setToolTip(i18n("Show or focus KLookup search (suggested global shortcut: Meta+Alt+K; unassigned by default)"));
+    show->setWhatsThis(i18n("Opt-in global shortcut. Assign a key such as Meta+Alt+K in Configure Shortcuts to claim it."));
     auto *clipboard = actionCollection()->addAction(QStringLiteral("search_clipboard"));
-    clipboard->setText(QStringLiteral("Search clipboard now"));
+    clipboard->setText(i18n("Search clipboard now"));
     clipboard->setIcon(QIcon::fromTheme(QStringLiteral("edit-paste")));
-    clipboard->setToolTip(QStringLiteral("Explicitly look up current plain clipboard text, including URLs"));
+    clipboard->setProperty("klookupSuggestedGlobalShortcut", QStringLiteral("Meta+Alt+C"));
+    clipboard->setToolTip(i18n("Explicitly look up current plain clipboard text, including URLs (suggested global shortcut: Meta+Alt+C; unassigned by default)"));
+    clipboard->setWhatsThis(i18n("Opt-in global shortcut. Assign a key such as Meta+Alt+C in Configure Shortcuts to claim it."));
     auto *lookupSelection = actionCollection()->addAction(QStringLiteral("lookup_selected_text"));
     lookupSelection->setText(QStringLiteral("Look up selected text"));
     lookupSelection->setIcon(QIcon::fromTheme(QStringLiteral("edit-select-all")));
@@ -256,6 +263,23 @@ void MainWindow::setupActions()
         if (m_tabWidget->count() > 1)
             m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() + m_tabWidget->count() - 1) % m_tabWidget->count());
     });
+
+    auto *popOutTab = actionCollection()->addAction(QStringLiteral("pop_out_search_tab"));
+    popOutTab->setText(i18n("Pop Out Search Tab"));
+    popOutTab->setIcon(QIcon::fromTheme(QStringLiteral("window-new")));
+    actionCollection()->setDefaultShortcuts(popOutTab, {
+        QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Return),
+        QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Enter)
+    });
+    popOutTab->setShortcutContext(Qt::WindowShortcut);
+    QWidget::addAction(popOutTab);
+    popOutTab->setEnabled(m_tabWidget->currentIndex() > 0);
+    connect(m_tabWidget, &QTabWidget::currentChanged, popOutTab,
+            [popOutTab](int index) { popOutTab->setEnabled(index > 0); });
+    connect(popOutTab, &QAction::triggered, this, [this] {
+        if (auto *tab = qobject_cast<SearchTab *>(m_tabWidget->currentWidget()))
+            popOutSearchTab(tab);
+    });
     KStandardAction::quit(qApp, &QCoreApplication::quit, actionCollection());
 }
 
@@ -301,13 +325,20 @@ void MainWindow::setupTrayIcon()
 void MainWindow::configureShortcuts()
 {
     m_globalShortcuts->refresh();
-    if (m_globalShortcuts->status() == GlobalShortcuts::Status::Unavailable) {
-        QMessageBox::information(this, QStringLiteral("Keyboard Shortcuts"),
-            QStringLiteral("KDE global shortcuts are unavailable in this session. KLookup can still be opened from its launcher or tray."));
-        return;
-    }
-    KShortcutsDialog dialog(KShortcutsEditor::GlobalAction, KShortcutsEditor::LetterShortcutsDisallowed, this);
+    const bool globalAvailable = m_globalShortcuts->status() != GlobalShortcuts::Status::Unavailable;
+    KShortcutsDialog dialog(globalAvailable ? KShortcutsEditor::AllActions
+                                            : (KShortcutsEditor::WidgetAction | KShortcutsEditor::WindowAction | KShortcutsEditor::ApplicationAction),
+                            KShortcutsEditor::LetterShortcutsDisallowed, this);
     dialog.addCollection(actionCollection(), QStringLiteral("KLookup"));
+    if (auto *layout = qobject_cast<QVBoxLayout *>(dialog.layout())) {
+        auto *hint = new QLabel(&dialog);
+        hint->setObjectName(QStringLiteral("globalShortcutSuggestions"));
+        hint->setWordWrap(true);
+        hint->setText(globalAvailable
+            ? i18n("Global shortcuts are opt-in and unassigned by default. Suggested global keys: Show/focus KLookup search (Meta+Alt+K), Search clipboard now (Meta+Alt+C).")
+            : i18n("KDE global shortcuts are unavailable in this session; window-local shortcuts remain configurable. Suggested global keys when available: Meta+Alt+K (focus search), Meta+Alt+C (search clipboard)."));
+        layout->insertWidget(0, hint);
+    }
     dialog.configure(true);
 }
 
@@ -344,7 +375,14 @@ void MainWindow::searchClipboardNow()
 
 void MainWindow::showSettingsDialog()
 {
+    openProviderSettings({}, {});
+}
+
+void MainWindow::openProviderSettings(const QString &providerId, const QString &target)
+{
     SettingsDialog dialog(m_providers, this, m_authManager, m_packages);
+    if (!providerId.isEmpty() || !target.isEmpty())
+        dialog.focusProvider(providerId, target);
     connect(&dialog, &SettingsDialog::settingsApplied, m_recent, &RecentActivity::reloadPolicy);
     bool reloadPackages = false;
     QStringList changedPackages;
@@ -830,6 +868,7 @@ void MainWindow::connectSearchTab(SearchTab *tab)
 {
     connect(tab, &SearchTab::resultViewed, m_recent, &RecentActivity::recordViewed);
     connect(tab, &SearchTab::popOutRequested, this, [this, tab] { popOutSearchTab(tab); });
+    connect(tab, &SearchTab::settingsRequested, this, &MainWindow::openProviderSettings);
     connect(tab, &SearchTab::detailWindowCreated, this, [this](ResultDetailWindow *win) {
         if (win) {
             m_detailWindows.append(win);
@@ -1022,13 +1061,21 @@ ProviderApiV1::ProviderV1ToLegacyAdapter *MainWindow::createScriptedAdapter(Prov
 {
     pkg.setEnabled(true); // This instance is authorized for a deliberately selected search.
     auto namFactory = m_namFactory;
-    ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
+    CredentialStore *store = m_authManager ? m_authManager->credentialStore() : nullptr;
+    ProviderApiV1::ProviderV1ToLegacyAdapter::Factory factory = [pkg, namFactory, store, window = QPointer<MainWindow>(this)](QObject *parent) -> ProviderApiV1::ProviderV1 * {
         QNetworkAccessManager *nam = namFactory ? namFactory(parent) : nullptr;
         auto *hostService = new ProviderHost::ProviderHostService(pkg, parent, nam);
+        CredentialStore *actualStore = store;
+        if (!actualStore && window && window->authManager()) {
+            actualStore = window->authManager()->credentialStore();
+        }
+        if (actualStore) {
+            hostService->setCredentialStore(actualStore);
+        }
         auto *provider = new JsProvider(pkg, parent, hostService);
         hostService->setParent(provider);
         if (window) connect(window, &MainWindow::packageReloaded, provider, [provider, pkg](const QString &id) {
-        if (id == pkg.id()) provider->invalidate();
+            if (id == pkg.id()) provider->invalidate();
         });
         if (nam && nam->parent() == parent) nam->setParent(hostService);
         return provider;

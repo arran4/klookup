@@ -35,6 +35,7 @@ public:
 
     AutostartManager *autostartManager() const;
     void setAutostartManager(std::unique_ptr<AutostartManager> manager);
+    bool focusProvider(const QString &providerId, const QString &target = {});
 
 signals:
     void settingsApplied();
@@ -92,6 +93,9 @@ private:
     QPushButton *m_disconnectAuth;
     QPushButton *m_cancelAuth;
     QListWidget *m_listWidget;
+    KPageWidgetItem *m_providersPage = nullptr;
+    KPageWidgetItem *m_packagesPage = nullptr;
+    KPageWidgetItem *m_eligibilityPage = nullptr;
     QMap<SearchProvider *, QWidget *> m_providerOptions;
 
     QCheckBox *m_minimizeToTrayCheck;

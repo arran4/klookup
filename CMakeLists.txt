@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
-project(klookup VERSION 0.0.2)
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupVersion.cmake")
+
+project(klookup VERSION ${KLOOKUP_NUMERIC_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

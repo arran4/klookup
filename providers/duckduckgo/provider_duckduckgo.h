@@ -17,8 +17,10 @@ public:
 
     QString name() const override;
     QString id() const override;
+    QString description() const;
     void search(const QString &query) override;
     SearchProvider* clone(QObject *parent = nullptr) const override;
+    static QList<SearchResult> parseResponse(const QByteArray &data, QString *errorOut = nullptr);
 
 private slots:
     void onReplyFinished(QNetworkReply *reply);

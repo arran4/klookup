@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "isolatedguitest.h"
 #include "languagepreferences.h"
+#include "resultcontent.h"
 #include "searchtab.h"
 #include <KConfigGroup>
 #include <KSharedConfig>
@@ -67,6 +68,55 @@ private slots:
         auto *list = dialog->findChild<QTreeWidget *>(QStringLiteral("localizedTitleList")); QVERIFY(list);
         QCOMPARE(list->topLevelItemCount(), 2); QCOMPARE(list->topLevelItem(1)->text(1), QStringLiteral("<img src=file:///secret>原題"));
         dialog->close(); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+    void systemLanguageSuggestionsAndCompactSummary() {
+        const QStringList auSuggestions = Languages::systemSuggestions(QLocale(QStringLiteral("en_AU")));
+        QVERIFY(!auSuggestions.isEmpty());
+        QCOMPARE(auSuggestions.first(), QStringLiteral("en-AU"));
+
+        KConfigGroup settings(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Languages"));
+        settings.deleteGroup();
+        settings.writeEntry(QStringLiteral("Preferred"), QStringList{QStringLiteral("ko")});
+        settings.sync();
+
+        LanguagePreferencesWidget widget;
+        widget.setUiLocale(QLocale(QStringLiteral("en_AU")));
+        auto *list = widget.findChild<QListWidget *>(QStringLiteral("preferredLanguages"));
+        QVERIFY(list);
+        // Saved user preference 'ko' is NOT overwritten by locale change
+        QCOMPARE(list->count(), 1);
+        QCOMPARE(list->item(0)->data(Qt::UserRole).toString(), QStringLiteral("ko"));
+
+        auto *auChip = widget.findChild<QPushButton *>(QStringLiteral("suggestedLanguage_en-AU"));
+        QVERIFY(auChip);
+        QVERIFY(auChip->text().contains(QStringLiteral("en-AU")));
+        auChip->click();
+        QCOMPARE(list->count(), 2);
+        QCOMPARE(list->item(1)->data(Qt::UserRole).toString(), QStringLiteral("en-AU"));
+
+        // Compact summary & HTML rendering
+        const QList<Languages::Title> titles{
+            {QStringLiteral("en"), QStringLiteral("Preferred Title")},
+            {QStringLiteral("en-US"), QStringLiteral("Preferred Title")}, // duplicate text omitted
+            {QStringLiteral("ja"), QStringLiteral("原題"), true},
+            {QStringLiteral("fr"), QStringLiteral("Titre français")},
+            {QStringLiteral("de"), QStringLiteral("Deutscher Titel")}
+        };
+        const auto summary = Languages::summarizeTitles(titles, {QStringLiteral("en")}, QStringLiteral("ja"), QLocale(QStringLiteral("en_US")));
+        QCOMPARE(summary.preferred.text, QStringLiteral("Preferred Title"));
+        QCOMPARE(summary.original.text, QStringLiteral("原題"));
+        QCOMPARE(summary.omittedCount, 2);
+
+        SearchResult res;
+        res.id = QStringLiteral("m1");
+        res.title = QStringLiteral("Preferred Title");
+        res.additionalData.insert(QStringLiteral("localizedTitles"), Languages::toData(titles));
+        res.additionalData.insert(QStringLiteral("originalLanguage"), QStringLiteral("ja"));
+        const QString html = Content::renderResultHtml(res, {}, QStringLiteral("MangaBaka"));
+        QVERIFY(html.contains(QStringLiteral("Original · ja")));
+        QVERIFY(html.contains(QStringLiteral("原題")));
+        QVERIFY(html.contains(QStringLiteral("klookup://more-titles")));
+        QVERIFY(!html.contains(QStringLiteral("Deutscher Titel")));
     }
 };
 int main(int argc, char **argv) { return runIsolatedGuiTest<LanguagesTest>(argc, argv); }

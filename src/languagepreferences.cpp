@@ -96,6 +96,27 @@ QStringList Languages::defaults(const QLocale &uiLocale)
     const auto tag = canonicalTag(uiLocale.bcp47Name());
     return tag.isEmpty() || tag.section(QLatin1Char('-'), 0, 0) == QLatin1String("en") ? QStringList{QStringLiteral("en")} : normalized({tag, QStringLiteral("en")});
 }
+QStringList Languages::systemSuggestions(const QLocale &uiLocale)
+{
+    QStringList raw;
+    if (uiLocale.language() != QLocale::C) {
+        const QString primary = canonicalTag(uiLocale.bcp47Name());
+        if (!primary.isEmpty())
+            raw.append(primary);
+    }
+    for (const QString &uiTag : uiLocale.uiLanguages()) {
+        if (uiTag == QLatin1String("C") || uiTag == QLatin1String("POSIX"))
+            continue;
+        const QString canonical = canonicalTag(uiTag);
+        if (!canonical.isEmpty() && !raw.contains(canonical))
+            raw.append(canonical);
+        if (raw.size() >= 8)
+            break;
+    }
+    if (raw.isEmpty())
+        raw.append(QStringLiteral("en"));
+    return normalized(raw);
+}
 QStringList Languages::read(const KConfigGroup &settings)
 {
     return settings.hasKey(QStringLiteral("Preferred")) ? normalized(settings.readEntry(QStringLiteral("Preferred"), QStringList())) : defaults();
@@ -126,6 +147,36 @@ Languages::Selection Languages::select(const QList<Title> &titles, const QString
     if (result.preferred.text.isEmpty()) result.preferred = !result.original.text.isEmpty() ? result.original : available.value(0);
     for (const auto &title : available) if (title.text != result.preferred.text) result.alternatives.append(title);
     return result;
+}
+Languages::Summary Languages::summarizeTitles(const QList<Title> &titles, const QStringList &preferences, const QString &originalLanguage, const QLocale &uiLocale)
+{
+    Summary summary;
+    const Selection selected = select(titles, preferences, originalLanguage);
+    summary.preferred = selected.preferred;
+    summary.original = selected.original;
+
+    QSet<QString> shownTexts;
+    if (!summary.preferred.text.trimmed().isEmpty())
+        shownTexts.insert(summary.preferred.text.trimmed());
+    if (!summary.original.text.trimmed().isEmpty())
+        shownTexts.insert(summary.original.text.trimmed());
+
+    const QStringList uiPrefs = systemSuggestions(uiLocale);
+    const Selection uiSelected = select(titles, uiPrefs, originalLanguage);
+    if (!uiSelected.preferred.text.trimmed().isEmpty() && !shownTexts.contains(uiSelected.preferred.text.trimmed())) {
+        summary.uiLocaleTitle = uiSelected.preferred;
+        shownTexts.insert(summary.uiLocaleTitle.text.trimmed());
+    }
+
+    QSet<QString> seenOther;
+    for (const auto &alt : selected.alternatives) {
+        const QString key = alt.text.trimmed();
+        if (!key.isEmpty() && !shownTexts.contains(key) && !seenOther.contains(key)) {
+            seenOther.insert(key);
+            ++summary.omittedCount;
+        }
+    }
+    return summary;
 }
 
 LanguagePreferencesWidget::LanguagePreferencesWidget(QWidget *parent) : QWidget(parent), m_list(new QListWidget(this)), m_add(new QLineEdit(this))
@@ -159,9 +210,53 @@ LanguagePreferencesWidget::LanguagePreferencesWidget(QWidget *parent) : QWidget(
             setCodes(values); m_list->setCurrentRow(qMin(target, int(values.size()) - 1)); m_inherit = false;
         });
     }
+    auto *suggestionsLabel = new QLabel(i18n("Suggested system languages (click to add):"), this);
+    suggestionsLabel->setTextFormat(Qt::PlainText);
+    layout->addWidget(suggestionsLabel);
+    m_suggestionsLayout = new QHBoxLayout;
+    m_suggestionsLayout->setContentsMargins(0, 0, 0, 0);
+    m_suggestionsLayout->setSpacing(6);
+    layout->addLayout(m_suggestionsLayout);
+    rebuildSuggestions();
+
     layout->addLayout(buttons);
     const KConfigGroup settings(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Languages"));
     m_inherit = !settings.hasKey(QStringLiteral("Preferred")); setCodes(Languages::read(settings));
+}
+
+void LanguagePreferencesWidget::setUiLocale(const QLocale &uiLocale)
+{
+    m_uiLocale = uiLocale;
+    rebuildSuggestions();
+}
+
+void LanguagePreferencesWidget::rebuildSuggestions()
+{
+    if (!m_suggestionsLayout)
+        return;
+    while (QLayoutItem *item = m_suggestionsLayout->takeAt(0)) {
+        if (QWidget *w = item->widget())
+            w->deleteLater();
+        delete item;
+    }
+    for (const QString &tag : Languages::systemSuggestions(m_uiLocale)) {
+        auto *chip = new QPushButton(Languages::label(tag), this);
+        chip->setObjectName(QStringLiteral("suggestedLanguage_") + tag);
+        chip->setFlat(true);
+        chip->setCursor(Qt::PointingHandCursor);
+        chip->setAccessibleName(i18n("Add suggested language %1", Languages::label(tag)));
+        chip->setToolTip(i18n("Add %1 (%2) to preferred languages", Languages::label(tag), tag));
+        connect(chip, &QPushButton::clicked, this, [this, tag] {
+            if (codes().contains(tag) || m_list->count() >= 16)
+                return;
+            auto updated = codes();
+            updated.append(tag);
+            setCodes(updated);
+            m_inherit = false;
+        });
+        m_suggestionsLayout->addWidget(chip);
+    }
+    m_suggestionsLayout->addStretch(1);
 }
 void LanguagePreferencesWidget::setCodes(const QStringList &codes)
 {

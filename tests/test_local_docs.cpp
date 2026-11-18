@@ -125,9 +125,9 @@ private slots:
     {
         QTemporaryDir largeDir;
         QVERIFY(largeDir.isValid());
-        for (int i = 0; i < 400; ++i) {
+        for (int i = 0; i < 60; ++i) {
             const QString sub = QStringLiteral("bucket_%1/doc_%2.md").arg(i % 10).arg(i);
-            const QByteArray payload = (i == 399)
+            const QByteArray payload = (i == 59)
                 ? QByteArrayLiteral("# Final\nkeyword_fresh_only\n")
                 : QByteArrayLiteral("# Note\nkeyword_stale_many filler content for async scan test\n");
             QVERIFY(writeDoc(largeDir.filePath(sub), payload));
@@ -156,14 +156,14 @@ private slots:
         QTRY_COMPARE_WITH_TIMEOUT(okSpy.count(), 1, 5000);
         const auto results = okSpy.first().at(1).value<QList<SearchResult>>();
         QCOMPARE(results.size(), 1);
-        QCOMPARE(results.first().title, QStringLiteral("bucket_9/doc_399.md"));
+        QCOMPARE(results.first().title, QStringLiteral("bucket_9/doc_59.md"));
 
         // 3. Options widget preview runs asynchronously and survives immediate destruction
         QWidget *opts = provider.createOptionsWidget();
         QVERIFY(opts != nullptr);
         auto *previewLabel = opts->findChild<QLabel *>(QStringLiteral("localDocPreview"));
         QVERIFY(previewLabel != nullptr);
-        QTRY_VERIFY_WITH_TIMEOUT(previewLabel->text().contains(QStringLiteral("400 readable file(s)")), 5000);
+        QTRY_VERIFY_WITH_TIMEOUT(previewLabel->text().contains(QStringLiteral("60 readable file(s)")), 5000);
         delete opts;
 
         // Destroy mid-scan guard

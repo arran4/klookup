@@ -32,10 +32,13 @@ public:
     void cancel();
 
 private:
+    struct GuiSlot {
+        ProviderLocalDocs *ptr = nullptr;
+    };
     QList<LocalScanRoot> m_roots;
     bool m_hasCustomRoots = false;
     quint64 m_requestSeq = 0;
-    quint64 m_registryId = 0;
+    std::shared_ptr<GuiSlot> m_guiSlot;
     std::shared_ptr<std::atomic<quint64>> m_latestSeq;
     std::shared_ptr<std::atomic_bool> m_activeCancel;
 };

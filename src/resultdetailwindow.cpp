@@ -8,12 +8,14 @@
 #include "sourcelink.h"
 
 #include <KConfigGroup>
+#include <KLocalizedString>
 #include <KSharedConfig>
 #include <QDesktopServices>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QShortcut>
 #include <QSplitter>
@@ -154,6 +156,28 @@ void ResultDetailWindow::setupUi(const QString &providerName, const ResultMetada
     m_sourceLink->setResult(m_result);
     bottomLayout->addWidget(m_sourceLink);
     bottomLayout->addStretch();
+
+    const auto rawSources = Content::extractRawSources(m_result, metadata);
+    if (!rawSources.isEmpty()) {
+        auto *rawButton = new QPushButton(i18n("Raw Data…"), central);
+        rawButton->setObjectName(QStringLiteral("detailRawDataButton"));
+        rawButton->setFlat(true);
+        if (rawSources.size() == 1) {
+            connect(rawButton, &QPushButton::clicked, this, [this, src = rawSources.first()] {
+                Content::showRawSourceDialog(src, this);
+            });
+        } else {
+            auto *rawMenu = new QMenu(rawButton);
+            rawMenu->setObjectName(QStringLiteral("detailRawDataMenu"));
+            for (const auto &src : rawSources) {
+                auto *act = rawMenu->addAction(src.label);
+                act->setObjectName(QStringLiteral("detailRawSource-") + src.id);
+                connect(act, &QAction::triggered, this, [this, src] { Content::showRawSourceDialog(src, this); });
+            }
+            rawButton->setMenu(rawMenu);
+        }
+        bottomLayout->addWidget(rawButton);
+    }
 
     auto *closeButton = new QPushButton(QStringLiteral("Close"), central);
     connect(closeButton, &QPushButton::clicked, this, &QWidget::close);

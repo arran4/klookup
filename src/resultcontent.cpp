@@ -10,7 +10,19 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KSharedConfig>
+#include <QClipboard>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFont>
+#include <QGuiApplication>
+#include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextCursor>
@@ -18,6 +30,7 @@
 #include <QTextFragment>
 #include <QTextList>
 #include <QTextTable>
+#include <QVBoxLayout>
 
 namespace
 {
@@ -438,6 +451,56 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
     }
 
     if (!result.additionalData.isEmpty()) {
+        QStringList facts;
+        auto addFact = [&](const QString &label, const QStringList &keys) {
+            for (const QString &k : keys) {
+                const QVariant v = result.additionalData.value(k);
+                if (!v.isValid() || v.isNull())
+                    continue;
+                const QString s = v.toString().trimmed();
+                if (!s.isEmpty() && s.compare(QLatin1String("null"), Qt::CaseInsensitive) != 0 &&
+                    s.compare(QLatin1String("unknown"), Qt::CaseInsensitive) != 0) {
+                    facts.append(QStringLiteral("<b>%1:</b> %2").arg(label.toHtmlEscaped(), s.toHtmlEscaped()));
+                    return;
+                }
+            }
+        };
+        addFact(i18n("Status"), {QStringLiteral("status"), QStringLiteral("Status")});
+        addFact(i18n("Year"), {QStringLiteral("year"), QStringLiteral("Year"), QStringLiteral("releaseYear")});
+        addFact(i18n("Rating"), {QStringLiteral("rating"), QStringLiteral("Rating"), QStringLiteral("score")});
+        addFact(i18n("Language"), {QStringLiteral("language"), QStringLiteral("Original title language")});
+        addFact(i18n("Source"), {QStringLiteral("source"), QStringLiteral("topicGroup")});
+        if (!facts.isEmpty()) {
+            html += QStringLiteral("<p>%1</p>").arg(facts.join(QStringLiteral(" &nbsp;|&nbsp; ")));
+        }
+
+        QStringList tags;
+        for (const QString &tagKey : {QStringLiteral("genres"), QStringLiteral("tags"), QStringLiteral("topics"), QStringLiteral("categories")}) {
+            const QVariant v = result.additionalData.value(tagKey);
+            if (!v.isValid())
+                continue;
+            const QStringList list = v.toStringList();
+            for (const QString &t : list) {
+                const QString trimmed = t.trimmed();
+                if (!trimmed.isEmpty() && !tags.contains(trimmed)) {
+                    tags.append(trimmed);
+                    if (tags.size() >= 12)
+                        break;
+                }
+            }
+            if (tags.size() >= 12)
+                break;
+        }
+        if (!tags.isEmpty()) {
+            QStringList escapedTags;
+            for (const QString &t : tags)
+                escapedTags.append(QStringLiteral("<code>%1</code>").arg(t.toHtmlEscaped()));
+            html += QStringLiteral("<p><b>%1:</b> %2</p>")
+                        .arg(i18n("Tags").toHtmlEscaped(), escapedTags.join(QStringLiteral(" ")));
+        }
+    }
+
+    if (options.includeRawAdditionalInfo && !result.additionalData.isEmpty()) {
         html += QStringLiteral("<h3>Additional Info</h3><ul>");
         constexpr int kMaxTreeDepth = 10;
         constexpr int kMaxTreeNodes = 500;
@@ -479,4 +542,193 @@ QString Content::renderResultHtml(const SearchResult &result, const ResultConten
     }
 
     return html;
+}
+
+namespace
+{
+bool isSensitiveRawKey(const QString &key)
+{
+    const QString lower = key.toLower();
+    return lower.contains(QLatin1String("token")) || lower.contains(QLatin1String("secret")) ||
+           lower.contains(QLatin1String("password")) || lower.contains(QLatin1String("authorization")) ||
+           lower.contains(QLatin1String("api_key")) || lower.contains(QLatin1String("apikey")) ||
+           lower.contains(QLatin1String("cookie"));
+}
+
+QVariant redactVariant(const QVariant &value, int depth = 0)
+{
+    if (depth > 8)
+        return QStringLiteral("[Max depth reached]");
+    if (value.typeId() == QMetaType::QVariantMap) {
+        const QVariantMap in = value.toMap();
+        QVariantMap out;
+        for (auto it = in.cbegin(); it != in.cend(); ++it) {
+            out.insert(it.key(), isSensitiveRawKey(it.key()) ? QVariant(QStringLiteral("[REDACTED]"))
+                                                              : redactVariant(it.value(), depth + 1));
+        }
+        return out;
+    }
+    if (value.typeId() == QMetaType::QVariantList) {
+        const QVariantList in = value.toList();
+        QVariantList out;
+        out.reserve(qMin(in.size(), 256));
+        for (int i = 0; i < in.size() && i < 256; ++i)
+            out.append(redactVariant(in.at(i), depth + 1));
+        return out;
+    }
+    return value;
+}
+
+QString boundRawText(QString text)
+{
+    constexpr int kMaxRawChars = 262144;
+    if (text.size() > kMaxRawChars) {
+        text.truncate(kMaxRawChars);
+        text.append(QStringLiteral("\n\n[Truncated at 256 KiB display limit]"));
+    }
+    return text;
+}
+} // namespace
+
+QList<Content::RawSourceDescriptor> Content::extractRawSources(const SearchResult &result)
+{
+    return extractRawSources(result, ResultMetadata{});
+}
+
+QList<Content::RawSourceDescriptor> Content::extractRawSources(const SearchResult &result, const ResultMetadata &metadata)
+{
+    QList<RawSourceDescriptor> sources;
+    constexpr int kMaxSources = 16;
+
+    const QVariant explicitRaw = result.additionalData.value(QStringLiteral("rawSources"));
+    if (explicitRaw.typeId() == QMetaType::QVariantList) {
+        for (const QVariant &entryVar : explicitRaw.toList()) {
+            if (sources.size() >= kMaxSources)
+                break;
+            const QVariantMap map = entryVar.toMap();
+            const QString id = map.value(QStringLiteral("id")).toString().trimmed();
+            const QString label = map.value(QStringLiteral("label")).toString().trimmed();
+            const QString body = map.value(QStringLiteral("content")).toString();
+            if (id.isEmpty() || label.isEmpty() || body.isEmpty())
+                continue;
+            RawSourceDescriptor desc;
+            desc.id = id;
+            desc.label = label;
+            desc.mimeType = map.value(QStringLiteral("mimeType"), QStringLiteral("text/plain")).toString();
+            desc.provenance = map.value(QStringLiteral("provenance")).toString();
+            if (desc.mimeType == QLatin1String("application/json")) {
+                const QJsonDocument doc = QJsonDocument::fromJson(body.toUtf8());
+                if (!doc.isNull()) {
+                    const QVariant redacted = redactVariant(doc.toVariant());
+                    desc.content = boundRawText(QString::fromUtf8(QJsonDocument::fromVariant(redacted).toJson(QJsonDocument::Indented)));
+                } else {
+                    desc.content = boundRawText(body);
+                }
+            } else {
+                desc.content = boundRawText(body);
+            }
+            sources.append(desc);
+        }
+    }
+
+    QVariantMap filteredAdditional = result.additionalData;
+    filteredAdditional.remove(QStringLiteral("rawSources"));
+    if (!filteredAdditional.isEmpty() && sources.size() < kMaxSources) {
+        const QVariant redacted = redactVariant(filteredAdditional);
+        const QByteArray jsonBytes = QJsonDocument::fromVariant(redacted).toJson(QJsonDocument::Indented);
+        if (!jsonBytes.isEmpty()) {
+            sources.append({QStringLiteral("additional_data"),
+                            i18n("Structured Fields (JSON)"),
+                            QStringLiteral("application/json"),
+                            i18n("Provider search result additionalData"),
+                            boundRawText(QString::fromUtf8(jsonBytes)),
+                            false});
+        }
+    }
+
+    if (!metadata.sections.isEmpty() && sources.size() < kMaxSources) {
+        QVariantList sectionsJson;
+        for (const auto &section : metadata.sections) {
+            QVariantList entries;
+            for (const auto &node : section.children) {
+                QStringList vals;
+                for (const auto &v : node.values)
+                    vals.append(v.text);
+                entries.append(QVariantMap{{QStringLiteral("label"), node.label}, {QStringLiteral("values"), QVariant(vals)}});
+            }
+            sectionsJson.append(QVariantMap{{QStringLiteral("title"), section.label}, {QStringLiteral("entries"), entries}});
+        }
+        const QByteArray metaBytes = QJsonDocument::fromVariant(redactVariant(sectionsJson)).toJson(QJsonDocument::Indented);
+        if (!metaBytes.isEmpty()) {
+            sources.append({QStringLiteral("structured_metadata"),
+                            i18n("Result Metadata (JSON)"),
+                            QStringLiteral("application/json"),
+                            i18n("Provider structured metadata sections"),
+                            boundRawText(QString::fromUtf8(metaBytes)),
+                            false});
+        }
+    }
+
+    return sources;
+}
+
+void Content::showRawSourceDialog(const RawSourceDescriptor &source, QWidget *parent)
+{
+    auto *dialog = new QDialog(parent);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setObjectName(QStringLiteral("rawDataDialog"));
+    dialog->setWindowTitle(i18n("Raw Data — %1", source.label));
+    dialog->resize(700, 480);
+
+    auto *layout = new QVBoxLayout(dialog);
+    if (!source.provenance.isEmpty() || !source.mimeType.isEmpty()) {
+        auto *info = new QLabel(i18n("Source: %1 (%2)",
+                                     source.provenance.isEmpty() ? source.id : source.provenance,
+                                     source.mimeType.isEmpty() ? QStringLiteral("text/plain") : source.mimeType),
+                                dialog);
+        info->setTextFormat(Qt::PlainText);
+        info->setWordWrap(true);
+        layout->addWidget(info);
+    }
+
+    auto *searchRow = new QHBoxLayout;
+    auto *findEdit = new QLineEdit(dialog);
+    findEdit->setObjectName(QStringLiteral("rawDataSearch"));
+    findEdit->setPlaceholderText(i18n("Find in raw data…"));
+    findEdit->setAccessibleName(i18n("Find in raw data"));
+    auto *findNext = new QPushButton(i18n("Find next"), dialog);
+    searchRow->addWidget(findEdit, 1);
+    searchRow->addWidget(findNext);
+    layout->addLayout(searchRow);
+
+    auto *editor = new QPlainTextEdit(dialog);
+    editor->setObjectName(QStringLiteral("rawDataText"));
+    editor->setAccessibleName(i18n("Raw provider source text"));
+    editor->setReadOnly(true);
+    editor->setPlainText(source.content);
+    layout->addWidget(editor, 1);
+
+    QObject::connect(findNext, &QPushButton::clicked, dialog, [editor, findEdit] {
+        const QString needle = findEdit->text();
+        if (!needle.isEmpty() && !editor->find(needle)) {
+            editor->moveCursor(QTextCursor::Start);
+            editor->find(needle);
+        }
+    });
+    QObject::connect(findEdit, &QLineEdit::returnPressed, findNext, &QPushButton::click);
+
+    auto *buttons = new QHBoxLayout;
+    auto *copyBtn = new QPushButton(i18n("Copy all"), dialog);
+    copyBtn->setObjectName(QStringLiteral("rawDataCopy"));
+    QObject::connect(copyBtn, &QPushButton::clicked, dialog, [editor] {
+        QGuiApplication::clipboard()->setText(editor->toPlainText());
+    });
+    buttons->addWidget(copyBtn);
+    buttons->addStretch();
+    auto *closeBox = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    QObject::connect(closeBox, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+    buttons->addWidget(closeBox);
+    layout->addLayout(buttons);
+
+    dialog->show();
 }

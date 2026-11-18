@@ -14,9 +14,20 @@ ClipboardInput::Classification ClipboardInput::classifyText(const QString &raw)
             character == QChar::ReplacementCharacter)
             return {Kind::Unsupported, {}};
     }
-    const QString text = raw.trimmed();
+    const QString trimmed = raw.trimmed();
+    if (trimmed.isEmpty())
+        return {Kind::Empty, {}};
+
+    // Normalize leading/trailing blank lines. Multiline paragraphs, prose, and blocks
+    // containing multiple non-blank lines are rejected from automatic search capture.
+    const auto lines = trimmed.split(QRegularExpression(QStringLiteral("[\r\n]+")), Qt::SkipEmptyParts);
+    if (lines.size() > 1)
+        return {Kind::Unsupported, {}};
+
+    const QString text = lines.isEmpty() ? QString() : lines.first().trimmed();
     if (text.isEmpty())
         return {Kind::Empty, {}};
+
     static const QRegularExpression whitespace(QStringLiteral("\\s"), QRegularExpression::UseUnicodePropertiesOption);
     static const QRegularExpression path(QStringLiteral("^(?:/|~/|\\.\\.?/|[A-Za-z]:[\\\\/]|\\\\\\\\)"));
     if (path.match(text).hasMatch())
@@ -60,21 +71,15 @@ ClipboardInput::Classification ClipboardInput::classifyText(const QString &raw)
         if (candidate.isValid() && candidate.userInfo().isEmpty() &&
             (explicitHost || (looksLikeDomain && commonSuffixes.contains(suffix)) || domainWithPath))
             return {Kind::WebAddress, {}};
-    }
-    if (text.contains(QLatin1Char('\n'))) {
-        const auto lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-        bool onlyUrls = !lines.isEmpty();
-        for (const auto &line : lines) {
-            const auto item = classifyText(line);
-            if (item.kind != Kind::Url && item.kind != Kind::WebAddress && item.kind != Kind::Empty) {
-                onlyUrls = false;
-                break;
-            }
-        }
-        if (onlyUrls)
+    } else {
+        // Text contains whitespace. Check if it contains embedded URLs or email addresses.
+        // Mixed text containing links, emails, or URL-rich blocks must not automatically become a provider query.
+        static const QRegularExpression embeddedUrlOrEmail(
+            QStringLiteral("(?:https?|ftp|file|mailto|magnet)://|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}|\\bwww\\.[a-z0-9.-]+"),
+            QRegularExpression::CaseInsensitiveOption);
+        if (embeddedUrlOrEmail.match(text).hasMatch())
             return {Kind::Unsupported, {}};
     }
-    // Mixed text (including links) and ordinary multiline prose remain eligible.
     return {Kind::SearchText, text};
 }
 
@@ -99,5 +104,9 @@ QString ClipboardInput::explicitQuery(const QMimeData *mime)
             character == QChar::ReplacementCharacter)
             return {};
     }
-    return raw.trimmed();
+    const auto lines = raw.trimmed().split(QRegularExpression(QStringLiteral("[\r\n]+")), Qt::SkipEmptyParts);
+    if (lines.size() == 1) {
+        return lines.first().trimmed();
+    }
+    return {};
 }

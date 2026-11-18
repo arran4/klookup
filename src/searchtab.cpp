@@ -215,7 +215,15 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_detailsView->setOpenExternalLinks(false);
     m_detailsView->setOpenLinks(false);
     m_detailsView->document()->setResourceProvider([](const QUrl &) { return QVariant(QByteArray()); });
-    connect(m_detailsView, &QTextBrowser::anchorClicked, this, [](const QUrl &url) {
+    connect(m_detailsView, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
+        if (url.scheme() == QLatin1String("klookup") && url.host() == QLatin1String("more-titles") && m_selected) {
+            const auto res = m_selected->data(0, Qt::UserRole).value<SearchResult>();
+            const QString providerId = m_selected->data(0, ProviderRole).toString();
+            const auto titles = Languages::fromData(res.additionalData.value(QStringLiteral("localizedTitles")), providerId);
+            if (!titles.isEmpty())
+                Languages::showAllTitles(titles, this);
+            return;
+        }
         const auto safe = Metadata::safeWebUrl(url.toString(QUrl::FullyEncoded));
         if (!safe.isEmpty())
             QDesktopServices::openUrl(safe);

@@ -39,6 +39,10 @@ struct CatalogueIndex {
 
 namespace ProviderCatalogue
 {
+constexpr int MaxPackageFiles = 256;
+constexpr qint64 MaxPackageFileBytes = 2 * 1024 * 1024;
+constexpr qint64 MaxPackageTotalBytes = 16 * 1024 * 1024;
+
 bool parseIndex(const QByteArray &jsonBytes,
                 CatalogueIndex *out,
                 QString *error,
@@ -48,7 +52,8 @@ bool isCompatibleWithHost(const CatalogueEntry &entry, int hostApiVersion = 1);
 bool isRevoked(const CatalogueIndex &index, const CatalogueEntry &entry, QString *reason = nullptr);
 QString computeDirectoryDigestHex(const QString &packageDir, QString *error = nullptr);
 
-bool installLocalPackage(const CatalogueEntry &entry,
+bool installLocalPackage(const CatalogueIndex &index,
+                         const CatalogueEntry &entry,
                          const QString &sourcePackageDir,
                          const QString &installRoot,
                          const QString &backupRoot,

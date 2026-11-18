@@ -197,9 +197,16 @@ QString ProviderCatalogue::computeDirectoryDigestHex(const QString &packageDir, 
     QDirIterator it(packageDir, QDir::Files | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDirIterator::Subdirectories);
     while (it.hasNext()) {
         it.next();
+        if (files.size() >= MaxPackageFiles) {
+            if (error)
+                *error = QStringLiteral("Package exceeds maximum file count (%1)").arg(MaxPackageFiles);
+            return {};
+        }
         files.append(root.relativeFilePath(it.filePath()));
     }
     files.sort();
+
+    qint64 totalBytes = 0;
     QCryptographicHash hash(QCryptographicHash::Sha256);
     for (const QString &rel : files) {
         QFile f(root.filePath(rel));
@@ -208,15 +215,37 @@ QString ProviderCatalogue::computeDirectoryDigestHex(const QString &packageDir, 
                 *error = QStringLiteral("Cannot read %1 for digest").arg(rel);
             return {};
         }
+        if (f.size() > MaxPackageFileBytes) {
+            if (error)
+                *error = QStringLiteral("File %1 exceeds maximum size (%2 bytes)").arg(rel).arg(MaxPackageFileBytes);
+            return {};
+        }
+        totalBytes += f.size();
+        if (totalBytes > MaxPackageTotalBytes) {
+            if (error)
+                *error = QStringLiteral("Package exceeds maximum total size (%1 bytes)").arg(MaxPackageTotalBytes);
+            return {};
+        }
         hash.addData(rel.toUtf8());
         hash.addData(QByteArrayView("\0", 1));
-        hash.addData(f.readAll());
+        char buf[65536];
+        while (!f.atEnd()) {
+            const qint64 n = f.read(buf, sizeof(buf));
+            if (n < 0) {
+                if (error)
+                    *error = QStringLiteral("Read error hashing %1").arg(rel);
+                return {};
+            }
+            if (n > 0)
+                hash.addData(QByteArrayView(buf, n));
+        }
         hash.addData(QByteArrayView("\0", 1));
     }
     return QString::fromLatin1(hash.result().toHex());
 }
 
-bool ProviderCatalogue::installLocalPackage(const CatalogueEntry &entry,
+bool ProviderCatalogue::installLocalPackage(const CatalogueIndex &index,
+                                            const CatalogueEntry &entry,
                                             const QString &sourcePackageDir,
                                             const QString &installRoot,
                                             const QString &backupRoot,
@@ -228,9 +257,10 @@ bool ProviderCatalogue::installLocalPackage(const CatalogueEntry &entry,
             *error = QStringLiteral("Unsafe provider ID");
         return false;
     }
-    if (entry.revoked) {
+    QString revokeReason;
+    if (isRevoked(index, entry, &revokeReason)) {
         if (error)
-            *error = QStringLiteral("Refusing to install revoked provider");
+            *error = QStringLiteral("Refusing to install revoked provider: %1").arg(revokeReason);
         return false;
     }
     if (!isCompatibleWithHost(entry, hostApiVersion)) {
@@ -238,46 +268,85 @@ bool ProviderCatalogue::installLocalPackage(const CatalogueEntry &entry,
             *error = QStringLiteral("Provider API range incompatible with host");
         return false;
     }
-    const QString actualDigest = computeDirectoryDigestHex(sourcePackageDir, error);
-    if (actualDigest.isEmpty() || actualDigest != entry.sha256Hex.toLower()) {
+
+    if (!QDir().mkpath(installRoot) || !QDir().mkpath(backupRoot)) {
         if (error)
-            *error = QStringLiteral("SHA-256 verification failed for %1").arg(entry.id);
+            *error = QStringLiteral("Failed to prepare install or backup root");
         return false;
     }
 
-    const ProviderPackage pkg = ProviderPackage::fromDirectory(sourcePackageDir, ProviderPackage::LocationType::User);
+    const QString stagingDir = QDir(installRoot).filePath(QStringLiteral(".staging-%1").arg(entry.id));
+    QDir(stagingDir).removeRecursively();
+    if (!copyDirRecursive(sourcePackageDir, stagingDir, error)) {
+        QDir(stagingDir).removeRecursively();
+        return false;
+    }
+
+    const QString actualDigest = computeDirectoryDigestHex(stagingDir, error);
+    if (actualDigest.isEmpty() || actualDigest != entry.sha256Hex.toLower()) {
+        if (error && error->isEmpty())
+            *error = QStringLiteral("SHA-256 verification failed for %1").arg(entry.id);
+        else if (error && !actualDigest.isEmpty())
+            *error = QStringLiteral("SHA-256 verification failed for %1").arg(entry.id);
+        QDir(stagingDir).removeRecursively();
+        return false;
+    }
+
+    const ProviderPackage pkg = ProviderPackage::fromDirectory(stagingDir, ProviderPackage::LocationType::User);
     if (!pkg.isValid()) {
         if (error)
             *error = QStringLiteral("Invalid provider package: %1").arg(pkg.validationError());
+        QDir(stagingDir).removeRecursively();
         return false;
     }
     if (pkg.id() != entry.id || pkg.manifest().version != entry.version) {
         if (error)
             *error = QStringLiteral("Manifest identity/version does not match catalogue entry");
+        QDir(stagingDir).removeRecursively();
         return false;
     }
+
     const QSet<QString> manifestOrigins(pkg.manifest().permissions.origins.cbegin(), pkg.manifest().permissions.origins.cend());
     const QSet<QString> catalogueOrigins(entry.origins.cbegin(), entry.origins.cend());
     if (manifestOrigins != catalogueOrigins) {
         if (error)
-            *error = QStringLiteral("Manifest permissions do not match catalogue declaration");
+            *error = QStringLiteral("Manifest origin permissions do not match catalogue declaration");
+        QDir(stagingDir).removeRecursively();
+        return false;
+    }
+
+    const QSet<QString> manifestSecrets(pkg.manifest().permissions.secrets.cbegin(), pkg.manifest().permissions.secrets.cend());
+    const QSet<QString> catalogueSecrets(entry.secrets.cbegin(), entry.secrets.cend());
+    if (manifestSecrets != catalogueSecrets) {
+        if (error)
+            *error = QStringLiteral("Manifest secret permissions do not match catalogue declaration");
+        QDir(stagingDir).removeRecursively();
         return false;
     }
 
     const QString targetDir = QDir(installRoot).filePath(entry.id);
     const QString backupDir = QDir(backupRoot).filePath(entry.id);
-    if (QFileInfo::exists(targetDir)) {
+    const bool hadExisting = QFileInfo::exists(targetDir);
+    if (hadExisting) {
         QDir(backupDir).removeRecursively();
-        if (!copyDirRecursive(targetDir, backupDir, error))
-            return false;
-        QDir(targetDir).removeRecursively();
-    }
-    if (!copyDirRecursive(sourcePackageDir, targetDir, error)) {
-        if (QFileInfo::exists(backupDir)) {
+        if (!QDir().rename(targetDir, backupDir)) {
+            if (!copyDirRecursive(targetDir, backupDir, error)) {
+                QDir(stagingDir).removeRecursively();
+                return false;
+            }
             QDir(targetDir).removeRecursively();
-            copyDirRecursive(backupDir, targetDir, nullptr);
         }
-        return false;
+    }
+
+    if (!QDir().rename(stagingDir, targetDir)) {
+        if (!copyDirRecursive(stagingDir, targetDir, error)) {
+            QDir(targetDir).removeRecursively();
+            if (hadExisting && QFileInfo::exists(backupDir))
+                QDir().rename(backupDir, targetDir);
+            QDir(stagingDir).removeRecursively();
+            return false;
+        }
+        QDir(stagingDir).removeRecursively();
     }
     return true;
 }
@@ -299,6 +368,18 @@ bool ProviderCatalogue::rollbackPackage(const QString &providerId,
             *error = QStringLiteral("No rollback backup available for %1").arg(providerId);
         return false;
     }
+    const QString stagingDir = QDir(installRoot).filePath(QStringLiteral(".rollback-%1").arg(providerId));
+    QDir(stagingDir).removeRecursively();
+    if (!copyDirRecursive(backupDir, stagingDir, error)) {
+        QDir(stagingDir).removeRecursively();
+        return false;
+    }
     QDir(targetDir).removeRecursively();
-    return copyDirRecursive(backupDir, targetDir, error);
+    if (!QDir().rename(stagingDir, targetDir)) {
+        if (error)
+            *error = QStringLiteral("Failed to commit rollback for %1").arg(providerId);
+        QDir(stagingDir).removeRecursively();
+        return false;
+    }
+    return true;
 }

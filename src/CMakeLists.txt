@@ -1,5 +1,6 @@
 add_library(klookup_core STATIC
     languagepreferences.cpp
+    flowlayout.cpp
     resultmetadata.cpp
     resultactions.cpp
     sourcelink.cpp

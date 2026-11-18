@@ -1,10 +1,14 @@
 #include "searchdashboard.h"
+#include "flowlayout.h"
+#include <KLocalizedString>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSignalBlocker>
+#include <QToolButton>
 #include <QIcon>
 #include <QShortcut>
 #include <QStringListModel>
@@ -27,6 +31,32 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     searchButtonsLayout->addWidget(searchButton);
     searchButtonsLayout->addWidget(searchNewWindowButton);
     layout->addLayout(searchButtonsLayout);
+
+    m_scopeWidget = new QWidget(this);
+    m_scopeWidget->setObjectName(QStringLiteral("preQueryScopeSection"));
+    auto *scopeBox = new QVBoxLayout(m_scopeWidget);
+    scopeBox->setContentsMargins(0, 0, 0, 0);
+    scopeBox->setSpacing(4);
+    auto *scopeHeader = new QHBoxLayout;
+    scopeHeader->setContentsMargins(0, 0, 0, 0);
+    m_scopePreview = new QLabel(i18n("Scope: all enabled sources"), m_scopeWidget);
+    m_scopePreview->setObjectName(QStringLiteral("preQueryScopePreview"));
+    m_scopePreview->setTextFormat(Qt::PlainText);
+    scopeHeader->addWidget(m_scopePreview, 1);
+    m_clearScope = new QToolButton(m_scopeWidget);
+    m_clearScope->setObjectName(QStringLiteral("clearPreQueryScope"));
+    m_clearScope->setText(QStringLiteral("×"));
+    m_clearScope->setToolTip(i18n("Reset to all enabled sources"));
+    m_clearScope->setAccessibleName(i18n("Reset pre-query source scope"));
+    m_clearScope->setAutoRaise(true);
+    m_clearScope->setVisible(false);
+    connect(m_clearScope, &QToolButton::clicked, this, &SearchDashboard::clearScopeSelection);
+    scopeHeader->addWidget(m_clearScope);
+    scopeBox->addLayout(scopeHeader);
+    m_scopeLayout = new FlowLayout(4, 4);
+    scopeBox->addLayout(m_scopeLayout);
+    m_scopeWidget->setVisible(false);
+    layout->addWidget(m_scopeWidget);
 
     m_recentSection = new QWidget(this);
     m_recentSection->setObjectName(QStringLiteral("recentActivitySection"));
@@ -100,7 +130,10 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     connect(searchNewWindowButton, &QPushButton::clicked, this, [this] {
         const QString query = m_searchBar->text().trimmed();
         if (!query.isEmpty()) {
+            const QueryScope scope = selectedScope();
+            emit searchInNewWindowScopedRequested(query, scope);
             emit searchInNewWindowRequested(query);
+            clearScopeSelection();
         }
     });
 }
@@ -137,8 +170,109 @@ void SearchDashboard::onSearchTriggered()
         }
 
         m_completer->setModel(new QStringListModel(m_history, m_completer));
+        const QueryScope scope = selectedScope();
+        emit searchScopedRequested(query, scope);
         emit searchRequested(query);
+        clearScopeSelection();
     }
+}
+
+void SearchDashboard::setAvailableScopes(const QList<QPair<QString, ProviderClassification>> &sources)
+{
+    m_availableSources = sources;
+    if (m_scopeLayout) {
+        while (QLayoutItem *item = m_scopeLayout->takeAt(0)) {
+            if (QWidget *w = item->widget())
+                w->deleteLater();
+            delete item;
+        }
+    }
+    m_scopeButtons.clear();
+    m_selectedScopeFacets.clear();
+
+    QMap<QString, int> facetCounts;
+    QMap<QString, QString> facetLabels;
+    for (const auto &source : sources) {
+        for (const QString &facet : source.second.facets) {
+            facetCounts[facet] = facetCounts.value(facet, 0) + 1;
+            if (!facetLabels.contains(facet))
+                facetLabels.insert(facet, source.second.label(facet));
+        }
+    }
+
+    for (auto it = facetCounts.cbegin(); it != facetCounts.cend(); ++it) {
+        const QString &key = it.key();
+        const int count = it.value();
+        const QString labelText = facetLabels.value(key, key);
+        auto *button = new QToolButton(m_scopeWidget);
+        button->setObjectName(QStringLiteral("scopeTag_") + key);
+        button->setText(i18n("%1 (%2)", labelText, count));
+        button->setCheckable(true);
+        button->setAutoRaise(true);
+        button->setToolTip(i18n("Limit this search to %1 (%2 sources)", labelText, count));
+        button->setAccessibleName(i18n("Limit search scope to %1", labelText));
+        connect(button, &QToolButton::toggled, this, [this, key](bool checked) {
+            if (checked)
+                m_selectedScopeFacets.insert(key);
+            else
+                m_selectedScopeFacets.remove(key);
+            updateScopePreview();
+        });
+        m_scopeButtons.insert(key, button);
+        if (m_scopeLayout)
+            m_scopeLayout->addWidget(button);
+    }
+    if (m_scopeWidget)
+        m_scopeWidget->setVisible(!m_scopeButtons.isEmpty());
+    updateScopePreview();
+}
+
+QueryScope SearchDashboard::selectedScope() const
+{
+    if (m_selectedScopeFacets.isEmpty())
+        return QueryScope::all();
+    return QueryScope::only(selectedSourceIds());
+}
+
+QSet<QString> SearchDashboard::selectedSourceIds() const
+{
+    if (m_selectedScopeFacets.isEmpty())
+        return {};
+    QSet<QString> ids;
+    for (const auto &source : m_availableSources) {
+        for (const QString &facet : m_selectedScopeFacets) {
+            if (source.second.facets.contains(facet)) {
+                ids.insert(source.first);
+                break;
+            }
+        }
+    }
+    return ids;
+}
+
+void SearchDashboard::clearScopeSelection()
+{
+    m_selectedScopeFacets.clear();
+    for (auto *button : std::as_const(m_scopeButtons)) {
+        const QSignalBlocker block(button);
+        button->setChecked(false);
+    }
+    updateScopePreview();
+}
+
+void SearchDashboard::updateScopePreview()
+{
+    if (!m_scopePreview || !m_clearScope)
+        return;
+    const int total = m_availableSources.size();
+    if (m_selectedScopeFacets.isEmpty()) {
+        m_scopePreview->setText(i18n("Scope: all %1 enabled sources (default)", total));
+        m_clearScope->setVisible(false);
+        return;
+    }
+    const int selected = selectedSourceIds().size();
+    m_scopePreview->setText(i18n("Scope: %1 of %2 enabled sources", selected, total));
+    m_clearScope->setVisible(true);
 }
 
 void SearchDashboard::setRecentActivity(RecentActivity *activity)

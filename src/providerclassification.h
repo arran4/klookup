@@ -5,8 +5,10 @@
 #include <QJsonValue>
 #include <QMetaType>
 #include <QMap>
+#include <QSet>
 #include <QStringList>
 #include <QLocale>
+#include <utility>
 
 // Provider-level descriptors, never result/story taxonomy or authorization.
 struct ProviderClassification {
@@ -20,4 +22,15 @@ struct ProviderClassification {
     static bool fromJson(const QJsonValue &value, ProviderClassification *result, QString *error);
 };
 Q_DECLARE_METATYPE(ProviderClassification)
+
+struct QueryScope {
+    bool restricted = false;
+    QSet<QString> sourceIds;
+    static QueryScope all() { return {false, {}}; }
+    static QueryScope only(QSet<QString> ids) { return {true, std::move(ids)}; }
+    bool includes(const QString &id) const { return !restricted || sourceIds.contains(id); }
+    bool operator==(const QueryScope &other) const { return restricted == other.restricted && sourceIds == other.sourceIds; }
+    bool operator!=(const QueryScope &other) const { return !(*this == other); }
+};
+Q_DECLARE_METATYPE(QueryScope)
 #endif

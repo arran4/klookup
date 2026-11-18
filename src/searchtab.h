@@ -22,6 +22,8 @@ class ResultDetailWindow;
 class QSplitter;
 class QStackedWidget;
 
+class FlowLayout;
+
 class SearchTab : public QWidget
 {
     Q_OBJECT
@@ -105,15 +107,18 @@ private:
     void applyDisplayFilters();
     QMap<QString, QToolButton *> m_filterButtons;
     QSet<QString> m_selectedFacets;
-    QHBoxLayout *m_filterLayout = nullptr;
+    FlowLayout *m_filterLayout = nullptr;
     QLabel *m_filterStatus = nullptr;
     bool sourceEligible(SearchProvider *provider) const;
     bool m_respectSourcePolicy = false;
     bool m_hasTemporarySelection = false;
     QSet<QString> m_appliedSources;
     QSet<QString> m_sourceDraft;
+    QList<SearchSourceChoice> m_sourceChoices;
+    QSet<QString> m_pendingExpansionSources;
     QToolButton *m_sourceButton = nullptr;
     QPushButton *m_applySources = nullptr;
+    QPushButton *m_expandScopeButton = nullptr;
     QString m_query;
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_detailSplitter = nullptr;

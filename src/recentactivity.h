@@ -4,6 +4,7 @@
 #include "searchprovider.h"
 #include <KSharedConfig>
 #include <QDateTime>
+#include <QList>
 #include <QObject>
 #include <QUrl>
 
@@ -19,6 +20,8 @@ struct RecentItem {
     QUrl url;
     QDateTime timestamp;
     bool clipboard = false;
+    int count = 1;
+    QList<QDateTime> timestamps;
 };
 Q_DECLARE_METATYPE(RecentItem)
 

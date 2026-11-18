@@ -29,17 +29,9 @@ private slots:
 
         QVERIFY2(projectVersion != QStringLiteral("0.0.2"), "Project version is still hardcoded to obsolete 0.0.2");
 
-        const QString versionFilePath = QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/VERSION");
-        if (QFile::exists(versionFilePath)) {
-            QFile versionFile(versionFilePath);
-            QVERIFY(versionFile.open(QIODevice::ReadOnly | QIODevice::Text));
-            const QString fileVersion = QString::fromUtf8(versionFile.readAll()).trimmed();
-            QVERIFY(!fileVersion.isEmpty());
-            QVERIFY(semverRegex.match(fileVersion).hasMatch());
-        }
     }
 
-    void tagOverridesVersionFileAndOverrideWins()
+    void gitVersionAndPackagerOverride()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
@@ -47,11 +39,6 @@ private slots:
         QVERIFY(QDir().mkpath(srcDir + QStringLiteral("/cmake")));
         QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/cmake/KLookupVersion.cmake"),
                             srcDir + QStringLiteral("/cmake/KLookupVersion.cmake")));
-
-        QFile verFile(srcDir + QStringLiteral("/VERSION"));
-        QVERIFY(verFile.open(QIODevice::WriteOnly | QIODevice::Text));
-        verFile.write("0.1.0\n");
-        verFile.close();
 
         QFile cmFile(srcDir + QStringLiteral("/CMakeLists.txt"));
         QVERIFY(cmFile.open(QIODevice::WriteOnly | QIODevice::Text));
@@ -72,10 +59,10 @@ private slots:
             return QString::fromUtf8(p.readAllStandardOutput());
         };
 
-        // 1. Archive/untagged tree uses VERSION
-        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=0.1.0|0.1.0")));
+        // 1. Plain copy without Git/metadata must never claim a release.
+        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=0.0.0-unknown|0.0.0")));
 
-        // 2. Git repo with exact tag v1.2.3-rc1 overrides stale VERSION 0.1.0
+        // 2. Git repo without any tag reports the actual commit, not a static version.
         auto git = [&](const QStringList &args) {
             QProcess p;
             p.setWorkingDirectory(srcDir);
@@ -88,11 +75,16 @@ private slots:
         git({QStringLiteral("config"), QStringLiteral("user.name"), QStringLiteral("Test")});
         git({QStringLiteral("add"), QStringLiteral(".")});
         git({QStringLiteral("commit"), QStringLiteral("-m"), QStringLiteral("init")});
+        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=0.0.0-dev+g")));
         git({QStringLiteral("tag"), QStringLiteral("v1.2.3-rc1")});
 
         QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=1.2.3-rc1|1.2.3")));
 
-        // 3. Explicit -DKLOOKUP_VERSION overrides both tag and VERSION
+        // 3. Development commits derive the nearest tag and commit distance/hash.
+        git({QStringLiteral("commit"), QStringLiteral("--allow-empty"), QStringLiteral("-m"), QStringLiteral("development")});
+        QVERIFY(runCmake({}).contains(QStringLiteral("TEST_VER=1.2.3-rc1-1-g")));
+
+        // 4. Explicit -DKLOOKUP_VERSION overrides the Git-derived version.
         QVERIFY(runCmake({QStringLiteral("-DKLOOKUP_VERSION=9.8.7")}).contains(QStringLiteral("TEST_VER=9.8.7|9.8.7")));
     }
 
@@ -109,11 +101,6 @@ private slots:
                             repoDir + QStringLiteral("/cmake/KLookupVersion.cmake")));
         QVERIFY(QFile::copy(QStringLiteral(KLOOKUP_SOURCE_DIR) + QStringLiteral("/cmake/KLookupArchiveVersion.cmake"),
                             repoDir + QStringLiteral("/cmake/KLookupArchiveVersion.cmake")));
-
-        QFile verFile(repoDir + QStringLiteral("/VERSION"));
-        QVERIFY(verFile.open(QIODevice::WriteOnly | QIODevice::Text));
-        verFile.write("0.1.0\n");
-        verFile.close();
 
         QFile cmFile(repoDir + QStringLiteral("/CMakeLists.txt"));
         QVERIFY(cmFile.open(QIODevice::WriteOnly | QIODevice::Text));
@@ -169,16 +156,21 @@ private slots:
             return QString::fromUtf8(cmakeProc.readAllStandardOutput());
         };
 
-        // 1. Archive of untagged commit falls back to VERSION (0.1.0)
+        // 1. Archive of a commit with no reachable tag retains its commit identity.
         QVERIFY(extractAndConfigure(QStringLiteral("HEAD"), QStringLiteral("untagged"), {})
-                    .contains(QStringLiteral("TEST_VER=0.1.0|0.1.0")));
+                    .contains(QStringLiteral("TEST_VER=0.0.0-dev+g")));
 
-        // 2. Archive of v0.1.1 tag (no .git, no -DKLOOKUP_VERSION) resolves 0.1.1 despite stale VERSION=0.1.0
+        // 2. Archive of v0.1.1 tag resolves 0.1.1 without Git or an override.
         runGit({QStringLiteral("tag"), QStringLiteral("v0.1.1")}, repoDir);
         QVERIFY(extractAndConfigure(QStringLiteral("v0.1.1"), QStringLiteral("tagged-v0.1.1"), {})
                     .contains(QStringLiteral("TEST_VER=0.1.1|0.1.1")));
 
-        // 3. Explicit -DKLOOKUP_VERSION still overrides archive tag
+        // 3. Untagged development archives retain the nearest tag and commit identity.
+        runGit({QStringLiteral("commit"), QStringLiteral("--allow-empty"), QStringLiteral("-m"), QStringLiteral("development")}, repoDir);
+        QVERIFY(extractAndConfigure(QStringLiteral("HEAD"), QStringLiteral("development"), {})
+                    .contains(QStringLiteral("TEST_VER=0.1.1-1-g")));
+
+        // 4. Explicit -DKLOOKUP_VERSION still overrides archive tag
         QVERIFY(extractAndConfigure(QStringLiteral("v0.1.1"), QStringLiteral("override-v0.1.1"),
                                     {QStringLiteral("-DKLOOKUP_VERSION=0.1.2")})
                     .contains(QStringLiteral("TEST_VER=0.1.2|0.1.2")));

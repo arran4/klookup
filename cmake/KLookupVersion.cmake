@@ -1,60 +1,62 @@
 # SPDX-FileCopyrightText: 2026 KLookup contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-# Authoritative version determination:
-# 1. Explicit user/packager override: -DKLOOKUP_VERSION=x.y.z
-# 2. Exact git tag if building in a git tree (must win over static VERSION on release tags)
-# 3. Git archive export-subst tag metadata (for GitHub tag archives without .git)
-# 4. VERSION file in source root (for version-stamped source tarballs / untagged builds)
-# 5. Fallback default version
-set(KLOOKUP_DEFAULT_VERSION "0.1.0")
+# Git is the source of truth. The explicit packager/CI override is for an
+# externally known release version; no tracked VERSION or moving baseline exists.
+set(_KLOOKUP_VERSION_PATTERN "^v?([0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.+-]+)?)$")
+set(_KLOOKUP_DETECTED_VERSION "")
+set(_KLOOKUP_REVISION "")
 
 if(DEFINED KLOOKUP_VERSION AND NOT KLOOKUP_VERSION STREQUAL "")
-    set(_KLOOKUP_DETECTED_VERSION "${KLOOKUP_VERSION}")
+    if(NOT KLOOKUP_VERSION MATCHES "${_KLOOKUP_VERSION_PATTERN}")
+        message(FATAL_ERROR "Invalid KLOOKUP_VERSION: ${KLOOKUP_VERSION}")
+    endif()
+    set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+    # A .git file also covers linked worktrees and submodules. Never discover
+    # an enclosing unrelated repository when configuring an extracted archive.
     find_package(Git QUIET)
     if(GIT_FOUND)
         execute_process(
-            COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match
+            COMMAND "${GIT_EXECUTABLE}" describe --tags --match "v[0-9]*" --abbrev=12 HEAD
             WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE _GIT_EXACT_TAG
-            ERROR_QUIET
-            OUTPUT_STRIP_TRAILING_WHITESPACE
+            OUTPUT_VARIABLE _KLOOKUP_DESCRIPTION
+            ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _KLOOKUP_GIT_RESULT
         )
-        if(_GIT_EXACT_TAG MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+.*)$")
+        if(_KLOOKUP_GIT_RESULT EQUAL 0 AND _KLOOKUP_DESCRIPTION MATCHES "${_KLOOKUP_VERSION_PATTERN}")
             set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
+        else()
+            execute_process(
+                COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                OUTPUT_VARIABLE _KLOOKUP_REVISION
+                ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+            )
         endif()
     endif()
-endif()
-
-if(NOT DEFINED _KLOOKUP_DETECTED_VERSION AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupArchiveVersion.cmake")
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupArchiveVersion.cmake")
+    # These fields are expanded by git archive, including GitHub source archives.
+    # The release workflow stamps the exact Git ref in its generated source asset.
     include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/KLookupArchiveVersion.cmake")
-    if(DEFINED _KLOOKUP_GIT_ARCHIVE_REFS
-       AND NOT _KLOOKUP_GIT_ARCHIVE_REFS MATCHES "\\\$Format:"
-       AND _KLOOKUP_GIT_ARCHIVE_REFS MATCHES "tag:[ ]*v?([0-9]+\\.[0-9]+\\.[0-9]+[^, )]*)")
+    if(DEFINED _KLOOKUP_GIT_ARCHIVE_DESCRIPTION AND _KLOOKUP_GIT_ARCHIVE_DESCRIPTION MATCHES "${_KLOOKUP_VERSION_PATTERN}")
         set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
+    elseif(DEFINED _KLOOKUP_GIT_ARCHIVE_REFS AND _KLOOKUP_GIT_ARCHIVE_REFS MATCHES "tag:[ ]*v([0-9]+\\.[0-9]+\\.[0-9]+[-+0-9A-Za-z.]*)")
+        set(_KLOOKUP_DETECTED_VERSION "${CMAKE_MATCH_1}")
+    elseif(DEFINED _KLOOKUP_GIT_ARCHIVE_REVISION AND _KLOOKUP_GIT_ARCHIVE_REVISION MATCHES "^[0-9a-f]+$")
+        string(SUBSTRING "${_KLOOKUP_GIT_ARCHIVE_REVISION}" 0 12 _KLOOKUP_REVISION)
     endif()
 endif()
 
-if(NOT DEFINED _KLOOKUP_DETECTED_VERSION AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
-    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" _KLOOKUP_FILE_VERSION)
-    list(GET _KLOOKUP_FILE_VERSION 0 _KLOOKUP_FIRST_LINE)
-    string(STRIP "${_KLOOKUP_FIRST_LINE}" _KLOOKUP_FILE_VERSION)
-    if(NOT _KLOOKUP_FILE_VERSION STREQUAL "")
-        set(_KLOOKUP_DETECTED_VERSION "${_KLOOKUP_FILE_VERSION}")
+if(_KLOOKUP_DETECTED_VERSION STREQUAL "")
+    if(_KLOOKUP_REVISION MATCHES "^[0-9a-f]+$")
+        set(_KLOOKUP_DETECTED_VERSION "0.0.0-dev+g${_KLOOKUP_REVISION}")
+    else()
+        # An unstamped source copy without Git cannot claim any release version.
+        set(_KLOOKUP_DETECTED_VERSION "0.0.0-unknown")
+        message(WARNING "KLookup Git version unavailable; use a tagged source archive or -DKLOOKUP_VERSION for a known package version")
     endif()
 endif()
 
-if(NOT DEFINED _KLOOKUP_DETECTED_VERSION)
-    set(_KLOOKUP_DETECTED_VERSION "${KLOOKUP_DEFAULT_VERSION}")
-endif()
-
-string(REGEX REPLACE "^v" "" KLOOKUP_VERSION_STRING "${_KLOOKUP_DETECTED_VERSION}")
-
-if(KLOOKUP_VERSION_STRING MATCHES "^([0-9]+(\\.[0-9]+(\\.[0-9]+)?)?)")
-    set(KLOOKUP_NUMERIC_VERSION "${CMAKE_MATCH_1}")
-else()
-    set(KLOOKUP_NUMERIC_VERSION "${KLOOKUP_DEFAULT_VERSION}")
-endif()
-
-set(KLOOKUP_VERSION_STRING "${KLOOKUP_VERSION_STRING}" CACHE STRING "Authoritative KLookup version string" FORCE)
+set(KLOOKUP_VERSION_STRING "${_KLOOKUP_DETECTED_VERSION}" CACHE STRING "Git-derived KLookup version string" FORCE)
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" KLOOKUP_NUMERIC_VERSION "${KLOOKUP_VERSION_STRING}")

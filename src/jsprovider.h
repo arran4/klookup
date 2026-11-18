@@ -50,6 +50,9 @@ public:
     void cancel(quint64 requestId) override;
     void invalidate();
     ProviderV1 *clone(QObject *parent = nullptr) const override;
+    ProviderHost::ProviderHostService *hostService() const { return m_hostService; }
+    void setSessionCredential(const QString &secret);
+    QString sessionCredential() const;
 
     // Wall lifetime includes time awaiting promises/HTTP. CPU time is separately
     // capped at 100 ms per operation, across all its promise callbacks.

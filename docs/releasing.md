@@ -24,12 +24,12 @@ Release modes use [`arran4/git-tag-inc`](https://github.com/arran4/git-tag-inc) 
 
 ## Versioning mechanism
 
-KLookup defines a single authoritative versioning contract:
-1. An explicit build/packager override: `cmake -DKLOOKUP_VERSION=x.y.z` (supported for package managers, Gentoo ebuilds, and tag CI builds; Gentoo ebuilds should pass `-DKLOOKUP_VERSION=${PV}` in `src_configure()` as defense-in-depth).
-2. Exact Git tags (`git describe --tags --exact-match`) when building from an exact release tag in a Git checkout (takes precedence over the static `VERSION` file so release tags never embed a stale version).
-3. Git archive `export-subst` tag metadata (`cmake/KLookupArchiveVersion.cmake` via `.gitattributes`), so GitHub's `archive/refs/tags/vX.Y.Z.tar.gz` source tarballs (which omit `.git`) automatically resolve `X.Y.Z` even without `-DKLOOKUP_VERSION`.
-4. The root `VERSION` file, which tracks the baseline version in version-stamped source tarballs (`klookup-vX.Y.Z-src.tar.gz` attached to tag releases) and untagged development builds.
-5. Fallback default version defined in `cmake/KLookupVersion.cmake`.
+Git is KLookup's version authority; no manually maintained root `VERSION` file or hardcoded release baseline exists.
+
+1. An explicit build/packager override: `cmake -DKLOOKUP_VERSION=x.y.z`, for an externally known version. Tag CI passes its exact Git ref and Gentoo ebuilds may pass `-DKLOOKUP_VERSION=${PV}` in `src_configure()`. The override is validated as a semantic version.
+2. Git checkouts use `git describe --tags --match 'v[0-9]*' --abbrev=12 HEAD`. Exact tags report their version (including prerelease suffixes); development commits report the nearest release tag, distance and commit hash. The build must have reachable release tags for this description, so CI fetches complete history.
+3. Git source archives use Git's `export-subst` metadata in `cmake/KLookupArchiveVersion.cmake`, including the Git description and commit hash. Tagged GitHub archives do not need a Git checkout or a manually maintained version. The generated release asset stamps the exact selected Git tag in this same metadata file, not in a tracked `VERSION` file.
+4. With no reachable tag, a known Git revision reports `0.0.0-dev+g<hash>`. A copied source tree with neither Git metadata nor an explicit version reports `0.0.0-unknown` rather than falsely claiming a previous release. Packagers should use a tagged archive or supply the known package version.
 
 The build exposes `PROJECT_VERSION` (semantic numerical format) and `KLOOKUP_VERSION_STRING` (full version identifier). `KAboutData` and `QCoreApplication::setApplicationVersion` derive directly from `KLOOKUP_VERSION_STRING`. Release workflows verify candidate binaries to ensure installed packages and GitHub release tags agree without manual UI source edits.
 

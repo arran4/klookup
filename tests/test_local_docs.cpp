@@ -170,6 +170,22 @@ private slots:
         QWidget *opts2 = provider.createOptionsWidget();
         delete opts2;
         QTest::qWait(50);
+
+        // 4. Stress test: rapid repeated searches, provider destruction mid-scan, and rapid options churn
+        for (int round = 0; round < 5; ++round) {
+            auto *ephemeral = new ProviderLocalDocs;
+            ephemeral->setRootsForTesting({root});
+            QSignalSpy ephemSpy(ephemeral, &SearchProvider::searchCompleted);
+            for (int burst = 0; burst < 10; ++burst) {
+                ephemeral->search(QStringLiteral("keyword_stale_many"));
+            }
+            QWidget *w = ephemeral->createOptionsWidget();
+            delete w;
+            delete ephemeral;
+            QCoreApplication::processEvents();
+            QCOMPARE(ephemSpy.count(), 0);
+        }
+        QTest::qWait(80);
     }
 };
 

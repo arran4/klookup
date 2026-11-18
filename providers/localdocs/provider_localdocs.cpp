@@ -6,20 +6,37 @@
 #include <KConfigGroup>
 #include <KLocalizedString>
 #include <KSharedConfig>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QLabel>
 #include <QListWidget>
 #include <QMetaObject>
 #include <QPointer>
 #include <QPushButton>
 #include <QRunnable>
+#include <QSignalBlocker>
 #include <QSpinBox>
 #include <QThreadPool>
 #include <QVBoxLayout>
 
 namespace
 {
+struct GuiTargets {
+    quint64 nextId = 1;
+    QHash<quint64, QPointer<ProviderLocalDocs>> providers;
+    QHash<quint64, QPointer<QWidget>> optionWidgets;
+    QHash<quint64, QPointer<QLabel>> previewLabels;
+    QHash<quint64, std::shared_ptr<std::atomic<quint64>>> previewSeqs;
+};
+
+GuiTargets &guiTargets()
+{
+    static GuiTargets targets;
+    return targets;
+}
+
 QThreadPool *localDocThreadPool()
 {
     static QThreadPool *pool = []() {
@@ -27,6 +44,14 @@ QThreadPool *localDocThreadPool()
         p->setMaxThreadCount(2);
         return p;
     }();
+    static const bool registered = []() {
+        qAddPostRoutine([]() {
+            localDocThreadPool()->clear();
+            localDocThreadPool()->waitForDone();
+        });
+        return true;
+    }();
+    Q_UNUSED(registered);
     return pool;
 }
 
@@ -43,17 +68,22 @@ QString formatPreviewMessage(const LocalScanPreview &prev)
 
 ProviderLocalDocs::ProviderLocalDocs(QObject *parent)
     : SearchProvider(parent)
+    , m_latestSeq(std::make_shared<std::atomic<quint64>>(0))
 {
+    m_registryId = guiTargets().nextId++;
+    guiTargets().providers.insert(m_registryId, this);
 }
 
 ProviderLocalDocs::~ProviderLocalDocs()
 {
     cancel();
+    guiTargets().providers.remove(m_registryId);
 }
 
 void ProviderLocalDocs::cancel()
 {
     ++m_requestSeq;
+    m_latestSeq->store(m_requestSeq);
     if (m_activeCancel)
         m_activeCancel->store(true);
     m_activeCancel.reset();
@@ -94,17 +124,18 @@ void ProviderLocalDocs::search(const QString &query)
     }
 
     const quint64 generation = m_requestSeq;
+    const quint64 targetId = m_registryId;
+    const std::shared_ptr<std::atomic<quint64>> latestSeq = m_latestSeq;
     auto cancelFlag = std::make_shared<std::atomic_bool>(false);
     m_activeCancel = cancelFlag;
-    QPointer<ProviderLocalDocs> self(this);
 
-    localDocThreadPool()->start(QRunnable::create([self, generation, providerId, query, activeRoots, cancelFlag]() {
-        if (cancelFlag->load() || !self)
+    localDocThreadPool()->start(QRunnable::create([targetId, generation, latestSeq, providerId, query, activeRoots, cancelFlag]() {
+        if (cancelFlag->load() || latestSeq->load() != generation)
             return;
         bool wasCancelled = false;
         const QList<LocalDocMatch> matches =
             LocalDocScanner::search(query, activeRoots, LocalScanPolicy(), cancelFlag.get(), &wasCancelled);
-        if (wasCancelled || cancelFlag->load() || !self)
+        if (wasCancelled || cancelFlag->load() || latestSeq->load() != generation)
             return;
 
         QList<SearchResult> results;
@@ -120,14 +151,17 @@ void ProviderLocalDocs::search(const QString &query)
             results.append(res);
         }
 
-        QMetaObject::invokeMethod(
-            self,
-            [self, generation, providerId, results]() {
-                if (!self || self->m_requestSeq != generation)
-                    return;
-                emit self->searchCompleted(providerId, results);
-            },
-            Qt::QueuedConnection);
+        if (QCoreApplication *app = QCoreApplication::instance()) {
+            QMetaObject::invokeMethod(
+                app,
+                [targetId, generation, providerId, results]() {
+                    const QPointer<ProviderLocalDocs> target = guiTargets().providers.value(targetId);
+                    if (!target || target->m_requestSeq != generation)
+                        return;
+                    emit target->searchCompleted(providerId, results);
+                },
+                Qt::QueuedConnection);
+        }
     }));
 }
 
@@ -163,17 +197,22 @@ QWidget *ProviderLocalDocs::createOptionsWidget(QWidget *parent) const
 
     auto currentRoots = std::make_shared<QList<LocalScanRoot>>(roots());
     auto previewCancel = std::make_shared<std::shared_ptr<std::atomic_bool>>();
-    auto previewSeq = std::make_shared<quint64>(0);
-    QPointer<QWidget> safeWidget(widget);
-    QPointer<QLabel> safePreviewLabel(previewLabel);
+    const quint64 widgetId = guiTargets().nextId++;
+    auto previewSeq = std::make_shared<std::atomic<quint64>>(0);
+    guiTargets().optionWidgets.insert(widgetId, widget);
+    guiTargets().previewLabels.insert(widgetId, previewLabel);
+    guiTargets().previewSeqs.insert(widgetId, previewSeq);
 
-    connect(widget, &QObject::destroyed, [previewCancel, previewSeq]() {
-        ++(*previewSeq);
+    connect(widget, &QObject::destroyed, [previewCancel, previewSeq, widgetId]() {
+        previewSeq->fetch_add(1);
         if (*previewCancel)
             (*previewCancel)->store(true);
+        guiTargets().optionWidgets.remove(widgetId);
+        guiTargets().previewLabels.remove(widgetId);
+        guiTargets().previewSeqs.remove(widgetId);
     });
 
-    auto refreshUi = [list, safeWidget, safePreviewLabel, currentRoots, previewCancel, previewSeq]() {
+    auto refreshUi = [list, previewLabel, currentRoots, previewCancel, previewSeq, widgetId]() {
         {
             const QSignalBlocker blocker(list);
             list->clear();
@@ -185,29 +224,33 @@ QWidget *ProviderLocalDocs::createOptionsWidget(QWidget *parent) const
         }
         if (*previewCancel)
             (*previewCancel)->store(true);
-        const quint64 gen = ++(*previewSeq);
+        const quint64 gen = previewSeq->fetch_add(1) + 1;
         auto cancelFlag = std::make_shared<std::atomic_bool>(false);
         *previewCancel = cancelFlag;
         const QList<LocalScanRoot> snapshot = *currentRoots;
-        if (safePreviewLabel)
-            safePreviewLabel->setText(i18n("Scanning local documentation…"));
+        previewLabel->setText(i18n("Scanning local documentation…"));
 
-        localDocThreadPool()->start(QRunnable::create([safeWidget, safePreviewLabel, previewSeq, gen, snapshot, cancelFlag]() {
-            if (cancelFlag->load() || !safeWidget)
+        localDocThreadPool()->start(QRunnable::create([widgetId, previewSeq, gen, snapshot, cancelFlag]() {
+            if (cancelFlag->load() || previewSeq->load() != gen)
                 return;
             bool wasCancelled = false;
             const LocalScanPreview prev = LocalDocScanner::preview(snapshot, LocalScanPolicy(), cancelFlag.get(), &wasCancelled);
-            if (wasCancelled || cancelFlag->load() || !safeWidget)
+            if (wasCancelled || cancelFlag->load() || previewSeq->load() != gen)
                 return;
             const QString msg = formatPreviewMessage(prev);
-            QMetaObject::invokeMethod(
-                safeWidget,
-                [safeWidget, safePreviewLabel, previewSeq, gen, msg]() {
-                    if (!safeWidget || !safePreviewLabel || *previewSeq != gen)
-                        return;
-                    safePreviewLabel->setText(msg);
-                },
-                Qt::QueuedConnection);
+            if (QCoreApplication *app = QCoreApplication::instance()) {
+                QMetaObject::invokeMethod(
+                    app,
+                    [widgetId, gen, msg]() {
+                        const auto seq = guiTargets().previewSeqs.value(widgetId);
+                        const QPointer<QWidget> w = guiTargets().optionWidgets.value(widgetId);
+                        const QPointer<QLabel> lbl = guiTargets().previewLabels.value(widgetId);
+                        if (!w || !lbl || !seq || seq->load() != gen)
+                            return;
+                        lbl->setText(msg);
+                    },
+                    Qt::QueuedConnection);
+            }
         }));
     };
     auto persist = [currentRoots]() {

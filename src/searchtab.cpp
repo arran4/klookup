@@ -8,6 +8,7 @@
 #include "searchcontinuation.h"
 #include "sourcelink.h"
 #include "sourceurl.h"
+#include <KColorScheme>
 #include <KConfigGroup>
 #include <KSharedConfig>
 #include <QContextMenuEvent>
@@ -29,6 +30,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 #include <functional>
+#include <algorithm>
 #include <utility>
 
 namespace
@@ -77,8 +79,12 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     label->setTextFormat(Qt::PlainText);
     headerLayout->addWidget(label);
     headerLayout->addStretch();
-    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Pop Out to New Window"), leftWidget);
+    auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), i18n("Pop out"), leftWidget);
     detachButton->setObjectName(QStringLiteral("popOutSearch"));
+    detachButton->setFlat(true);
+    detachButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    detachButton->setAccessibleName(i18n("Pop out to new window"));
+    detachButton->setToolTip(i18n("Pop out search results to a new window"));
     m_popOutButton = detachButton;
     connect(detachButton, &QPushButton::clicked, this, [this] {
         emit popOutRequested();
@@ -302,6 +308,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
     state.group->setToolTip(0, provider->classification().description().toHtmlEscaped());
     state.group->setFlags(state.group->flags() & ~Qt::ItemIsSelectable);
     state.group->setExpanded(true);
+    state.orderIndex = m_nextProviderOrder++;
     const QString id = provider->id();
     m_states.insert(id, state);
     updateDisplayFilters();
@@ -311,6 +318,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
             return;
         state.pending = 0;
         state.started = true;
+        state.hasFailure = false;
         state.retryAt = {};
         // A repeated token cannot advance and must not create an endless loop.
         state.nextToken = state.seenTokens.contains(page.nextToken) ? QString() : page.nextToken;
@@ -323,9 +331,9 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
                 item->setData(0, ContentRole, QVariant::fromValue(page.content.value(result.id)));
         }
         pageStatus(state,
-                   state.nextToken.isEmpty() ? (state.items.isEmpty() ? QStringLiteral("No results") : QStringLiteral("No more results"))
-                                             : QStringLiteral("Load more results"),
-                   !state.nextToken.isEmpty());
+                   state.nextToken.isEmpty() ? (state.items.isEmpty() ? i18n("No results") : i18n("No more results"))
+                                             : i18n("… Load more results …"),
+                   state.nextToken.isEmpty() ? StatusKind::Neutral : StatusKind::Pagination);
     });
     connect(provider, &SearchProvider::searchCompleted, this, [this, id](const QString &, const QList<SearchResult> &results) {
         auto &state = m_states[id];
@@ -333,27 +341,35 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
             return;
         state.pending = 0;
         state.started = true;
+        state.hasFailure = false;
+        sortProviderGroups();
         if (state.status) {
             delete state.status;
             state.status = nullptr;
         }
         appendResults(state.group, results, &state);
         if (results.isEmpty())
-            pageStatus(state, QStringLiteral("No results"), false);
+            pageStatus(state, i18n("No results"), StatusKind::Neutral);
     });
     connect(provider, &SearchProvider::searchFailed, this, [this, id](const QString &, const QString &error) {
         auto &state = m_states[id];
         if (qobject_cast<SearchProviderContinuation *>(state.provider) || !state.pending)
             return;
         state.pending = 0;
-        pageStatus(state, QStringLiteral("Error: %1 — Retry").arg(error), true);
+        state.hasFailure = true;
+        QString target;
+        const StatusKind kind = classifyError(state.provider, error, 0, false, &target);
+        pageStatus(state, i18n("Error: %1", error), kind, target);
     });
     connect(provider, &SearchProvider::requestFailed, this, [this, id](quint64 requestId, const QString &error, int retryMs) {
         auto &state = m_states[id];
         if (requestId == state.pending && state.pending) {
             state.pending = 0;
-            state.retryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
-            pageStatus(state, QStringLiteral("Error: %1 — Retry").arg(error), true);
+            state.hasFailure = true;
+            state.retryAt = retryMs > 0 ? QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000)) : QDateTime();
+            QString target;
+            const StatusKind kind = classifyError(state.provider, error, retryMs, false, &target);
+            pageStatus(state, i18n("Error: %1", error), kind, target);
         } else if (requestId == m_detailRequest && m_detailRequest && id == m_detailProvider) {
             m_detailRequest = 0;
             state.detailRetryAt = QDateTime::currentDateTimeUtc().addMSecs(qBound(0, retryMs, 86400000));
@@ -398,10 +414,21 @@ void SearchTab::loadMore(const QString &providerId)
     if (it == m_states.end())
         return;
     auto &state = it.value();
-    if (!state.provider || !sourceEligible(state.provider) || state.pending || (state.started && state.nextToken.isEmpty()) || state.retryAt > QDateTime::currentDateTimeUtc())
+    if (!state.provider || state.pending || (state.started && state.nextToken.isEmpty()))
         return;
+    if (!sourceEligible(state.provider)) {
+        state.hasFailure = true;
+        QString target;
+        const StatusKind kind = classifyError(state.provider, i18n("Source is disabled or restricted in Settings"), -1, false, &target);
+        pageStatus(state, i18n("Error: Source is disabled or restricted in Settings"), kind, target);
+        return;
+    }
+    if (state.retryAt.isValid() && state.retryAt > QDateTime::currentDateTimeUtc())
+        return;
+    state.retryAt = {};
+    state.hasFailure = false;
     state.pending = ++m_nextRequest;
-    pageStatus(state, QStringLiteral("Loading…"), false);
+    pageStatus(state, i18n("Loading…"), StatusKind::Loading);
     const quint64 requestId = state.pending;
     auto start = [this, providerId, requestId](bool ready, const QString &error) {
         auto &current = m_states[providerId];
@@ -409,7 +436,10 @@ void SearchTab::loadMore(const QString &providerId)
             return;
         if (!ready) {
             current.pending = 0;
-            pageStatus(current, QStringLiteral("Authentication: %1 — Retry").arg(error), true);
+            current.hasFailure = true;
+            QString target;
+            const StatusKind kind = classifyError(current.provider, error, -1, true, &target);
+            pageStatus(current, i18n("Authentication: %1", error), kind, target);
             return;
         }
         if (auto *continuation = qobject_cast<SearchProviderContinuation *>(current.provider))
@@ -423,26 +453,208 @@ void SearchTab::loadMore(const QString &providerId)
         start(true, {});
 }
 
-void SearchTab::pageStatus(ProviderState &state, const QString &text, bool actionable)
+SearchTab::StatusKind SearchTab::classifyError(const SearchProvider *provider, const QString &error, int retryMs, bool authFailure, QString *settingsTarget) const
 {
+    if (settingsTarget)
+        settingsTarget->clear();
+    const QString lower = error.toLower();
+    if (provider && !sourceEligible(const_cast<SearchProvider *>(provider))) {
+        if (settingsTarget)
+            *settingsTarget = lower.contains(QLatin1String("region")) || lower.contains(QLatin1String("policy")) || lower.contains(QLatin1String("eligible"))
+                                  ? QStringLiteral("eligibility")
+                                  : QString();
+        return StatusKind::SettingsError;
+    }
+    if (authFailure || lower.contains(QLatin1String("authentication")) || lower.contains(QLatin1String("api key")) ||
+        lower.contains(QLatin1String("credential")) || lower.contains(QLatin1String("unauthorized")) ||
+        lower.contains(QLatin1String("disabled in settings")) || lower.contains(QLatin1String("not configured")) ||
+        lower.contains(QLatin1String("401")) || lower.contains(QLatin1String("403"))) {
+        if (settingsTarget)
+            *settingsTarget = QStringLiteral("providers");
+        return StatusKind::SettingsError;
+    }
+    if (lower.contains(QLatin1String("region")) || lower.contains(QLatin1String("policy")) || lower.contains(QLatin1String("approval"))) {
+        if (settingsTarget)
+            *settingsTarget = QStringLiteral("eligibility");
+        return StatusKind::SettingsError;
+    }
+    if (retryMs < 0 || lower.contains(QLatin1String("400")) || lower.contains(QLatin1String("404")) ||
+        lower.contains(QLatin1String("invalid response")) || lower.contains(QLatin1String("unsupported"))) {
+        return StatusKind::TerminalError;
+    }
+    return StatusKind::RetryableError;
+}
+
+void SearchTab::sortProviderGroups()
+{
+    if (!m_resultsTree)
+        return;
+    QMap<QTreeWidgetItem *, QPair<bool, int>> ordering;
+    for (auto it = m_states.cbegin(); it != m_states.cend(); ++it) {
+        if (it->group)
+            ordering.insert(it->group, qMakePair(it->hasFailure, it->orderIndex));
+    }
+    if (ordering.isEmpty())
+        return;
+
+    const int count = m_resultsTree->topLevelItemCount();
+    struct Entry {
+        QTreeWidgetItem *item;
+        bool failed;
+        int order;
+        bool expanded;
+    };
+    QList<Entry> entries;
+    entries.reserve(count);
+    for (int i = 0; i < count; ++i) {
+        auto *item = m_resultsTree->topLevelItem(i);
+        const auto info = ordering.value(item, qMakePair(false, 100000 + i));
+        entries.append({item, info.first, info.second, item->isExpanded()});
+    }
+    bool alreadySorted = true;
+    for (int i = 1; i < entries.size(); ++i) {
+        if (entries[i - 1].failed > entries[i].failed ||
+            (entries[i - 1].failed == entries[i].failed && entries[i - 1].order > entries[i].order)) {
+            alreadySorted = false;
+            break;
+        }
+    }
+    if (alreadySorted)
+        return;
+
+    std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) {
+        if (a.failed != b.failed)
+            return !a.failed;
+        return a.order < b.order;
+    });
+    const QTreeWidgetItem *currentItem = m_resultsTree->currentItem();
+    for (int i = 0; i < entries.size(); ++i) {
+        auto *item = entries[i].item;
+        const int currentIndex = m_resultsTree->indexOfTopLevelItem(item);
+        if (currentIndex != i) {
+            m_resultsTree->takeTopLevelItem(currentIndex);
+            m_resultsTree->insertTopLevelItem(i, item);
+            item->setExpanded(entries[i].expanded);
+        }
+    }
+    if (currentItem)
+        m_resultsTree->setCurrentItem(const_cast<QTreeWidgetItem *>(currentItem));
+}
+
+void SearchTab::pageStatus(ProviderState &state, const QString &text, StatusKind kind, const QString &settingsTarget)
+{
+    sortProviderGroups();
     if (state.status) {
+        if (auto *oldWidget = m_resultsTree->itemWidget(state.status, 0)) {
+            for (auto *child : oldWidget->findChildren<QWidget *>())
+                child->setObjectName({});
+            oldWidget->setObjectName({});
+            m_resultsTree->removeItemWidget(state.status, 0);
+            oldWidget->hide();
+            oldWidget->deleteLater();
+        }
         delete state.status;
         state.status = nullptr;
     }
     state.status = new QTreeWidgetItem(state.group);
     state.status->setFlags(state.status->flags() & ~Qt::ItemIsSelectable);
     state.status->setText(0, text);
-    if (actionable) {
+
+    const QString id = state.provider ? state.provider->id() : QString();
+    const QString providerName = state.provider ? state.provider->name() : id;
+    const KColorScheme scheme(QPalette::Active, KColorScheme::View);
+
+    if (kind == StatusKind::Pagination) {
         auto *button = new QPushButton(text, m_resultsTree);
-        button->setObjectName(QStringLiteral("loadMore_") + state.provider->id());
-        const QString id = state.provider->id();
+        button->setObjectName(QStringLiteral("loadMore_") + id);
+        button->setAutoFillBackground(true);
+        button->setFlat(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setFocusPolicy(Qt::StrongFocus);
+        button->setSizePolicy(QSizePolicy::Maximum, QSizePolicy::Fixed);
+        button->setAccessibleName(i18n("Load more results for %1", providerName));
+        QPalette pal = button->palette();
+        pal.setColor(QPalette::ButtonText, scheme.foreground(KColorScheme::LinkText).color());
+        button->setPalette(pal);
+        button->setStyleSheet(QStringLiteral("QPushButton { border: none; padding: 2px 4px; text-align: left; } "
+                                             "QPushButton:hover { text-decoration: underline; }"));
         connect(button, &QPushButton::clicked, this, [this, id] { loadMore(id); });
-        const qint64 delay = QDateTime::currentDateTimeUtc().msecsTo(state.retryAt);
-        if (delay > 0) {
-            button->setEnabled(false);
-            QTimer::singleShot(int(delay), button, [button] { button->setEnabled(true); });
-        }
         m_resultsTree->setItemWidget(state.status, 0, button);
+        return;
+    }
+
+    if (kind == StatusKind::RetryableError || kind == StatusKind::SettingsError || kind == StatusKind::TerminalError) {
+        auto *row = new QWidget(m_resultsTree);
+        row->setObjectName(QStringLiteral("errorRow_") + id);
+        row->setAutoFillBackground(true);
+        auto *rowLayout = new QHBoxLayout(row);
+        rowLayout->setContentsMargins(2, 2, 2, 2);
+        rowLayout->setSpacing(6);
+
+        const qint64 delayMs = state.retryAt.isValid() ? QDateTime::currentDateTimeUtc().msecsTo(state.retryAt) : 0;
+        const QString displayText = (kind == StatusKind::RetryableError && delayMs > 0)
+                                        ? i18n("%1 (retry available in %2 s)", text, qMax<qint64>(1, (delayMs + 999) / 1000))
+                                        : text;
+
+        auto *errorLabel = new QLabel(displayText, row);
+        errorLabel->setObjectName(QStringLiteral("errorLabel_") + id);
+        errorLabel->setTextFormat(Qt::PlainText);
+        errorLabel->setWordWrap(true);
+        QPalette errPal = errorLabel->palette();
+        errPal.setColor(QPalette::WindowText, scheme.foreground(KColorScheme::NegativeText).color());
+        errorLabel->setPalette(errPal);
+        rowLayout->addWidget(errorLabel, 1);
+
+        if (kind == StatusKind::RetryableError) {
+            auto *retryBtn = new QPushButton(i18n("Retry"), row);
+            retryBtn->setObjectName(QStringLiteral("loadMore_") + id);
+            retryBtn->setFlat(true);
+            retryBtn->setCursor(Qt::PointingHandCursor);
+            retryBtn->setFocusPolicy(Qt::StrongFocus);
+            retryBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+            retryBtn->setAccessibleName(i18n("Retry search for %1", providerName));
+            QPalette linkPal = retryBtn->palette();
+            linkPal.setColor(QPalette::ButtonText, scheme.foreground(KColorScheme::LinkText).color());
+            retryBtn->setPalette(linkPal);
+            retryBtn->setStyleSheet(QStringLiteral("QPushButton { border: none; padding: 2px 4px; } "
+                                                   "QPushButton:hover { text-decoration: underline; }"));
+            connect(retryBtn, &QPushButton::clicked, this, [this, id] {
+                if (auto it = m_states.find(id); it != m_states.end())
+                    it->retryAt = {};
+                loadMore(id);
+            });
+            if (delayMs > 0) {
+                retryBtn->setEnabled(false);
+                retryBtn->setToolTip(i18n("Please wait %1 s before retrying", qMax<qint64>(1, (delayMs + 999) / 1000)));
+                QTimer::singleShot(int(delayMs) + 50, retryBtn, [this, id, retryBtn, errorLabel, text] {
+                    if (auto it = m_states.find(id); it != m_states.end())
+                        it->retryAt = {};
+                    errorLabel->setText(text);
+                    retryBtn->setToolTip({});
+                    retryBtn->setEnabled(true);
+                });
+            }
+            rowLayout->addWidget(retryBtn);
+        } else if (kind == StatusKind::SettingsError) {
+            auto *settingsBtn = new QPushButton(i18n("Go to Settings"), row);
+            settingsBtn->setObjectName(QStringLiteral("settingsAction_") + id);
+            settingsBtn->setFlat(true);
+            settingsBtn->setCursor(Qt::PointingHandCursor);
+            settingsBtn->setFocusPolicy(Qt::StrongFocus);
+            settingsBtn->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+            settingsBtn->setAccessibleName(i18n("Open Settings for %1", providerName));
+            QPalette linkPal = settingsBtn->palette();
+            linkPal.setColor(QPalette::ButtonText, scheme.foreground(KColorScheme::LinkText).color());
+            settingsBtn->setPalette(linkPal);
+            settingsBtn->setStyleSheet(QStringLiteral("QPushButton { border: none; padding: 2px 4px; } "
+                                                      "QPushButton:hover { text-decoration: underline; }"));
+            connect(settingsBtn, &QPushButton::clicked, this, [this, id, settingsTarget] {
+                emit settingsRequested(id, settingsTarget);
+            });
+            rowLayout->addWidget(settingsBtn);
+        }
+
+        m_resultsTree->setItemWidget(state.status, 0, row);
     }
 }
 

@@ -38,7 +38,7 @@ private slots:
             {QStringLiteral("~/private"), Kind::Unsupported},
             {QStringLiteral("C:\\Users\\Private"), Kind::Unsupported},
             {QStringLiteral("./local/path"), Kind::Unsupported},
-            {QStringLiteral("Search this https://example.org/page"), Kind::SearchText},
+            {QStringLiteral("Search this https://example.org/page"), Kind::Unsupported},
             {QStringLiteral("Python 3.12"), Kind::SearchText},
             {QStringLiteral("1.2.3.4"), Kind::SearchText},
             {QStringLiteral("ISBN:978-0-140-32872-1"), Kind::SearchText},
@@ -49,7 +49,12 @@ private slots:
             {QStringLiteral("C++:templates"), Kind::SearchText},
             {QStringLiteral("夏目漱石"), Kind::SearchText},
             {QStringLiteral("  café lookup  "), Kind::SearchText},
-            {QStringLiteral("Some prose\nhttps://example.org/reference\nMore prose"), Kind::SearchText},
+            {QStringLiteral("Some prose\nhttps://example.org/reference\nMore prose"), Kind::Unsupported},
+            {QStringLiteral("\n\nOne piece\n\n"), Kind::SearchText},
+            {QStringLiteral("Email block\nFrom: user@example.com\nVisit https://example.org"), Kind::Unsupported},
+            {QStringLiteral("Contact user@example.com for info"), Kind::Unsupported},
+            {QStringLiteral("Check out www.example.com today"), Kind::Unsupported},
+            {QStringLiteral("multi\nline\ntext"), Kind::Unsupported},
             {QString(ClipboardInput::MaximumLength, QLatin1Char('a')), Kind::SearchText},
             {QString(ClipboardInput::MaximumLength + 1, QLatin1Char('a')), Kind::Unsupported},
             {QStringLiteral("binary") + QChar(0) + QStringLiteral("data"), Kind::Unsupported},
@@ -77,6 +82,10 @@ private slots:
         QCOMPARE(ClipboardInput::explicitQuery(&mime), QStringLiteral("https://example.org/explicit"));
         mime.setText(QStringLiteral("/an/intentional/path/query"));
         QCOMPARE(ClipboardInput::explicitQuery(&mime), QStringLiteral("/an/intentional/path/query"));
+        mime.setText(QStringLiteral("\n\nOne Piece\n\n"));
+        QCOMPARE(ClipboardInput::explicitQuery(&mime), QStringLiteral("One Piece"));
+        mime.setText(QStringLiteral("line1\nline2"));
+        QVERIFY(ClipboardInput::explicitQuery(&mime).isEmpty());
         mime.setText(QString(ClipboardInput::MaximumLength + 1, QLatin1Char('x')));
         QVERIFY(ClipboardInput::explicitQuery(&mime).isEmpty());
         mime.clear();

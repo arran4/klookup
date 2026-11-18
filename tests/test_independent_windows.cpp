@@ -198,7 +198,9 @@ private slots:
         newWindowBtn->click();
 
         QCOMPARE(spy.count(), 1);
-        QCOMPARE(newWindowBtn->text(), QStringLiteral("Pop Out to New Window"));
+        QCOMPARE(newWindowBtn->text(), QStringLiteral("Pop out"));
+        QVERIFY(newWindowBtn->isFlat());
+        QVERIFY(!newWindowBtn->accessibleName().isEmpty());
     }
 
     void testPopOutReturnAndPendingOwnership()

@@ -6,6 +6,7 @@
 #include <QSignalBlocker>
 #include <KLocalizedString>
 #include "settingsdialog.h"
+#include "selectedtextpolicy.h"
 #include "languagepreferences.h"
 #include "providerdiagnostics.h"
 #include <QPlainTextEdit>
@@ -317,6 +318,29 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
                                   this);
     recentHint->setWordWrap(true);
     generalLayout->addWidget(recentHint);
+
+    auto *selHeader = new QLabel(QStringLiteral("<b>Selected-Text Lookup (Opt-In, Off by Default)</b>"), this);
+    generalLayout->addWidget(selHeader);
+    m_selectedTextEnabled = new QCheckBox(QStringLiteral("Enable explicit selected-text lookup shortcut"), this);
+    m_selectedTextEnabled->setObjectName(QStringLiteral("selectedTextEnabled"));
+    m_selectedTextAutoPopup = new QCheckBox(QStringLiteral("Enable automatic selection popup (strictly local-only)"), this);
+    m_selectedTextAutoPopup->setObjectName(QStringLiteral("selectedTextAutoPopup"));
+    m_selectedTextRecordHistory = new QCheckBox(QStringLiteral("Record explicit selected-text lookups in recent activity"), this);
+    m_selectedTextRecordHistory->setObjectName(QStringLiteral("selectedTextRecordHistory"));
+    m_selectedTextRemoteProviders = new QListWidget(this);
+    m_selectedTextRemoteProviders->setObjectName(QStringLiteral("selectedTextRemoteProviders"));
+    m_selectedTextRemoteProviders->setMaximumHeight(90);
+    auto *selHint = new QLabel(QStringLiteral("Disabled by default. Enabling clipboard search or ordinary online providers never grants "
+                                               "selected-text permission. Automatic popups only query local sources."),
+                               this);
+    selHint->setWordWrap(true);
+    generalLayout->addWidget(m_selectedTextEnabled);
+    generalLayout->addWidget(m_selectedTextAutoPopup);
+    generalLayout->addWidget(m_selectedTextRecordHistory);
+    generalLayout->addWidget(new QLabel(QStringLiteral("Explicit-hotkey remote provider consent:"), this));
+    generalLayout->addWidget(m_selectedTextRemoteProviders);
+    generalLayout->addWidget(selHint);
+
     generalLayout->addStretch();
 
     addPage(generalWidget, QStringLiteral("General"));
@@ -338,6 +362,26 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_persistClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("PersistClipboardActivity"), false));
     m_persistClipboardRecent->setEnabled(m_recordClipboardRecent->isChecked());
     connect(m_recordClipboardRecent, &QCheckBox::toggled, m_persistClipboardRecent, &QWidget::setEnabled);
+
+    KConfigGroup selGroup(config, QStringLiteral("SelectedText"));
+    const auto selPolicy = SelectedTextPolicy::read(selGroup);
+    m_selectedTextEnabled->setChecked(selPolicy.enabled);
+    m_selectedTextAutoPopup->setChecked(selPolicy.autoPopup);
+    m_selectedTextAutoPopup->setEnabled(selPolicy.enabled);
+    m_selectedTextRecordHistory->setChecked(selPolicy.recordHistory);
+    m_selectedTextRecordHistory->setEnabled(selPolicy.enabled);
+    m_selectedTextRemoteProviders->setEnabled(selPolicy.enabled);
+    connect(m_selectedTextEnabled, &QCheckBox::toggled, m_selectedTextAutoPopup, &QWidget::setEnabled);
+    connect(m_selectedTextEnabled, &QCheckBox::toggled, m_selectedTextRecordHistory, &QWidget::setEnabled);
+    connect(m_selectedTextEnabled, &QCheckBox::toggled, m_selectedTextRemoteProviders, &QWidget::setEnabled);
+    for (SearchProvider *p : m_providers) {
+        if (!p || SelectedTextPolicy::isLocalProvider(p))
+            continue;
+        auto *item = new QListWidgetItem(p->name(), m_selectedTextRemoteProviders);
+        item->setData(Qt::UserRole, p->id());
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(selPolicy.approvedRemoteProviderIds.contains(p->id()) ? Qt::Checked : Qt::Unchecked);
+    }
 
     connect(m_loginButton, &QPushButton::clicked, this, &SettingsDialog::showLoginDialog);
 
@@ -500,6 +544,17 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
     ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
+    SelectedTextPolicy selPolicy;
+    selPolicy.enabled = m_selectedTextEnabled->isChecked();
+    selPolicy.autoPopup = selPolicy.enabled && m_selectedTextAutoPopup->isChecked();
+    selPolicy.recordHistory = selPolicy.enabled && m_selectedTextRecordHistory->isChecked();
+    for (int i = 0; i < m_selectedTextRemoteProviders->count(); ++i) {
+        QListWidgetItem *item = m_selectedTextRemoteProviders->item(i);
+        if (item && item->checkState() == Qt::Checked)
+            selPolicy.approvedRemoteProviderIds.append(item->data(Qt::UserRole).toString());
+    }
+    KConfigGroup selGroup(config, QStringLiteral("SelectedText"));
+    SelectedTextPolicy::write(selGroup, selPolicy);
     config->sync();
     if (m_autostartManager) {
         m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());

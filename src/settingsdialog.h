@@ -107,6 +107,10 @@ private:
     QCheckBox *m_showRecent;
     QCheckBox *m_recordClipboardRecent;
     QCheckBox *m_persistClipboardRecent;
+    QCheckBox *m_selectedTextEnabled = nullptr;
+    QCheckBox *m_selectedTextAutoPopup = nullptr;
+    QCheckBox *m_selectedTextRecordHistory = nullptr;
+    QListWidget *m_selectedTextRemoteProviders = nullptr;
     KWallet::Wallet *m_wallet = nullptr;
 };
 

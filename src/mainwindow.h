@@ -12,6 +12,8 @@
 #include "searchwindow.h"
 #include "providereligibility.h"
 #include "resultdetailwindow.h"
+#include "selectedtextpolicy.h"
+#include "selectionpopupwindow.h"
 
 class QSystemTrayIcon;
 class QPluginLoader;
@@ -36,6 +38,7 @@ public slots:
     void showSearch();
     void showSearchViaShortcut();
     void searchClipboardNow();
+    void lookupSelectedTextNow();
     void notifyClipboardShortcutUsed();
     void restoreFromTray();
     void clearSearchTabs();
@@ -73,11 +76,14 @@ protected:
 
 private slots:
     void onClipboardChanged();
+    void onPrimarySelectionChanged();
     void showSettingsDialog();
     void openProviderSettings(const QString &providerId, const QString &target = {});
     void configureShortcuts();
 
 private:
+    void syncSelectionObserver();
+    SelectionPopupWindow *ensureSelectionPopup();
     void connectSearchTab(SearchTab *tab);
     void trackSearchWindow(SearchWindow *window);
     ProviderApiV1::ProviderV1ToLegacyAdapter *createScriptedAdapter(ProviderPackage package, QObject *parent, QString *error = nullptr);
@@ -115,6 +121,9 @@ private:
     GlobalShortcuts *m_globalShortcuts = nullptr;
     QList<QPointer<SearchWindow>> m_searchWindows;
     QList<QPointer<ResultDetailWindow>> m_detailWindows;
+    QPointer<SelectionPopupWindow> m_selectionPopup;
+    QMetaObject::Connection m_selectionObserver;
+    QString m_lastAutoSelectedText;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

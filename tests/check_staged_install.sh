@@ -12,6 +12,12 @@ fi
 stage=$(mktemp -d /opt/klookup-install.XXXXXX)
 trap 'rm -rf -- "$stage"' EXIT
 cmake --install "$build_dir" --prefix "$stage" > "$stage/install.log"
+test -x "$stage/bin/klookup"
+stage_version="$("$stage/bin/klookup" --version | awk '{print $2}')"
+if [ -z "$stage_version" ] || [ "$stage_version" = "0.0.2" ]; then
+    echo "Staged klookup binary reported invalid or obsolete version: $stage_version"
+    exit 1
+fi
 test -f "$stage/share/klookup/providers.d/tvmaze/provider.json"
 test -f "$stage/share/klookup/providers.d/tvmaze/main.mjs"
 if sed -n '/tvmaze.*\.so/p' "$stage/install.log" | read -r obsolete; then

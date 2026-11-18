@@ -27,6 +27,11 @@ QString ProviderDuckDuckGo::id() const
     return QStringLiteral("duckduckgo");
 }
 
+QString ProviderDuckDuckGo::description() const
+{
+    return QStringLiteral("DuckDuckGo Instant Answer API (encyclopedic abstracts, definitions, and related topics; not full web search).");
+}
+
 void ProviderDuckDuckGo::search(const QString &query)
 {
     if (m_reply) {
@@ -44,7 +49,6 @@ void ProviderDuckDuckGo::search(const QString &query)
     q.addQueryItem(QStringLiteral("q"), query);
     q.addQueryItem(QStringLiteral("format"), QStringLiteral("json"));
     q.addQueryItem(QStringLiteral("no_html"), QStringLiteral("1"));
-    q.addQueryItem(QStringLiteral("skip_disambig"), QStringLiteral("1"));
     url.setQuery(q);
 
     QNetworkRequest request(url);
@@ -76,45 +80,118 @@ void ProviderDuckDuckGo::onReplyFinished(QNetworkReply *reply)
     }
 
     QByteArray data = reply->readAll();
+    QString parseError;
+    const QList<SearchResult> results = parseResponse(data, &parseError);
+    if (!parseError.isEmpty()) {
+        emit searchFailed(id(), parseError);
+        return;
+    }
 
+    emit searchCompleted(id(), results);
+}
+
+QList<SearchResult> ProviderDuckDuckGo::parseResponse(const QByteArray &data, QString *errorOut)
+{
     QJsonParseError error;
     QJsonDocument doc = QJsonDocument::fromJson(data, &error);
 
-    if (error.error != QJsonParseError::NoError) {
-        emit searchFailed(id(), QStringLiteral("Failed to parse JSON response"));
-        return;
+    if (error.error != QJsonParseError::NoError || !doc.isObject()) {
+        if (errorOut)
+            *errorOut = QStringLiteral("Failed to parse JSON response");
+        return {};
     }
 
     QJsonObject root = doc.object();
     QList<SearchResult> results;
 
     // Abstract
-    QString abstractText = root.value(QStringLiteral("AbstractText")).toString();
+    const QString abstractText = root.value(QStringLiteral("AbstractText")).toString().trimmed();
     if (!abstractText.isEmpty()) {
         SearchResult res;
         res.id = QStringLiteral("abstract");
-        res.title = root.value(QStringLiteral("Heading")).toString();
+        res.title = root.value(QStringLiteral("Heading")).toString().trimmed();
+        if (res.title.isEmpty())
+            res.title = QStringLiteral("Instant Answer");
         res.description = abstractText;
         res.url = root.value(QStringLiteral("AbstractURL")).toString();
         res.type = QStringLiteral("abstract");
+        const QString source = root.value(QStringLiteral("AbstractSource")).toString().trimmed();
+        if (!source.isEmpty())
+            res.additionalData.insert(QStringLiteral("source"), source);
+        const QString entity = root.value(QStringLiteral("Entity")).toString().trimmed();
+        if (!entity.isEmpty())
+            res.additionalData.insert(QStringLiteral("entity"), entity);
         results.append(res);
     }
 
-    // Related Topics
-    QJsonArray relatedArray = root.value(QStringLiteral("RelatedTopics")).toArray();
-    for (const QJsonValue &val : relatedArray) {
-        QJsonObject obj = val.toObject();
-        if (obj.contains(QStringLiteral("Text"))) {
-            SearchResult res;
-            res.title = obj.value(QStringLiteral("Text")).toString().section(QStringLiteral(" - "), 0, 0);
-            res.description = obj.value(QStringLiteral("Text")).toString();
-            res.url = obj.value(QStringLiteral("FirstURL")).toString();
-            res.type = QStringLiteral("related");
-            results.append(res);
-        }
+    // Direct Answer / Definition
+    const QString answer = root.value(QStringLiteral("Answer")).toString().trimmed();
+    if (!answer.isEmpty()) {
+        SearchResult res;
+        res.id = QStringLiteral("answer");
+        res.title = QStringLiteral("Instant Answer");
+        res.description = answer;
+        res.type = root.value(QStringLiteral("AnswerType")).toString().trimmed();
+        if (res.type.isEmpty())
+            res.type = QStringLiteral("answer");
+        results.append(res);
     }
 
-    emit searchCompleted(id(), results);
+    const QString definition = root.value(QStringLiteral("Definition")).toString().trimmed();
+    if (!definition.isEmpty()) {
+        SearchResult res;
+        res.id = QStringLiteral("definition");
+        res.title = root.value(QStringLiteral("Heading")).toString().trimmed();
+        if (res.title.isEmpty())
+            res.title = QStringLiteral("Definition");
+        res.description = definition;
+        res.url = root.value(QStringLiteral("DefinitionURL")).toString();
+        res.type = QStringLiteral("definition");
+        const QString defSource = root.value(QStringLiteral("DefinitionSource")).toString().trimmed();
+        if (!defSource.isEmpty())
+            res.additionalData.insert(QStringLiteral("source"), defSource);
+        results.append(res);
+    }
+
+    // Related Topics (top-level items and nested topic groups)
+    int relatedIndex = 0;
+    auto appendTopic = [&](const QJsonObject &obj, const QString &groupName) {
+        const QString text = obj.value(QStringLiteral("Text")).toString().trimmed();
+        if (text.isEmpty())
+            return;
+        SearchResult res;
+        const QString firstUrl = obj.value(QStringLiteral("FirstURL")).toString();
+        res.id = !firstUrl.isEmpty() ? firstUrl : QStringLiteral("related:%1").arg(relatedIndex);
+        ++relatedIndex;
+        res.title = text.section(QStringLiteral(" - "), 0, 0).trimmed();
+        if (res.title.isEmpty())
+            res.title = text;
+        res.description = text;
+        res.url = firstUrl;
+        res.type = QStringLiteral("related");
+        if (!groupName.isEmpty())
+            res.additionalData.insert(QStringLiteral("topicGroup"), groupName);
+        results.append(res);
+    };
+
+    const QJsonArray relatedArray = root.value(QStringLiteral("RelatedTopics")).toArray();
+    for (const QJsonValue &val : relatedArray) {
+        const QJsonObject obj = val.toObject();
+        if (obj.contains(QStringLiteral("Topics")) && obj.value(QStringLiteral("Topics")).isArray()) {
+            const QString groupName = obj.value(QStringLiteral("Name")).toString().trimmed();
+            for (const QJsonValue &nested : obj.value(QStringLiteral("Topics")).toArray()) {
+                appendTopic(nested.toObject(), groupName);
+                if (results.size() >= 50)
+                    break;
+            }
+        } else {
+            appendTopic(obj, {});
+        }
+        if (results.size() >= 50)
+            break;
+    }
+
+    return results;
 }
 
 SearchProvider* ProviderDuckDuckGo::clone(QObject *parent) const

@@ -54,6 +54,7 @@ signals:
     void resultViewed(const QString &providerId, const SearchResult &result);
     void detailWindowCreated(ResultDetailWindow *window);
     void popOutRequested();
+    void settingsRequested(const QString &providerId, const QString &target = {});
 
 public slots:
     void loadMore(const QString &providerId);
@@ -66,6 +67,14 @@ private slots:
     void onResultClicked(QTreeWidgetItem *item, int column);
 
 private:
+    enum class StatusKind {
+        Neutral,
+        Loading,
+        Pagination,
+        RetryableError,
+        SettingsError,
+        TerminalError,
+    };
     struct ProviderState {
         QPointer<SearchProvider> provider;
         QPointer<ProviderAuthSession> authentication;
@@ -76,13 +85,17 @@ private:
         QSet<QString> seenTokens;
         quint64 pending = 0;
         bool started = false;
+        bool hasFailure = false;
+        int orderIndex = 0;
         QDateTime retryAt;
         QDateTime detailRetryAt;
     };
     QTreeWidgetItem *groupForName(const QString &name);
-    void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr);
+    void appendResults(QTreeWidgetItem *group, const QList<SearchResult> &results, ProviderState *state = nullptr, const QString &providerIdOverride = {});
     void showResultMenu(QTreeWidgetItem *item, const QPoint &globalPosition);
-    void pageStatus(ProviderState &state, const QString &text, bool actionable);
+    StatusKind classifyError(const SearchProvider *provider, const QString &error, int retryMs, bool authFailure, QString *settingsTarget) const;
+    void sortProviderGroups();
+    void pageStatus(ProviderState &state, const QString &text, StatusKind kind, const QString &settingsTarget = {});
     void renderResult(QTreeWidgetItem *item);
     void renderMetadata(const ResultMetadata &metadata);
     void loadInitialDetails();
@@ -122,6 +135,7 @@ private:
     QPushButton *m_popOutButton = nullptr;
     QMap<QString, ProviderState> m_states;
     quint64 m_nextRequest = 0;
+    int m_nextProviderOrder = 0;
     quint64 m_detailRequest = 0;
     QString m_detailProvider;
     QString m_detailId;

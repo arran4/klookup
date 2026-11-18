@@ -148,6 +148,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Bootstrap KDE development rootfs
         run: |
           set -euo pipefail
@@ -158,18 +159,80 @@ jobs:
         run: |
           set -euo pipefail
           ./.jules/run.sh apt-get update
-          ./.jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev zlib1g-dev cmake ninja-build build-essential g++ reuse
+          ./.jules/run.sh apt-get install -y libkf6runner-dev libkf6globalaccel-dev zlib1g-dev cmake ninja-build build-essential g++ reuse git
+          ./.jules/run.sh git config --global --add safe.directory /workspace
       - name: Verify REUSE licensing
         run: ./.jules/run.sh reuse lint
       - name: Configure normal build
-        run: ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXTRA_ARGS+=("-DKLOOKUP_VERSION=${GITHUB_REF_NAME#v}")
+          fi
+          ./.jules/run.sh cmake -S . -B build -G Ninja -DBUILD_TESTING=ON "${EXTRA_ARGS[@]}"
       - name: Build application, providers and tests
         run: ./.jules/run.sh cmake --build build --parallel
       - name: Run normal CTest including staged install
         run: ./.jules/run.sh ctest --test-dir build --output-on-failure
+      - name: Verify v0.1.1 source archive without .git builds matching klookup --version
+        run: |
+          set -euo pipefail
+          rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
+          mkdir -p dist/archive-check-repo dist/archive-check-src
+          git ls-files -z | tar --null -T - -cf - | tar -xf - -C dist/archive-check-repo
+          (
+            cd dist/archive-check-repo
+            git init -q
+            git config user.email "ci@example.invalid"
+            git config user.name "CI"
+            git add -A
+            git -c commit.gpgsign=false commit -q -m "snapshot"
+            git tag v0.1.1
+            git archive --format=tar v0.1.1 | tar -xf - -C ../archive-check-src
+          )
+          test ! -e dist/archive-check-src/.git
+          grep -q 'set(_KLOOKUP_GIT_ARCHIVE_DESCRIPTION "v0.1.1")' dist/archive-check-src/cmake/KLookupArchiveVersion.cmake
+          test ! -e dist/archive-check-src/VERSION
+          ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF
+          ./.jules/run.sh cmake --build /workspace/dist/archive-check-build --target klookup --parallel
+          ARCHIVE_VER="$(./.jules/run.sh /workspace/dist/archive-check-build/src/klookup --version)"
+          echo "GitHub tag archive klookup --version: $ARCHIVE_VER"
+          [[ "$ARCHIVE_VER" == *"0.1.1"* ]] || { echo "Expected 0.1.1 in archive --version, got: $ARCHIVE_VER" >&2; exit 1; }
+
+          # Verify generated release metadata with a second actual Git tag.
+          sudo rm -rf dist/archive-check-build
+          (
+            cd dist/archive-check-repo
+            git -c commit.gpgsign=false commit --allow-empty -q -m "next release"
+            git tag v0.1.2
+            git archive --format=tar v0.1.2 | tar -xf - -C ../archive-check-src
+          )
+          test ! -e dist/archive-check-src/VERSION
+          ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF
+          ./.jules/run.sh cmake --build /workspace/dist/archive-check-build --target klookup --parallel
+          STAMPED_VER="$(./.jules/run.sh /workspace/dist/archive-check-build/src/klookup --version)"
+          echo "Version-stamped source archive klookup --version: $STAMPED_VER"
+          [[ "$STAMPED_VER" == *"0.1.2"* ]] || { echo "Expected 0.1.2 in stamped --version, got: $STAMPED_VER" >&2; exit 1; }
+
+          # Also verify Gentoo ebuild -DKLOOKUP_VERSION=${PV} override
+          sudo rm -rf dist/archive-check-build
+          ./.jules/run.sh cmake -S /workspace/dist/archive-check-src -B /workspace/dist/archive-check-build -G Ninja -DBUILD_TESTING=OFF -DKLOOKUP_VERSION=0.1.3
+          ./.jules/run.sh cmake --build /workspace/dist/archive-check-build --target klookup --parallel
+          EBUILD_VER="$(./.jules/run.sh /workspace/dist/archive-check-build/src/klookup --version)"
+          echo "Gentoo override klookup --version: $EBUILD_VER"
+          [[ "$EBUILD_VER" == *"0.1.3"* ]] || { echo "Expected 0.1.3 in override --version, got: $EBUILD_VER" >&2; exit 1; }
+
+          sudo rm -rf dist/archive-check-repo dist/archive-check-src dist/archive-check-build
       - name: Configure ASan/UBSan build
         run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXTRA_ARGS+=("-DKLOOKUP_VERSION=${GITHUB_REF_NAME#v}")
+          fi
           ./.jules/run.sh cmake -S . -B build-san -G Ninja -DBUILD_TESTING=ON \
+            "${EXTRA_ARGS[@]}" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -DCMAKE_MODULE_LINKER_FLAGS="-fsanitize=address,undefined" \
@@ -193,9 +256,20 @@ jobs:
           test -x dist/staged/bin/klookup-provider-check
           test -f dist/staged/share/klookup/providers.d/tvmaze/main.mjs
           tar -czf dist/release-candidates/klookup-linux-amd64.tar.gz -C dist staged
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            SRC_PREFIX="klookup-${GITHUB_REF_NAME#v}"
+            rm -rf "dist/$SRC_PREFIX"
+            mkdir -p "dist/$SRC_PREFIX"
+            git archive --format=tar HEAD | tar -xf - -C "dist/$SRC_PREFIX"
+            # Stamp the exact selected Git tag in generated archive metadata (not a tracked version file).
+            printf '%s\n' '# SPDX-FileCopyrightText: 2026 KLookup contributors' '# SPDX-License-Identifier: GPL-3.0-or-later' \
+              "set(_KLOOKUP_GIT_ARCHIVE_DESCRIPTION \"${GITHUB_REF_NAME}\")" > "dist/$SRC_PREFIX/cmake/KLookupArchiveVersion.cmake"
+            tar -czf "dist/release-candidates/klookup-${GITHUB_REF_NAME}-src.tar.gz" -C dist "$SRC_PREFIX"
+            rm -rf "dist/$SRC_PREFIX"
+          fi
           (
             cd dist/release-candidates
-            sha256sum klookup-linux-amd64.tar.gz > klookup-linux-amd64.tar.gz.sha256
+            sha256sum ./*.tar.gz > klookup-linux-amd64.tar.gz.sha256
           )
       - name: Upload release candidates for smoke testing
         uses: actions/upload-artifact@v7
@@ -294,6 +368,20 @@ jobs:
           test -x candidate/staged/bin/klookup-provider-check
           test -f candidate/staged/share/klookup/providers.d/tvmaze/main.mjs
           readelf -h candidate/staged/bin/klookup | grep -q ELF64
+          # Verify binary .rodata contains valid release version and does not contain obsolete 0.0.2
+          readelf -p .rodata candidate/staged/bin/klookup | grep -qE "[0-9]+\.[0-9]+\.[0-9]+"
+          if readelf -p .rodata candidate/staged/bin/klookup | grep -q "0\.0\.2"; then
+            echo "Candidate klookup unexpectedly contains obsolete version 0.0.2" >&2
+            exit 1
+          fi
+          # Release-time equality gate: on tag builds, embedded binary version must match the tag
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            EXPECTED_VER="${GITHUB_REF_NAME#v}"
+            if ! readelf -p .rodata candidate/staged/bin/klookup | grep -qF "$EXPECTED_VER"; then
+              echo "Release version mismatch: expected '$EXPECTED_VER' in candidate klookup .rodata" >&2
+              exit 1
+            fi
+          fi
           # Keep this archive an install-layout artifact, not a claim of a portable AppImage.
           find candidate/staged -type f | grep -q .
 

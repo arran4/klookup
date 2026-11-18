@@ -1,4 +1,5 @@
 #include "searchdashboard.h"
+#include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QListWidget>
@@ -30,7 +31,23 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
     m_recentSection = new QWidget(this);
     m_recentSection->setObjectName(QStringLiteral("recentActivitySection"));
     auto *recentLayout = new QVBoxLayout(m_recentSection);
-    recentLayout->addWidget(new QLabel(QStringLiteral("Recent activity"), m_recentSection));
+
+    auto *headerLayout = new QHBoxLayout;
+    headerLayout->addWidget(new QLabel(QStringLiteral("Recent activity"), m_recentSection));
+    headerLayout->addStretch();
+    m_filterCombo = new QComboBox(m_recentSection);
+    m_filterCombo->setObjectName(QStringLiteral("recentActivityFilter"));
+    m_filterCombo->addItem(QStringLiteral("Searches"), int(ActivityFilter::Searches));
+    m_filterCombo->addItem(QStringLiteral("All activity"), int(ActivityFilter::All));
+    m_filterCombo->addItem(QStringLiteral("Viewed results"), int(ActivityFilter::Viewed));
+    m_filterCombo->addItem(QStringLiteral("Captured clipboard"), int(ActivityFilter::Captured));
+    headerLayout->addWidget(m_filterCombo);
+    recentLayout->addLayout(headerLayout);
+
+    connect(m_filterCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] {
+        refreshRecent();
+    });
+
     m_recentList = new QListWidget(m_recentSection);
     m_recentList->setObjectName(QStringLiteral("recentActivityList"));
     m_recentList->setAccessibleName(QStringLiteral("Recent searches, viewed results and captured clipboard items"));
@@ -142,20 +159,48 @@ void SearchDashboard::refreshRecent()
     m_recentList->clear();
     m_recentSection->setVisible(!m_recent || m_recent->shown());
     if (m_recent) {
+        const auto filter = activityFilter();
         int count = 0;
         for (const auto &entry : m_recent->items()) {
+            if (filter == ActivityFilter::Searches && entry.kind != RecentItem::Kind::Search)
+                continue;
+            if (filter == ActivityFilter::Viewed && entry.kind != RecentItem::Kind::Viewed)
+                continue;
+            if (filter == ActivityFilter::Captured && entry.kind != RecentItem::Kind::Captured)
+                continue;
+
             if (++count > 10)
                 break;
-            const QString kind =
-                entry.kind == RecentItem::Kind::Viewed
-                    ? QStringLiteral("Viewed result")
-                    : (entry.kind == RecentItem::Kind::Captured ? QStringLiteral("Captured clipboard") : QStringLiteral("Searched query"));
-            auto *item = new QListWidgetItem(
-                QStringLiteral("%1 · %2\n%3\n%4")
-                    .arg(kind, entry.source, entry.title, entry.timestamp.toLocalTime().toString(QStringLiteral("yyyy-MM-dd hh:mm"))),
-                m_recentList);
+
+            QString itemText;
+            if (entry.kind == RecentItem::Kind::Search) {
+                QString timesDetail;
+                if (entry.count > 1) {
+                    QStringList dates;
+                    for (const auto &dt : entry.timestamps) {
+                        dates.append(dt.toLocalTime().toString(QStringLiteral("MMM d HH:mm")));
+                    }
+                    timesDetail = QStringLiteral("searched %1 times · %2").arg(QString::number(entry.count), dates.join(QStringLiteral(", ")));
+                } else {
+                    timesDetail = QStringLiteral("searched · %1").arg(entry.timestamp.toLocalTime().toString(QStringLiteral("MMM d HH:mm")));
+                }
+                if (entry.clipboard) {
+                    timesDetail += QStringLiteral(" · Clipboard");
+                }
+                itemText = QStringLiteral("%1\nSearched query · %2").arg(entry.title, timesDetail);
+            } else if (entry.kind == RecentItem::Kind::Viewed) {
+                itemText = QStringLiteral("%1\nViewed result · %2 · %3")
+                               .arg(entry.title, entry.source, entry.timestamp.toLocalTime().toString(QStringLiteral("MMM d HH:mm")));
+            } else {
+                itemText = QStringLiteral("%1\nCaptured clipboard · %2")
+                               .arg(entry.title, entry.timestamp.toLocalTime().toString(QStringLiteral("MMM d HH:mm")));
+            }
+
+            auto *item = new QListWidgetItem(itemText, m_recentList);
             item->setData(Qt::UserRole, QVariant::fromValue(entry));
-            item->setToolTip(QStringLiteral("<p>%1</p>").arg(entry.snippet.toHtmlEscaped()));
+            if (!entry.snippet.isEmpty()) {
+                item->setToolTip(QStringLiteral("<p>%1</p>").arg(entry.snippet.toHtmlEscaped()));
+            }
             if (entry.key == selected)
                 m_recentList->setCurrentItem(item);
         }
@@ -168,6 +213,23 @@ void SearchDashboard::refreshRecent()
     m_removeRecent->setEnabled(!empty);
     m_clearRecent->setEnabled(!empty);
     findChild<QPushButton *>(QStringLiteral("openRecentItem"))->setEnabled(!empty);
+}
+
+SearchDashboard::ActivityFilter SearchDashboard::activityFilter() const
+{
+    if (!m_filterCombo)
+        return ActivityFilter::Searches;
+    return static_cast<ActivityFilter>(m_filterCombo->currentData().toInt());
+}
+
+void SearchDashboard::setActivityFilter(ActivityFilter filter)
+{
+    if (m_filterCombo) {
+        const int index = m_filterCombo->findData(int(filter));
+        if (index >= 0 && index != m_filterCombo->currentIndex()) {
+            m_filterCombo->setCurrentIndex(index);
+        }
+    }
 }
 
 void SearchDashboard::focusQuery()

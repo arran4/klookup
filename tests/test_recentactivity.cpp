@@ -236,6 +236,7 @@ private slots:
         tabs->removeTab(tabs->indexOf(tab));
         delete tab;
         auto *dashboard = window.findChild<SearchDashboard *>();
+        dashboard->setActivityFilter(SearchDashboard::ActivityFilter::Viewed);
         auto *list = dashboard->findChild<QListWidget *>(QStringLiteral("recentActivityList"));
         QVERIFY(!list->item(0)->toolTip().contains(QStringLiteral("<img")));
         QVERIFY(list->item(0)->toolTip().contains(QStringLiteral("&lt;img")));
@@ -245,6 +246,107 @@ private slots:
         dashboard->findChild<QPushButton *>(QStringLiteral("openRecentItem"))->click();
         QDesktopServices::unsetUrlHandler(QStringLiteral("https"));
         QCOMPARE(opened, QList<QUrl>{QUrl(result.url)});
+    }
+    void queryFirstDashboardFiltersViewedResultsByDefault()
+    {
+        ClosingWindow window;
+        window.performSearch(QStringLiteral("lookup"));
+        auto *tabs = window.findChild<QTabWidget *>();
+        auto *tab = qobject_cast<SearchTab *>(tabs->currentWidget());
+        QVERIFY(tab);
+        SearchResult result;
+        result.id = QStringLiteral("viewed-item-id");
+        result.title = QStringLiteral("Viewed result title");
+        result.url = QStringLiteral("https://example.org/item");
+        tab->addResults(QStringLiteral("Source"), {result}, QStringLiteral("test-provider"));
+        auto *tree = tab->findChild<QTreeWidget *>();
+        tree->setCurrentItem(tree->topLevelItem(0)->child(0));
+
+        auto *dashboard = window.findChild<SearchDashboard *>();
+        QCOMPARE(dashboard->activityFilter(), SearchDashboard::ActivityFilter::Searches);
+        auto *list = dashboard->findChild<QListWidget *>(QStringLiteral("recentActivityList"));
+        // Default dashboard must only contain the search query, not the viewed result
+        QCOMPARE(list->count(), 1);
+        QVERIFY(list->item(0)->text().contains(QStringLiteral("lookup")));
+        QVERIFY(!list->item(0)->text().contains(QStringLiteral("Viewed result")));
+
+        // Switching filter to Viewed results reveals the viewed result
+        dashboard->setActivityFilter(SearchDashboard::ActivityFilter::Viewed);
+        QCOMPARE(list->count(), 1);
+        QVERIFY(list->item(0)->text().contains(QStringLiteral("Viewed result title")));
+    }
+    void searchDeduplicationWithCountsAndBoundedTimestamps()
+    {
+        const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        RecentActivity activity(config);
+        SearchDashboard dashboard;
+        dashboard.setRecentActivity(&activity);
+
+        activity.recordSearch(QStringLiteral("One Piece"));
+        activity.recordSearch(QStringLiteral("one  piece"));
+        activity.recordSearch(QStringLiteral("ONE PIECE"));
+
+        QCOMPARE(activity.items().size(), 1);
+        const auto items = activity.items();
+        const auto &item = items.first();
+        QCOMPARE(item.count, 3);
+        QCOMPARE(item.timestamps.size(), 3);
+        // Timestamps must be sorted newest first
+        for (int i = 0; i < item.timestamps.size() - 1; ++i) {
+            QVERIFY(item.timestamps.at(i) >= item.timestamps.at(i + 1));
+        }
+
+        auto *list = dashboard.findChild<QListWidget *>(QStringLiteral("recentActivityList"));
+        QCOMPARE(list->count(), 1);
+        QVERIFY(list->item(0)->text().contains(QStringLiteral("searched 3 times")));
+
+        // Bounded timestamps list cap (at 5)
+        for (int i = 0; i < 10; ++i) {
+            activity.recordSearch(QStringLiteral("one piece"));
+        }
+        QCOMPARE(activity.items().first().count, 13);
+        QCOMPARE(activity.items().first().timestamps.size(), 5);
+    }
+    void clipboardSearchKeptSeparateFromExplicitSearch()
+    {
+        const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup policy(config, QStringLiteral("General"));
+        policy.writeEntry(QStringLiteral("RecordClipboardActivity"), true);
+        policy.writeEntry(QStringLiteral("PersistClipboardActivity"), true);
+        RecentActivity activity(config);
+        activity.reloadPolicy();
+
+        activity.recordSearch(QStringLiteral("shared-term"), false);
+        activity.recordSearch(QStringLiteral("shared-term"), true);
+
+        // Explicit search and clipboard search must not be merged
+        QCOMPARE(activity.items().size(), 2);
+        bool foundExplicit = false;
+        bool foundClipboard = false;
+        for (const auto &item : activity.items()) {
+            if (item.clipboard) foundClipboard = true;
+            else foundExplicit = true;
+        }
+        QVERIFY(foundExplicit);
+        QVERIFY(foundClipboard);
+    }
+    void migrationFromLegacyJsonWithoutTimestamps()
+    {
+        const auto config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        KConfigGroup group(config, QStringLiteral("RecentActivity"));
+        const QString legacyEntry = QStringLiteral(
+            R"({"key":"legacy-key-123","kind":0,"title":"legacy search","query":"legacy search","snippet":"","source":"Explicit lookup","resultId":"","url":"","timestamp":"2026-11-01T12:00:00.000Z","clipboard":false})");
+        group.writeEntry(QStringLiteral("Items"), QStringList{legacyEntry});
+        config->sync();
+
+        RecentActivity activity(config);
+        QCOMPARE(activity.items().size(), 1);
+        const auto items = activity.items();
+        const auto &item = items.first();
+        QCOMPARE(item.count, 1);
+        QCOMPARE(item.timestamps.size(), 1);
+        QCOMPARE(item.key, QStringLiteral("legacy-key-123"));
+        QCOMPARE(item.query, QStringLiteral("legacy search"));
     }
     void automaticQueriesCannotBypassPrivacyThroughSessionTabs()
     {

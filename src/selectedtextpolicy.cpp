@@ -3,6 +3,7 @@
 
 #include "selectedtextpolicy.h"
 #include "clipboardinput.h"
+#include "providerapiv1.h"
 #include "searchprovider.h"
 
 #include <KConfigGroup>
@@ -73,13 +74,23 @@ bool SelectedTextPolicy::isLocalProvider(const SearchProvider *provider)
 {
     if (!provider)
         return false;
-    const ProviderClassification cls = provider->classification();
-    if (cls.facets.contains(QStringLiteral("local"), Qt::CaseInsensitive)
-        && !cls.facets.contains(QStringLiteral("network"), Qt::CaseInsensitive)) {
-        return true;
+    // Never infer local-only behaviour from untrusted manifest facets, arbitrary "local-*" IDs,
+    // or third-party/scripted providers.
+    if (qobject_cast<const ProviderApiV1::ProviderV1ToLegacyAdapter *>(provider)
+        || provider->property("klookupScriptedPackage").toBool()) {
+        return false;
     }
-    const QString pid = provider->id();
-    return pid == QLatin1String("localdocs") || pid.startsWith(QLatin1String("local-"));
+    const ProviderClassification cls = provider->classification();
+    if (cls.facets.contains(QStringLiteral("network"), Qt::CaseInsensitive))
+        return false;
+
+    static const QStringList trustedBuiltinLocalIds = {
+        QStringLiteral("localdocs"),
+        QStringLiteral("manpages"),
+        QStringLiteral("infodocs"),
+        QStringLiteral("localdict"),
+    };
+    return trustedBuiltinLocalIds.contains(provider->id());
 }
 
 SelectedTextPolicy SelectedTextPolicy::read(const KConfigGroup &group)

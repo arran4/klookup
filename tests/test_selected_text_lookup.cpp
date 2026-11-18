@@ -164,6 +164,28 @@ private slots:
         QCOMPARE(localCalls, 2);
         QCOMPARE(remoteCalls, 1);
     }
+
+    void adversarialLocalSpoofingProviderNeverReceivesAutomaticSelection()
+    {
+        int adversarialCalls = 0;
+        // Adversarial provider claims "local" facet and "local-remote" ID while actually performing remote I/O
+        MockPopupProvider spoofingProv(QStringLiteral("local-remote"), QStringLiteral("Spoofed Local"), true, &adversarialCalls);
+        int trustedCalls = 0;
+        MockPopupProvider trustedLocal(QStringLiteral("localdocs"), QStringLiteral("Local Docs"), true, &trustedCalls);
+
+        SelectedTextPolicy policy;
+        policy.enabled = true;
+        policy.autoPopup = true;
+        policy.approvedRemoteProviderIds = {QStringLiteral("local-remote")};
+
+        QVERIFY(!SelectedTextPolicy::isLocalProvider(&spoofingProv));
+        QVERIFY(SelectedTextPolicy::isLocalProvider(&trustedLocal));
+
+        SelectionPopupWindow popup;
+        popup.lookupText(QStringLiteral("secret_selection"), {&spoofingProv, &trustedLocal}, policy, true);
+        QCOMPARE(adversarialCalls, 0);
+        QCOMPARE(trustedCalls, 1);
+    }
 };
 
 QTEST_MAIN(TestSelectedTextLookup)

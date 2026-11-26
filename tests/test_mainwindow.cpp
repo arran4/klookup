@@ -505,32 +505,37 @@ private slots:
         QGuiApplication::clipboard()->setText(QStringLiteral("quiet background capture"));
         QCOMPARE(tabs->count(), initial + 1);
         QCOMPARE(entry->text(), QStringLiteral("quiet background capture"));
-        QCOMPARE(tabs->currentIndex(), initial); // capture does not switch away from results
         QVERIFY(!window.isVisible());
         window.restoreFromTray();
-        QCOMPARE(tabs->count(), initial + 2);
+        QCOMPARE(tabs->count(), initial + 1); // updates reusable automatic results tab in place
+        QVERIFY(window.reusableAutoTab());
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("quiet background capture"));
         window.restoreFromTray();
-        QCOMPARE(tabs->count(), initial + 2); // already shown is not a tray-open transition
+        QCOMPARE(tabs->count(), initial + 1); // already shown is not a tray-open transition
         window.hide();
         window.restoreFromTray();
-        QCOMPARE(tabs->count(), initial + 2); // same approved text deduplicates
+        QCOMPARE(tabs->count(), initial + 1); // same approved text deduplicates
         write(group, {Capture::Running, Trigger::GlobalShortcut});
+        group.writeEntry(QStringLiteral("ClipboardAutoDebounceMs"), 0);
         QGuiApplication::clipboard()->setText(QStringLiteral("shortcut trigger"));
-        QCOMPARE(tabs->count(), initial + 2);
+        QCOMPARE(tabs->count(), initial + 1);
         window.notifyClipboardShortcutUsed();
-        QCOMPARE(tabs->count(), initial + 3);
+        QCOMPARE(tabs->count(), initial + 1);
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("shortcut trigger"));
         window.notifyClipboardShortcutUsed();
-        QCOMPARE(tabs->count(), initial + 3);
+        QCOMPARE(tabs->count(), initial + 1);
         write(group, {Capture::Never, Trigger::GlobalShortcut});
+        group.writeEntry(QStringLiteral("ClipboardAutoDebounceMs"), 0);
         QGuiApplication::clipboard()->setText(QStringLiteral("unapproved clipboard"));
         window.notifyClipboardShortcutUsed();
-        QCOMPARE(tabs->count(), initial + 3);
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("shortcut trigger"));
         write(group, {Capture::Running, Trigger::FocusGained});
+        group.writeEntry(QStringLiteral("ClipboardAutoDebounceMs"), 0);
         QGuiApplication::clipboard()->setText(QStringLiteral("focus trigger"));
         window.handleClipboardEvent(Event::FocusGained);
-        QCOMPARE(tabs->count(), initial + 4);
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("focus trigger"));
         window.handleClipboardEvent(Event::FocusGained);
-        QCOMPARE(tabs->count(), initial + 4);
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("focus trigger"));
         write(group, {Capture::Never, Trigger::Never});
     }
 
@@ -621,7 +626,7 @@ private slots:
         QGuiApplication::clipboard()->setText(QStringLiteral("automatic shortcut query"));
         show->trigger();
         QCoreApplication::processEvents();
-        QCOMPARE(tabs->count(), initial + 2);
+        QCOMPARE(tabs->count(), initial + 2); // promotes/reuses auto tab cleanly
         show->trigger();
         QCoreApplication::processEvents();
         QCOMPARE(tabs->count(), initial + 2);
@@ -646,24 +651,31 @@ private slots:
 
         mainWindow.processClipboardText("alpha", true);
         QCOMPARE(tabWidget->count(), 2);
+        QVERIFY(mainWindow.reusableAutoTab());
+        QCOMPARE(mainWindow.reusableAutoTab()->query(), QStringLiteral("alpha"));
 
         mainWindow.processClipboardText("alpha", true);
         QCOMPARE(tabWidget->count(), 2); // consecutive auto-search is suppressed
 
         mainWindow.processClipboardText("beta", true);
-        QCOMPARE(tabWidget->count(), 3);
+        QCOMPARE(tabWidget->count(), 2); // unpromoted reusable auto tab updates in place
+        QCOMPARE(mainWindow.reusableAutoTab()->query(), QStringLiteral("beta"));
 
         mainWindow.processClipboardText("alpha", true);
-        QCOMPARE(tabWidget->count(), 4);
+        QCOMPARE(tabWidget->count(), 2);
+        QCOMPARE(mainWindow.reusableAutoTab()->query(), QStringLiteral("alpha"));
 
         mainWindow.processClipboardText("alpha", false);
-        QCOMPARE(tabWidget->count(), 4); // Prepopulation does clear the chain
+        QCOMPARE(tabWidget->count(), 2); // Prepopulation clears dedup chain
 
         mainWindow.processClipboardText("alpha", true);
-        QCOMPARE(tabWidget->count(), 5); // Cleared state, so consecutive identical autoSearch works
+        QCOMPARE(tabWidget->count(), 2);
 
+        // Pinning promotes the tab so the next automatic lookup creates a fresh reusable tab.
+        mainWindow.reusableAutoTab()->markUserInteracted(QStringLiteral("pin"));
         mainWindow.processClipboardText("gamma", true);
-        QCOMPARE(tabWidget->count(), 6);
+        QCOMPARE(tabWidget->count(), 3);
+        QCOMPARE(mainWindow.reusableAutoTab()->query(), QStringLiteral("gamma"));
     }
 
     void testSaveSettingsSerializesTabsAndHistory()

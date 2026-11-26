@@ -295,6 +295,8 @@ void MainWindow::closeSearchTab(int index)
 {
     if (index <= 0 || index >= m_tabWidget->count()) return; // Dashboard stays open.
     QWidget *widget = m_tabWidget->widget(index);
+    if (widget == m_reusableAutoTab.data())
+        m_reusableAutoTab.clear();
     m_tabWidget->removeTab(index);
     widget->deleteLater();
 }
@@ -871,11 +873,69 @@ void MainWindow::performSearch(const QString &query)
 }
 void MainWindow::performSearchInternal(const QString &query, bool clipboard, bool recordActivity)
 {
-    performSearchScoped(query, QueryScope::all(), clipboard, recordActivity);
+    if (clipboard) {
+        performAutomaticLookup(query, QueryScope::all());
+        return;
+    }
+    performSearchScoped(query, QueryScope::all(), false, recordActivity);
+}
+
+void MainWindow::performAutomaticLookup(const QString &query, const QueryScope &scope)
+{
+    KConfigGroup genGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(genGroup);
+    if (policy.autoHistoryMode == ClipboardPolicy::AutoHistoryMode::Always && m_recent) {
+        m_recent->recordSearch(query, true);
+    }
+
+    SearchTab *tab = m_reusableAutoTab.data();
+    const int existingIndex = tab ? m_tabWidget->indexOf(tab) : -1;
+    if (!tab || existingIndex <= 0 || !tab->isAutomaticResultsTab() || tab->isPromotedFromAutomatic()) {
+        tab = new SearchTab(query, this);
+        tab->setAutomaticResultsMode(true);
+        tab->setProperty("automaticClipboardQuery", true);
+        connectSearchTab(tab);
+        connect(tab, &SearchTab::promotedFromAutomatic, this, [this, tab](const QString &promotedQuery, const QString &) {
+            KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+            const auto currentPolicy = ClipboardPolicy::read(group);
+            if (currentPolicy.autoHistoryMode == ClipboardPolicy::AutoHistoryMode::OnInteraction && m_recent) {
+                m_recent->recordSearch(promotedQuery, false);
+            }
+            if (const int idx = m_tabWidget->indexOf(tab); idx > 0)
+                m_tabWidget->setTabToolTip(idx, QString());
+            if (m_reusableAutoTab.data() == tab)
+                m_reusableAutoTab.clear();
+        });
+        m_reusableAutoTab = tab;
+        const int prevIndex = m_tabWidget->currentIndex();
+        const int idx = m_tabWidget->addTab(tab, query);
+        m_tabWidget->setTabToolTip(idx, i18n("Automatic results tab — interact or click Pin to keep"));
+        if (prevIndex >= 0 && prevIndex < m_tabWidget->count())
+            m_tabWidget->setCurrentIndex(prevIndex);
+    } else {
+        tab->resetForAutomaticQuery(query);
+        tab->setSourceChoices(searchSourceChoices());
+        m_tabWidget->setTabText(existingIndex, query);
+        m_tabWidget->setTabToolTip(existingIndex, i18n("Automatic results tab — interact or click Pin to keep"));
+    }
+
+    if (scope.restricted)
+        tab->applySourceEligibility(scope.sourceIds);
+
+    for (SearchProvider *providerTemplate : m_providers) {
+        if (!providerTemplate->isEnabled()) continue;
+        if (!scope.includes(providerTemplate->id())) continue;
+
+        tab->startProvider(providerTemplate->cloneForSearch(tab), m_authManager->sessionFor(providerTemplate));
+    }
 }
 
 void MainWindow::performSearchScoped(const QString &query, const QueryScope &scope, bool clipboard, bool recordActivity)
 {
+    if (clipboard) {
+        performAutomaticLookup(query, scope);
+        return;
+    }
     if (recordActivity)
         m_recent->recordSearch(query, clipboard);
     SearchTab *tab = new SearchTab(query, this);
@@ -924,6 +984,7 @@ bool MainWindow::queryClose()
 
 void MainWindow::clearSearchTabs()
 {
+    m_reusableAutoTab.clear();
     while (m_tabWidget->count() > 1) {
         QWidget *widget = m_tabWidget->widget(1);
         m_tabWidget->removeTab(1);

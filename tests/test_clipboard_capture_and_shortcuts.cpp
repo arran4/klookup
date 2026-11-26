@@ -180,7 +180,9 @@ private slots:
         QVERIFY(!window.isAutoLookupPaused());
         QGuiApplication::clipboard()->setText(QStringLiteral("resumed query"));
         QTest::qWait(150);
-        QCOMPARE(tabs->count(), initial + 2);
+        QCOMPARE(tabs->count(), initial + 1);
+        QVERIFY(window.reusableAutoTab());
+        QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("resumed query"));
     }
 
     void inputSourcesAreMutuallyExclusiveAndShortcutsStaySeparate()

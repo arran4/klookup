@@ -26,6 +26,7 @@
 #include <QTimer>
 #include <QToolButton>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <KLocalizedString>
 #include <QUrl>
@@ -76,9 +77,22 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     left->setContentsMargins(0, 0, 0, 0);
 
     auto *headerLayout = new QHBoxLayout;
-    auto *label = new QLabel(QStringLiteral("Results for: ") + query, leftWidget);
-    label->setTextFormat(Qt::PlainText);
-    headerLayout->addWidget(label);
+    m_queryLabel = new QLabel(QStringLiteral("Results for: ") + query, leftWidget);
+    m_queryLabel->setTextFormat(Qt::PlainText);
+    headerLayout->addWidget(m_queryLabel);
+    m_autoBadge = new QLabel(i18n("Auto results"), leftWidget);
+    m_autoBadge->setObjectName(QStringLiteral("autoResultsBadge"));
+    m_autoBadge->setVisible(false);
+    headerLayout->addWidget(m_autoBadge);
+    m_pinAutoTabButton = new QPushButton(QIcon::fromTheme(QStringLiteral("pin")), i18n("Pin"), leftWidget);
+    m_pinAutoTabButton->setObjectName(QStringLiteral("pinAutoTabButton"));
+    m_pinAutoTabButton->setFlat(true);
+    m_pinAutoTabButton->setVisible(false);
+    m_pinAutoTabButton->setToolTip(i18n("Pin this automatic results tab so subsequent automatic lookups open a new tab"));
+    connect(m_pinAutoTabButton, &QPushButton::clicked, this, [this] {
+        markUserInteracted(QStringLiteral("pin"));
+    });
+    headerLayout->addWidget(m_pinAutoTabButton);
     headerLayout->addStretch();
     auto *detachButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), i18n("Pop out"), leftWidget);
     detachButton->setObjectName(QStringLiteral("popOutSearch"));
@@ -88,6 +102,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     detachButton->setToolTip(i18n("Pop out search results to a new window"));
     m_popOutButton = detachButton;
     connect(detachButton, &QPushButton::clicked, this, [this] {
+        markUserInteracted(QStringLiteral("pop_out"));
         emit popOutRequested();
     });
     headerLayout->addWidget(detachButton);
@@ -140,6 +155,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
         m_selectedFacets.clear();
         for (auto *button : m_filterButtons) { const QSignalBlocker blocker(button); button->setChecked(false); }
         applyDisplayFilters();
+        markUserInteracted(QStringLiteral("filter"));
     });
     auto *sourceControls = new QHBoxLayout;
     m_sourceButton = new QToolButton(this);
@@ -159,10 +175,14 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_expandScopeButton->setVisible(false);
     sourceControls->addWidget(m_expandScopeButton);
     m_sourceButton->setVisible(false); m_applySources->setVisible(false);
-    connect(m_applySources, &QPushButton::clicked, this, [this] { emit searchSelectedSourcesRequested(m_sourceDraft); });
+    connect(m_applySources, &QPushButton::clicked, this, [this] {
+        markUserInteracted(QStringLiteral("scope"));
+        emit searchSelectedSourcesRequested(m_sourceDraft);
+    });
     connect(m_expandScopeButton, &QPushButton::clicked, this, [this] {
         if (m_pendingExpansionSources.isEmpty())
             return;
+        markUserInteracted(QStringLiteral("expand"));
         QSet<QString> expanded = m_appliedSources;
         for (auto it = m_states.cbegin(); it != m_states.cend(); ++it)
             expanded.insert(it.key());
@@ -220,7 +240,10 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_detailsButton = new QPushButton(QStringLiteral("Load full details"), m_detailContainer);
     m_detailsButton->setObjectName(QStringLiteral("loadDetails"));
     m_detailsButton->hide();
-    connect(m_detailsButton, &QPushButton::clicked, this, [this] { loadDetails(); });
+    connect(m_detailsButton, &QPushButton::clicked, this, [this] {
+        markUserInteracted(QStringLiteral("details"));
+        loadDetails();
+    });
     right->addWidget(m_detailsButton);
 
     m_openDetailsWindowButton = new QPushButton(QIcon::fromTheme(QStringLiteral("window-new")), QStringLiteral("Open Details in New Window"), m_detailContainer);
@@ -228,6 +251,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_openDetailsWindowButton->hide();
     connect(m_openDetailsWindowButton, &QPushButton::clicked, this, [this] {
         if (m_selected) {
+            markUserInteracted(QStringLiteral("open_details"));
             openResultDetailsInNewWindow(m_selected);
         }
     });
@@ -249,12 +273,49 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
 
     m_detailStack->setCurrentWidget(m_emptyStateWidget);
 
-    connect(m_resultsTree, &QTreeWidget::itemClicked, this, &SearchTab::onResultClicked);
-    connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) { onResultClicked(item, 0); });
+    connect(m_resultsTree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int column) {
+        if (!m_suppressInteractionTracking && item && item->data(0, Qt::UserRole).isValid())
+            markUserInteracted(QStringLiteral("click"));
+        onResultClicked(item, column);
+    });
+    connect(m_resultsTree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item, int column) {
+        if (!m_suppressInteractionTracking && item && item->data(0, Qt::UserRole).isValid())
+            markUserInteracted(QStringLiteral("activate"));
+        onResultClicked(item, column);
+    });
+    connect(m_resultsTree, &QTreeWidget::currentItemChanged, this, [this](QTreeWidgetItem *item) {
+        if (!m_suppressInteractionTracking && item && item->data(0, Qt::UserRole).isValid())
+            markUserInteracted(QStringLiteral("select"));
+        onResultClicked(item, 0);
+    });
+    if (auto *vbar = m_resultsTree->verticalScrollBar()) {
+        connect(vbar, &QAbstractSlider::sliderMoved, this, [this] {
+            if (!m_suppressInteractionTracking)
+                markUserInteracted(QStringLiteral("scroll"));
+        });
+        connect(vbar, &QAbstractSlider::actionTriggered, this, [this] {
+            if (!m_suppressInteractionTracking)
+                markUserInteracted(QStringLiteral("scroll"));
+        });
+    }
+    if (auto *dbar = m_detailsView->verticalScrollBar()) {
+        dbar->installEventFilter(this);
+        connect(dbar, &QAbstractSlider::sliderMoved, this, [this] {
+            if (!m_suppressInteractionTracking)
+                markUserInteracted(QStringLiteral("scroll_details"));
+        });
+        connect(dbar, &QAbstractSlider::actionTriggered, this, [this] {
+            if (!m_suppressInteractionTracking)
+                markUserInteracted(QStringLiteral("scroll_details"));
+        });
+    }
+    m_detailsView->viewport()->installEventFilter(this);
+    m_metadataView->viewport()->installEventFilter(this);
     m_detailsView->setOpenExternalLinks(false);
     m_detailsView->setOpenLinks(false);
     m_detailsView->document()->setResourceProvider([](const QUrl &) { return QVariant(QByteArray()); });
     connect(m_detailsView, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
+        markUserInteracted(QStringLiteral("detail_link"));
         if (url.scheme() == QLatin1String("klookup") && url.host() == QLatin1String("more-titles") && m_selected) {
             const auto res = m_selected->data(0, Qt::UserRole).value<SearchResult>();
             const QString providerId = m_selected->data(0, ProviderRole).toString();
@@ -309,6 +370,83 @@ SearchTab::~SearchTab()
     }
 }
 
+void SearchTab::setAutomaticResultsMode(bool automatic)
+{
+    m_automaticMode = automatic;
+    if (!automatic)
+        m_promoted = false;
+    if (m_autoBadge)
+        m_autoBadge->setVisible(m_automaticMode && !m_promoted);
+    if (m_pinAutoTabButton)
+        m_pinAutoTabButton->setVisible(m_automaticMode && !m_promoted);
+}
+
+void SearchTab::markUserInteracted(const QString &reason)
+{
+    if (!m_automaticMode || m_promoted || m_suppressInteractionTracking)
+        return;
+    m_promoted = true;
+    setProperty("automaticClipboardQuery", false);
+    if (m_autoBadge)
+        m_autoBadge->setVisible(false);
+    if (m_pinAutoTabButton)
+        m_pinAutoTabButton->setVisible(false);
+    emit promotedFromAutomatic(m_query, reason);
+}
+
+void SearchTab::resetForAutomaticQuery(const QString &query)
+{
+    m_suppressInteractionTracking = true;
+    ++m_queryGeneration;
+    ++m_nextRequest;
+    m_nextProviderOrder = 0;
+    m_detailRequest = 0;
+    m_detailProvider.clear();
+    m_detailId.clear();
+    m_selected = nullptr;
+    m_query = query;
+    m_automaticMode = true;
+    m_promoted = false;
+    setProperty("automaticClipboardQuery", true);
+    if (m_queryLabel)
+        m_queryLabel->setText(QStringLiteral("Results for: ") + query);
+    if (m_autoBadge)
+        m_autoBadge->setVisible(true);
+    if (m_pinAutoTabButton)
+        m_pinAutoTabButton->setVisible(true);
+
+    for (auto it = m_states.begin(); it != m_states.end(); ++it) {
+        auto &state = it.value();
+        if (state.provider) {
+            state.provider->disconnect(this);
+            if (auto *continuation = qobject_cast<SearchProviderContinuation *>(state.provider))
+                continuation->cancelRequests();
+            state.provider->deleteLater();
+        }
+    }
+    m_states.clear();
+
+    m_resultsTree->clear();
+    m_detailsView->clear();
+    m_metadataView->clear();
+    m_metadataView->hide();
+    if (m_sourceLink)
+        m_sourceLink->setResult(SearchResult{});
+    if (m_detailsButton)
+        m_detailsButton->hide();
+    if (m_openDetailsWindowButton)
+        m_openDetailsWindowButton->hide();
+    if (m_detailStack && m_emptyStateWidget)
+        m_detailStack->setCurrentWidget(m_emptyStateWidget);
+
+    m_hasTemporarySelection = false;
+    m_appliedSources.clear();
+    m_pendingExpansionSources.clear();
+    m_selectedFacets.clear();
+    updateDisplayFilters();
+    m_suppressInteractionTracking = false;
+}
+
 void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *authentication)
 {
     if (!provider || !provider->isEnabled() || m_states.contains(provider->id())) {
@@ -325,6 +463,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
         if (authentication->hasUsableToken())
             provider->setCredentials({}, authentication->accessToken());
     }
+    m_suppressInteractionTracking = true;
     state.group = new QTreeWidgetItem(m_resultsTree);
     state.group->setText(0, provider->name());
     state.group->setData(0, Qt::UserRole + 20, QVariant::fromValue(provider->classification()));
@@ -333,12 +472,17 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
     state.group->setExpanded(true);
     state.orderIndex = m_nextProviderOrder++;
     const QString id = provider->id();
+    const quint64 generation = m_queryGeneration;
     m_states.insert(id, state);
     updateDisplayFilters();
-    connect(provider, &SearchProvider::pageCompleted, this, [this, id](quint64 requestId, const SearchPage &page) {
+    m_suppressInteractionTracking = false;
+    connect(provider, &SearchProvider::pageCompleted, this, [this, id, generation](quint64 requestId, const SearchPage &page) {
+        if (generation != m_queryGeneration || !m_states.contains(id))
+            return;
         auto &state = m_states[id];
         if (!state.pending || state.pending != requestId)
             return;
+        m_suppressInteractionTracking = true;
         state.pending = 0;
         state.started = true;
         state.hasFailure = false;
@@ -357,11 +501,15 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
                    state.nextToken.isEmpty() ? (state.items.isEmpty() ? i18n("No results") : i18n("No more results"))
                                              : i18n("… Load more results …"),
                    state.nextToken.isEmpty() ? StatusKind::Neutral : StatusKind::Pagination);
+        m_suppressInteractionTracking = false;
     });
-    connect(provider, &SearchProvider::searchCompleted, this, [this, id](const QString &, const QList<SearchResult> &results) {
+    connect(provider, &SearchProvider::searchCompleted, this, [this, id, generation](const QString &, const QList<SearchResult> &results) {
+        if (generation != m_queryGeneration || !m_states.contains(id))
+            return;
         auto &state = m_states[id];
         if (qobject_cast<SearchProviderContinuation *>(state.provider) || !state.pending)
             return;
+        m_suppressInteractionTracking = true;
         state.pending = 0;
         state.started = true;
         state.hasFailure = false;
@@ -373,8 +521,11 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
         appendResults(state.group, results, &state);
         if (results.isEmpty())
             pageStatus(state, i18n("No results"), StatusKind::Neutral);
+        m_suppressInteractionTracking = false;
     });
-    connect(provider, &SearchProvider::searchFailed, this, [this, id](const QString &, const QString &error) {
+    connect(provider, &SearchProvider::searchFailed, this, [this, id, generation](const QString &, const QString &error) {
+        if (generation != m_queryGeneration || !m_states.contains(id))
+            return;
         auto &state = m_states[id];
         if (qobject_cast<SearchProviderContinuation *>(state.provider) || !state.pending)
             return;
@@ -384,7 +535,9 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
         const StatusKind kind = classifyError(state.provider, error, 0, false, &target);
         pageStatus(state, i18n("Error: %1", error), kind, target);
     });
-    connect(provider, &SearchProvider::requestFailed, this, [this, id](quint64 requestId, const QString &error, int retryMs) {
+    connect(provider, &SearchProvider::requestFailed, this, [this, id, generation](quint64 requestId, const QString &error, int retryMs) {
+        if (generation != m_queryGeneration || !m_states.contains(id))
+            return;
         auto &state = m_states[id];
         if (requestId == state.pending && state.pending) {
             state.pending = 0;
@@ -407,7 +560,9 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
                 loadInitialDetails();
         }
     });
-    connect(provider, &SearchProvider::detailsCompleted, this, [this, id](quint64 requestId, const SearchDetails &details) {
+    connect(provider, &SearchProvider::detailsCompleted, this, [this, id, generation](quint64 requestId, const SearchDetails &details) {
+        if (generation != m_queryGeneration || !m_states.contains(id))
+            return;
         if (!m_detailRequest || m_detailRequest != requestId || id != m_detailProvider)
             return;
         m_detailRequest = 0;
@@ -1044,6 +1199,14 @@ bool SearchTab::eventFilter(QObject *watched, QEvent *event)
         }
     }
 
+    if (event->type() == QEvent::Wheel && !m_suppressInteractionTracking &&
+        ((m_resultsTree && watched == m_resultsTree->viewport()) ||
+         (m_detailsView && watched == m_detailsView->viewport()) ||
+         (m_metadataView && watched == m_metadataView->viewport()) ||
+         (m_detailsView && m_detailsView->verticalScrollBar() && watched == m_detailsView->verticalScrollBar()))) {
+        markUserInteracted(QStringLiteral("scroll"));
+    }
+
     if ((watched == m_resultsTree || watched == m_resultsTree->viewport()) && event->type() == QEvent::ContextMenu) {
         auto *context = static_cast<QContextMenuEvent *>(event);
         auto *item = context->reason() == QContextMenuEvent::Keyboard
@@ -1223,6 +1386,7 @@ void SearchTab::updateDisplayFilters()
         connect(button, &QToolButton::toggled, this, [this, id](bool checked) {
             if (checked) m_selectedFacets.insert(id); else m_selectedFacets.remove(id);
             applyDisplayFilters();
+            markUserInteracted(QStringLiteral("filter"));
         });
     };
 

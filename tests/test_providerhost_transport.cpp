@@ -119,7 +119,7 @@ private:
         manifest.close();
         QFile entry(packageRoot.filePath(QStringLiteral("main.mjs")));
         if (!entry.open(QIODevice::WriteOnly)) return {};
-        entry.write("export function search() { return []; }");
+        entry.write("module.exports = { search: function() { return []; } };");
         entry.close();
         auto result = ProviderPackage::fromDirectory(packageRoot.path());
         result.setTrusted(true);

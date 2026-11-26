@@ -11,7 +11,7 @@
 #include <QJSEngine>
 #include <QJSValue>
 #include <QPointer>
-#include <QTemporaryDir>
+#include <QSet>
 #include <memory>
 
 class JsHostBridge;
@@ -83,6 +83,7 @@ private:
         qint64 cpuNanoseconds = 0;
     };
     bool initEngine();
+    QJSValue evaluateVerifiedScriptModule(const QString &moduleRelPath, QString *error);
     quint64 invoke(const QString &method, const QJSValueList &arguments, Kind kind,
                    const QString &resultId, quint64 requestId);
     quint64 nextRequestId();
@@ -97,13 +98,16 @@ private:
     void postTerminal(quint64 requestId, quint64 token, std::function<void()> callback);
 
     ProviderPackage m_package;
-    QTemporaryDir m_snapshot;
+    QMap<QString, QByteArray> m_verifiedFiles;
+    QHash<QString, QJSValue> m_requiredModules;
+    QSet<QString> m_loadingModules;
     QPointer<ProviderHost::ProviderHostService> m_hostService;
     QJSEngine *m_engine = nullptr;
     JsHostBridge *m_bridge = nullptr;
     std::unique_ptr<JsExecutionWatchdog> m_watchdog;
     QJSValue m_module;
     QJSValue m_helpers;
+    QJSValue m_baseHost;
     bool m_loaded = false;
     bool m_disposalPosted = false;
     bool m_registeredWithGate = false;

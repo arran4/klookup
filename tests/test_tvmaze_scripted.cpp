@@ -499,8 +499,8 @@ private Q_SLOTS:
         QVERIFY(!window.provider(QStringLiteral("tvmaze")));
         QVERIFY(!window.isPackageTrusted(QStringLiteral("tvmaze")));
 
-        for (const QByteArray &script : {QByteArray("export function search( {"),
-                                       QByteArray("throw new Error('broken module'); export function search() {}")}) {
+        for (const QByteArray &script : {QByteArray("module.exports = { search: function( {"),
+                                       QByteArray("throw new Error('broken module'); module.exports = { search: function() {} };")}) {
             QFile entry(root + QStringLiteral("/main.mjs"));
             QVERIFY(entry.open(QIODevice::WriteOnly));
             entry.write(script);

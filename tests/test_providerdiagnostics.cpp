@@ -42,10 +42,10 @@ class TestProviderDiagnostics : public QObject {
     }
 private slots:
     void preflightNeverEvaluatesCodeAndFailuresAreIsolated() {
-        auto throwing = source(QStringLiteral("throwing"), "throw new Error('SECRET_do_not_show'); export function search() {}");
-        auto disabled = source(QStringLiteral("disabled"), "export function search() {}", true, false);
-        auto untrusted = source(QStringLiteral("untrusted"), "throw new Error('SECRET_do_not_show'); export function search() {}", false);
-        auto missing = source(QStringLiteral("missing"), "export function search() {}");
+        auto throwing = source(QStringLiteral("throwing"), "throw new Error('SECRET_do_not_show'); module.exports = { search: function() {} };");
+        auto disabled = source(QStringLiteral("disabled"), "module.exports = { search: function() {} };", true, false);
+        auto untrusted = source(QStringLiteral("untrusted"), "throw new Error('SECRET_do_not_show'); module.exports = { search: function() {} };", false);
+        auto missing = source(QStringLiteral("missing"), "module.exports = { search: function() {} };");
         QFile::remove(missing.path + QStringLiteral("/main.mjs"));
         auto report = check({throwing, disabled, untrusted, missing}, ProviderDiagnostics::Mode::Preflight);
         QCOMPARE(report.value(QStringLiteral("results")).toArray().size(), 4);
@@ -57,10 +57,10 @@ private slots:
         QVERIFY(!QJsonDocument(report).toJson().contains("SECRET"));
     }
     void optionalOperationsNetworkDenialAndSafeErrors() {
-        auto noCheck = source(QStringLiteral("optional"), "export function search() {}");
-        auto good = source(QStringLiteral("good"), "export function search() {} export function selfTest() { return {passed:true}; }");
-        auto bad = source(QStringLiteral("bad"), "export function search() {} export function selfTest() { throw Error('SECRET_TOKEN=private'); }");
-        auto network = source(QStringLiteral("network"), "export function search() {} export function selfTest() { return host.fetch('https://example.invalid').then(function() { return {passed:false}; }, function() { return {passed:true}; }); }");
+        auto noCheck = source(QStringLiteral("optional"), "module.exports = { search: function() {} };");
+        auto good = source(QStringLiteral("good"), "module.exports = { search: function() {}, selfTest: function() { return {passed:true}; } };");
+        auto bad = source(QStringLiteral("bad"), "module.exports = { search: function() {}, selfTest: function() { throw Error('SECRET_TOKEN=private'); } };");
+        auto network = source(QStringLiteral("network"), "module.exports = { search: function() {}, selfTest: function() { return host.fetch('https://example.invalid').then(function() { return {passed:false}; }, function() { return {passed:true}; }); } };");
         auto report = check({noCheck, bad, good, network}, ProviderDiagnostics::Mode::Offline);
         auto rows = report.value(QStringLiteral("results")).toArray();
         QCOMPARE(rows.size(), 4);
@@ -75,8 +75,8 @@ private slots:
         }
     }
     void timeoutCancellationAndIndependentRunners() {
-        auto pending = source(QStringLiteral("pending"), "export function search() {} export function selfTest() { return new Promise(function() {}); }");
-        auto good = source(QStringLiteral("healthy"), "export function search() {} export function selfTest() { return {passed:true}; }");
+        auto pending = source(QStringLiteral("pending"), "module.exports = { search: function() {}, selfTest: function() { return new Promise(function() {}); } };");
+        auto good = source(QStringLiteral("healthy"), "module.exports = { search: function() {}, selfTest: function() { return {passed:true}; } };");
         auto report = check({pending, good}, ProviderDiagnostics::Mode::Offline);
         const auto rows = report.value(QStringLiteral("results")).toArray();
         QCOMPARE(rows.size(), 2);
@@ -96,9 +96,9 @@ private slots:
         QCOMPARE(a.last()[1].toJsonObject().value(QStringLiteral("counts")).toObject().value(QStringLiteral("pass")).toInt(), 1);
     }
     void executionPermissionAndMissingDependencyFailuresAreIsolated() {
-        auto loop = source(QStringLiteral("loop"), "export function search() {} export function selfTest() { while(true) {} }");
-        auto denied = source(QStringLiteral("denied"), "export function search() {} export function selfTest() { return host.fetch('https://undeclared.invalid').then(function() { return {passed:false}; }, function() { return {passed:true}; }); }");
-        auto healthy = source(QStringLiteral("after_loop"), "export function search() {} export function selfTest() { return {passed:true}; }");
+        auto loop = source(QStringLiteral("loop"), "module.exports = { search: function() {}, selfTest: function() { while(true) {} } };");
+        auto denied = source(QStringLiteral("denied"), "module.exports = { search: function() {}, selfTest: function() { return host.fetch('https://undeclared.invalid').then(function() { return {passed:false}; }, function() { return {passed:true}; }); } };");
+        auto healthy = source(QStringLiteral("after_loop"), "module.exports = { search: function() {}, selfTest: function() { return {passed:true}; } };");
         ProviderDiagnostics::Source missing{QStringLiteral("missing_native"), QStringLiteral("native"), root.filePath(QStringLiteral("no-library.so")), {}, {}, {}, true};
         const auto report = check({loop, missing, denied, healthy}, ProviderDiagnostics::Mode::Offline);
         const auto rows = report.value(QStringLiteral("results")).toArray();
@@ -137,7 +137,7 @@ private slots:
         QVERIFY(github);
     }
     void settingsExposesIndividualAndAggregateControls() {
-        auto example = source(QStringLiteral("ui"), "throw new Error('must not execute'); export function search() {}");
+        auto example = source(QStringLiteral("ui"), "throw new Error('must not execute'); module.exports = { search: function() {} };");
         SettingsDialog dialog({}, nullptr, nullptr, {{example.package, QStringLiteral("Ready")}});
         auto *one = dialog.findChild<QPushButton *>(QStringLiteral("checkProvider"));
         auto *all = dialog.findChild<QPushButton *>(QStringLiteral("checkAllProviders"));

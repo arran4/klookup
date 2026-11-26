@@ -125,12 +125,11 @@ function getContent(resultId, contentToken) {
     });
 }
 
-export { search, getPage, getDetails, getContent };
-
-export function selfTest(fixture) {
+function selfTest(fixture) {
     if (!fixture || !Array.isArray(fixture.search)) throw new Error("Missing TVMaze diagnostic fixture");
     var rows = mapSearch(fixture.search);
     var rejected = false;
     try { mapSearch({error: "wrong shape"}); } catch (_) { rejected = true; }
     return {passed: rejected && mapSearch([]).length === 0 && rows.length === 1 && rows[0].id === "42" && rows[0].title === "Fixture 雪" && rows[0].additionalData.rating === 8};
 }
+module.exports = { search: search, getPage: getPage, getDetails: getDetails, getContent: getContent, selfTest: selfTest };

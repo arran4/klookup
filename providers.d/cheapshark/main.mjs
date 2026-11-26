@@ -50,7 +50,7 @@ function stores() {
     // Cache fulfilled reference data only; cancellation must not retain a never-settling request.
     return read("stores").then(mapStores).then(function(value) { storeCache = {at: Date.now(), stores: value}; return value; }, function(error) { if (error && error.rateLimited) throw error; return Object.create(null); });
 }
-export function search(query) {
+function search(query) {
     if (typeof query !== "string" || !query.trim()) return [];
     if (Date.now() < retryAt) throw new Error("CheapShark rate limited; retry after " + Math.ceil((retryAt - Date.now()) / 1000) + " seconds");
     if (cache[query] && Date.now() - cache[query].at < 60000) return cache[query].rows;
@@ -70,11 +70,11 @@ function mapDetails(data, id, stores) {
     if (data.cheapestPrice && money(data.cheapestPrice.price)) values.push({text: "Lowest recorded: USD " + Number(data.cheapestPrice.price).toFixed(2), kind: "text"});
     return {result: row, metadata: {attribution: ["CheapShark"], sections: [{label: "PC game pricing (USD)", values: values}]}};
 }
-export function getDetails(id) {
+function getDetails(id) {
     var token = dealToken(id);
     return Promise.all([stores(), read("deals?id=" + token)]).then(function(values) { return mapDetails(values[1], id, values[0]); });
 }
-export function selfTest(fixture) {
+function selfTest(fixture) {
     if (!fixture) throw new Error("Missing CheapShark fixtures");
     var names = mapStores(fixture.stores), rows = mapDeals(fixture.valid, names), partial = mapDeals(fixture.partial, names), rejected = false;
     try { mapDeals(fixture.invalid, names); } catch (_) { rejected = true; }
@@ -83,3 +83,4 @@ export function selfTest(fixture) {
         rows[0].id === fixture.expected.id && rows[0].title === fixture.expected.title && rows[0].url === fixture.expected.url && rows[0].additionalData.currency === "USD" &&
         rows[0].additionalData.sale_price_usd === 8.99 && rows[0].additionalData.store === "Steam" && details.result.url === fixture.expected.url};
 }
+module.exports = { search: search, getDetails: getDetails, selfTest: selfTest };

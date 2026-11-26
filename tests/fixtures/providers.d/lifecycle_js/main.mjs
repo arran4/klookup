@@ -49,4 +49,4 @@ function getDetails(id) {
     if (id === "never") return new Promise(function() {});
     return Promise.resolve({result: {id: id}, content: {format: "plainText", description: "Details content"}});
 }
-export {search, getDetails};
+module.exports = { search: search, getDetails: getDetails };

@@ -83,7 +83,7 @@ private slots:
         QTemporaryDir root; QVERIFY(root.isValid());
         QFile manifest(root.filePath(QStringLiteral("provider.json"))); QVERIFY(manifest.open(QIODevice::WriteOnly));
         manifest.write("{\"id\":\"closed_fixture\",\"name\":\"Fixture\",\"permissions\":{\"origins\":[\"https://example.invalid\"]}}"); manifest.close();
-        QFile script(root.filePath(QStringLiteral("main.mjs"))); QVERIFY(script.open(QIODevice::WriteOnly)); script.write("export function search() { return []; }"); script.close();
+        QFile script(root.filePath(QStringLiteral("main.mjs"))); QVERIFY(script.open(QIODevice::WriteOnly)); script.write("module.exports = { search: function() { return []; } };"); script.close();
         auto package = ProviderPackage::fromDirectory(root.path()); QVERIFY(package.isValid()); package.setTrusted(true);
         ProviderHost::ProviderHostService host(package, nullptr, &network);
         QSignalSpy finished(&host, &ProviderHost::ProviderHostService::httpResponseReady);

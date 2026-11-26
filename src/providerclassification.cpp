@@ -39,6 +39,7 @@ QString ProviderClassification::label(const QString &id, const QLocale &locale) 
     const auto language = code.section(QLatin1Char('-'), 0, 0);
     if (custom.contains(language)) return custom.value(language);
     if (custom.contains(QStringLiteral("en"))) return custom.value(QStringLiteral("en"));
+    if (id == QLatin1String(LocalVirtualFacet)) return i18n("Local");
     if (id == QLatin1String("topic:anime")) return i18n("Anime");
     if (id == QLatin1String("topic:manga")) return i18n("Manga");
     if (id == QLatin1String("topic:tv")) return i18n("TV");
@@ -77,6 +78,12 @@ QString ProviderClassification::description() const
     for (const auto &id : facets) descriptions.append(label(id));
     for (const auto &id : requirements) descriptions.append(label(id));
     return descriptions.join(QStringLiteral(" · "));
+}
+
+void ProviderClassification::addHostVirtualFacet(const QString &facet)
+{
+    if (!facet.isEmpty() && !facets.contains(facet))
+        facets.prepend(facet);
 }
 
 bool ProviderClassification::fromJson(const QJsonValue &value, ProviderClassification *result, QString *error)

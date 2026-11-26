@@ -1,6 +1,8 @@
 #ifndef CLIPBOARDPOLICY_H
 #define CLIPBOARDPOLICY_H
 
+#include <QStringList>
+
 class KConfigGroup;
 namespace ClipboardPolicy
 {
@@ -22,9 +24,14 @@ struct Policy {
     int autoMaxWords = 10;
     int autoDebounceMs = 300;
     AutoHistoryMode autoHistoryMode = AutoHistoryMode::OnInteraction;
+    bool autoOnlineEnabled = false;
+    QStringList autoOnlineAllowedFacets;
+    QStringList autoOnlineAllowedProviderIds;
+    QStringList autoAcknowledgedOnlineProviderIds;
 
     bool permitsCapture(bool visible, bool focused) const;
     bool permitsAutomaticLookup(bool hasVisibleWindow, bool focused) const;
+    bool permitsAutoOnlineProvider(const QString &providerId, const QStringList &facets) const;
     bool searchesOn(Event event) const;
 };
 Policy read(const KConfigGroup &group);

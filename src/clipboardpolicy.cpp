@@ -25,6 +25,22 @@ bool ClipboardPolicy::Policy::permitsAutomaticLookup(bool hasVisibleWindow, bool
     return permitsCapture(true, focused);
 }
 
+bool ClipboardPolicy::Policy::permitsAutoOnlineProvider(const QString &providerId, const QStringList &facets) const
+{
+    if (!autoOnlineEnabled || providerId.isEmpty())
+        return false;
+    // Only providers acknowledged at explicit opt-in may ever run automatically online.
+    if (!autoAcknowledgedOnlineProviderIds.contains(providerId))
+        return false;
+    if (autoOnlineAllowedProviderIds.contains(providerId))
+        return true;
+    for (const QString &facet : facets) {
+        if (autoOnlineAllowedFacets.contains(facet))
+            return true;
+    }
+    return false;
+}
+
 bool ClipboardPolicy::Policy::searchesOn(Event event) const
 {
     return (trigger == Trigger::TrayOpened && event == Event::TrayOpened) ||
@@ -70,6 +86,10 @@ ClipboardPolicy::Policy ClipboardPolicy::read(const KConfigGroup &group)
     const int historyValue = group.readEntry("ClipboardAutoHistoryMode", int(AutoHistoryMode::OnInteraction));
     if (historyValue >= int(AutoHistoryMode::Never) && historyValue <= int(AutoHistoryMode::Always))
         policy.autoHistoryMode = AutoHistoryMode(historyValue);
+    policy.autoOnlineEnabled = group.readEntry("ClipboardAutoOnlineEnabled", false);
+    policy.autoOnlineAllowedFacets = group.readEntry("ClipboardAutoOnlineAllowedFacets", QStringList());
+    policy.autoOnlineAllowedProviderIds = group.readEntry("ClipboardAutoOnlineAllowedProviderIds", QStringList());
+    policy.autoAcknowledgedOnlineProviderIds = group.readEntry("ClipboardAutoAcknowledgedOnlineProviderIds", QStringList());
     return policy;
 }
 
@@ -86,6 +106,10 @@ void ClipboardPolicy::write(KConfigGroup &group, const Policy &policy)
     group.writeEntry("ClipboardAutoMaxWords", qBound(1, policy.autoMaxWords, 500));
     group.writeEntry("ClipboardAutoDebounceMs", qBound(0, policy.autoDebounceMs, 5000));
     group.writeEntry("ClipboardAutoHistoryMode", int(policy.autoHistoryMode));
+    group.writeEntry("ClipboardAutoOnlineEnabled", policy.autoOnlineEnabled);
+    group.writeEntry("ClipboardAutoOnlineAllowedFacets", policy.autoOnlineAllowedFacets);
+    group.writeEntry("ClipboardAutoOnlineAllowedProviderIds", policy.autoOnlineAllowedProviderIds);
+    group.writeEntry("ClipboardAutoAcknowledgedOnlineProviderIds", policy.autoAcknowledgedOnlineProviderIds);
 }
 
 void ClipboardPolicy::migrate(KConfigGroup &group)

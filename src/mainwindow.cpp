@@ -640,22 +640,33 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
 
     // 2. Discover C++ shared library plugins if not yet loaded
     if (m_providerLoaders.isEmpty()) {
-        QStringList pluginPaths = customPluginPaths;
-        pluginPaths.append({
-            QCoreApplication::applicationDirPath() + QStringLiteral("/../lib64/plugins/klookup"),
-            QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plugins/klookup"),
-            QCoreApplication::applicationDirPath() + QStringLiteral("/plugins/klookup"),
-            QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
-        });
+        m_verifiedLocalProviderIds.clear();
+        struct PluginPathEntry {
+            QString path;
+            bool isCustom = false;
+        };
+        QList<PluginPathEntry> pluginPaths;
+        for (const QString &customPath : customPluginPaths) {
+            pluginPaths.append({customPath, true});
+        }
+        for (const QString &builtinPath : {
+                 QCoreApplication::applicationDirPath() + QStringLiteral("/../lib64/plugins/klookup"),
+                 QCoreApplication::applicationDirPath() + QStringLiteral("/../lib/plugins/klookup"),
+                 QCoreApplication::applicationDirPath() + QStringLiteral("/plugins/klookup"),
+                 QCoreApplication::applicationDirPath() + QStringLiteral("/providers"),
+             }) {
+            pluginPaths.append({builtinPath, false});
+        }
 
         qCDebug(KLOOKUP_PLUGINS) << "Starting provider plugin discovery.";
 
         for (const QString &libPath : QCoreApplication::libraryPaths()) {
-            pluginPaths.append(libPath + QStringLiteral("/klookup/providers"));
-            pluginPaths.append(libPath + QStringLiteral("/klookup"));
+            pluginPaths.append({libPath + QStringLiteral("/klookup/providers"), false});
+            pluginPaths.append({libPath + QStringLiteral("/klookup"), false});
         }
 
-        for (const QString &path : pluginPaths) {
+        for (const auto &entry : pluginPaths) {
+            const QString &path = entry.path;
             QDir dir(path);
             if (!dir.exists()) {
                 qCDebug(KLOOKUP_PLUGINS) << "Checked plugin directory (does not exist):" << path;
@@ -688,6 +699,17 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
                         if (!loadedProviderIds.contains(provider->id())) {
                             loadedProviderIds.insert(provider->id());
                             qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
+
+                            // Only built-in offline local plugins (non-custom, no network requirement)
+                            // may ever receive the host-controlled `scope:local` virtual facet.
+                            if (!entry.isCustom &&
+                                provider->id() == QLatin1String("localdocs") &&
+                                !provider->classification().facets.contains(QStringLiteral("requirement:network"))) {
+                                m_verifiedLocalProviderIds.insert(provider->id());
+                                ProviderClassification cls = provider->classification();
+                                cls.addHostVirtualFacet(QString::fromLatin1(ProviderClassification::LocalVirtualFacet));
+                                provider->setClassification(cls);
+                            }
 
                             loadWalletCredentials(provider);
                             m_providers.append(provider);
@@ -753,6 +775,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         if (existingIdx != -1) {
             SearchProvider *nativeProvider = m_providers[existingIdx];
             m_fallbackProviders.insert(pkg.id(), nativeProvider);
+            m_verifiedLocalProviderIds.remove(pkg.id());
             m_providers[existingIdx] = adapter;
             qCDebug(KLOOKUP_PLUGINS) << "Scripted provider" << pkg.id() << "overrides native provider with same ID.";
         } else {
@@ -880,10 +903,28 @@ void MainWindow::performSearchInternal(const QString &query, bool clipboard, boo
     performSearchScoped(query, QueryScope::all(), false, recordActivity);
 }
 
+QueryScope MainWindow::automaticLookupScopeForPolicy(const ClipboardPolicy::Policy &policy) const
+{
+    QSet<QString> allowed;
+    for (SearchProvider *providerTemplate : std::as_const(m_providers)) {
+        if (!providerTemplate || !providerTemplate->isEnabled())
+            continue;
+        const QString id = providerTemplate->id();
+        if (m_verifiedLocalProviderIds.contains(id)) {
+            allowed.insert(id);
+            continue;
+        }
+        if (policy.permitsAutoOnlineProvider(id, providerTemplate->classification().facets))
+            allowed.insert(id);
+    }
+    return QueryScope::only(allowed);
+}
+
 void MainWindow::performAutomaticLookup(const QString &query, const QueryScope &scope)
 {
     KConfigGroup genGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
     const auto policy = ClipboardPolicy::read(genGroup);
+    const QueryScope effectiveScope = scope.restricted ? scope : automaticLookupScopeForPolicy(policy);
     if (policy.autoHistoryMode == ClipboardPolicy::AutoHistoryMode::Always && m_recent) {
         m_recent->recordSearch(query, true);
     }
@@ -919,12 +960,12 @@ void MainWindow::performAutomaticLookup(const QString &query, const QueryScope &
         m_tabWidget->setTabToolTip(existingIndex, i18n("Automatic results tab — interact or click Pin to keep"));
     }
 
-    if (scope.restricted)
-        tab->applySourceEligibility(scope.sourceIds);
+    if (effectiveScope.restricted)
+        tab->applySourceEligibility(effectiveScope.sourceIds);
 
     for (SearchProvider *providerTemplate : m_providers) {
         if (!providerTemplate->isEnabled()) continue;
-        if (!scope.includes(providerTemplate->id())) continue;
+        if (!effectiveScope.includes(providerTemplate->id())) continue;
 
         tab->startProvider(providerTemplate->cloneForSearch(tab), m_authManager->sessionFor(providerTemplate));
     }

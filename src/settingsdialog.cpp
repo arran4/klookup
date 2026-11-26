@@ -331,6 +331,23 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     generalLayout->addWidget(m_autoLookupEnabled);
     generalLayout->addWidget(m_explicitImmediateSearch);
     generalLayout->addWidget(m_readExistingOnOpen);
+    m_autoOnlineEnabled = new QCheckBox(QStringLiteral("Allow automatic online lookups for explicitly approved providers (new providers stay excluded until acknowledged)"), this);
+    m_autoOnlineEnabled->setObjectName(QStringLiteral("clipboardAutoOnlineEnabled"));
+    m_autoOnlineProviders = new QListWidget(this);
+    m_autoOnlineProviders->setObjectName(QStringLiteral("clipboardAutoOnlineProviders"));
+    m_autoOnlineProviders->setMaximumHeight(110);
+    for (SearchProvider *provider : m_providers) {
+        if (!provider || provider->classification().facets.contains(QString::fromLatin1(ProviderClassification::LocalVirtualFacet)))
+            continue;
+        auto *item = new QListWidgetItem(provider->name() + QStringLiteral(" (") + provider->id() + QStringLiteral(")"), m_autoOnlineProviders);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Unchecked);
+        item->setData(Qt::UserRole, provider->id());
+    }
+    generalLayout->addWidget(m_autoOnlineEnabled);
+    generalLayout->addWidget(m_autoOnlineProviders);
+    m_autoOnlineProviders->setEnabled(false);
+    connect(m_autoOnlineEnabled, &QCheckBox::toggled, m_autoOnlineProviders, &QWidget::setEnabled);
     auto *hint = new QLabel(QStringLiteral("Capture permission is checked first. Capture alone quietly prepares the search field. Automatic searches never raise a window."), this);
     hint->setWordWrap(true);
     generalLayout->addWidget(hint);
@@ -372,6 +389,15 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_autoMaxWords->setValue(policy.autoMaxWords);
     m_autoDebounceMs->setValue(policy.autoDebounceMs);
     m_autoHistoryMode->setCurrentIndex(int(policy.autoHistoryMode));
+    m_autoOnlineEnabled->setChecked(policy.autoOnlineEnabled);
+    m_autoOnlineProviders->setEnabled(policy.autoOnlineEnabled);
+    for (int i = 0; i < m_autoOnlineProviders->count(); ++i) {
+        auto *item = m_autoOnlineProviders->item(i);
+        const QString id = item->data(Qt::UserRole).toString();
+        const bool approved = policy.autoOnlineAllowedProviderIds.contains(id) &&
+                              policy.autoAcknowledgedOnlineProviderIds.contains(id);
+        item->setCheckState(approved ? Qt::Checked : Qt::Unchecked);
+    }
     m_showRecent->setChecked(genGroup.readEntry(QStringLiteral("ShowRecentActivity"), true));
     m_recordClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("RecordClipboardActivity"), false));
     m_persistClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("PersistClipboardActivity"), false));
@@ -549,6 +575,19 @@ void SettingsDialog::saveSettings()
     policy.autoMaxWords = m_autoMaxWords->value();
     policy.autoDebounceMs = m_autoDebounceMs->value();
     policy.autoHistoryMode = ClipboardPolicy::AutoHistoryMode(m_autoHistoryMode->currentIndex());
+    policy.autoOnlineEnabled = m_autoOnlineEnabled->isChecked();
+    QStringList selectedOnline;
+    QStringList acknowledgedOnline;
+    for (int i = 0; i < m_autoOnlineProviders->count(); ++i) {
+        auto *item = m_autoOnlineProviders->item(i);
+        const QString id = item->data(Qt::UserRole).toString();
+        acknowledgedOnline.append(id);
+        if (item->checkState() == Qt::Checked)
+            selectedOnline.append(id);
+    }
+    policy.autoOnlineAllowedProviderIds = selectedOnline;
+    if (policy.autoOnlineEnabled)
+        policy.autoAcknowledgedOnlineProviderIds = acknowledgedOnline;
     ClipboardPolicy::write(genGroup, policy);
     config->sync();
     if (m_autostartManager) {

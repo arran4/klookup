@@ -39,6 +39,10 @@ public:
     QStringList saveHistory() const;
     void setRecentActivity(RecentActivity *activity);
     void prepareQuery(const QString &query, bool focus = true);
+    bool prepareCapturedQuery(const QString &query, bool focus = false, bool forceOverwrite = false);
+    void clearQuery();
+    bool hasUserEditedQuery() const;
+    QString currentQueryText() const;
     void setAvailableScopes(const QList<QPair<QString, ProviderClassification>> &sources);
     QueryScope selectedScope() const;
     QSet<QString> selectedSourceIds() const;
@@ -61,6 +65,7 @@ private slots:
 
 private:
     QLineEdit *m_searchBar;
+    bool m_userEditedQuery = false;
     QCompleter *m_completer;
     QStringList m_history;
     QPointer<RecentActivity> m_recent;

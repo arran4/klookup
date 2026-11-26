@@ -72,10 +72,10 @@ ClipboardInput::Classification ClipboardInput::classifyText(const QString &raw)
             (explicitHost || (looksLikeDomain && commonSuffixes.contains(suffix)) || domainWithPath))
             return {Kind::WebAddress, {}};
     } else {
-        // Text contains whitespace. Check if it contains embedded URLs or email addresses.
+        // Text contains whitespace. Check if it contains embedded URLs, URIs, email addresses, or domain references.
         // Mixed text containing links, emails, or URL-rich blocks must not automatically become a provider query.
         static const QRegularExpression embeddedUrlOrEmail(
-            QStringLiteral("(?:https?|ftp|file|mailto|magnet)://|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}|\\bwww\\.[a-z0-9.-]+"),
+            QStringLiteral("(?:[A-Za-z][A-Za-z0-9+.-]*://|\\b(?:mailto|urn|magnet|tel|sms|javascript|data|about|file):\\S+|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}|\\bwww\\.[a-z0-9.-]+|\\b[a-z0-9-]+\\.(?:com|org|net|edu|gov|io|dev|app|xyz|info|biz|co|uk|de|fr|jp|au|ca|nz|us|eu|me)(?:/\\S+|\\b))"),
             QRegularExpression::CaseInsensitiveOption);
         if (embeddedUrlOrEmail.match(text).hasMatch())
             return {Kind::Unsupported, {}};
@@ -83,12 +83,74 @@ ClipboardInput::Classification ClipboardInput::classifyText(const QString &raw)
     return {Kind::SearchText, text};
 }
 
+bool ClipboardInput::isSensitiveMimeData(const QMimeData *mime)
+{
+    if (!mime)
+        return false;
+    const QByteArray kdeHint = mime->data(QStringLiteral("x-kde-passwordManagerHint"));
+    if (!kdeHint.isEmpty() && kdeHint.trimmed().toLower() != QByteArrayLiteral("public"))
+        return true;
+    const QStringList formats = mime->formats();
+    for (const QString &format : formats) {
+        const QString lower = format.toLower();
+        if (lower.contains(QStringLiteral("passwordmanagerhint")) ||
+            lower.contains(QStringLiteral("keepass")) ||
+            lower.contains(QStringLiteral("bitwarden")) ||
+            lower.contains(QStringLiteral("1password")) ||
+            lower.contains(QStringLiteral("clipboard.secret"))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+int ClipboardInput::countWords(const QString &text)
+{
+    const QString trimmed = text.trimmed();
+    if (trimmed.isEmpty())
+        return 0;
+    static const QRegularExpression whitespace(QStringLiteral("\\s+"), QRegularExpression::UseUnicodePropertiesOption);
+    return trimmed.split(whitespace, Qt::SkipEmptyParts).size();
+}
+
 ClipboardInput::Classification ClipboardInput::classifyMimeData(const QMimeData *mime)
 {
-    // Do not ask Qt to derive text from HTML, images, URI lists, or binary data.
-    if (!mime || !mime->hasFormat(QStringLiteral("text/plain")))
+    // Do not ask Qt to derive text from HTML, images, URI lists, or binary data,
+    // and never automatically capture password-manager secret hints.
+    if (!mime || isSensitiveMimeData(mime) || !mime->hasFormat(QStringLiteral("text/plain")))
         return {Kind::Unsupported, {}};
     return classifyText(mime->text());
+}
+
+ClipboardInput::AutoCaptureDecision ClipboardInput::evaluateAutomaticCaptureText(const QString &raw,
+                                                                                 const AutoCaptureLimits &limits)
+{
+    const Classification classification = classifyText(raw);
+    if (!classification.permitsAutomaticCapture()) {
+        return {false, false, {}, QStringLiteral("ineligible_input")};
+    }
+    const QString text = classification.text;
+    const int maxChars = qBound(1, limits.maxChars, MaximumLength);
+    const int maxWords = qMax(1, limits.maxWords);
+    if (text.size() > maxChars) {
+        return {false, true, text, QStringLiteral("exceeds_char_limit")};
+    }
+    if (countWords(text) > maxWords) {
+        return {false, true, text, QStringLiteral("exceeds_word_limit")};
+    }
+    return {true, true, text, {}};
+}
+
+ClipboardInput::AutoCaptureDecision ClipboardInput::evaluateAutomaticCapture(const QMimeData *mime,
+                                                                             const AutoCaptureLimits &limits)
+{
+    if (!mime)
+        return {false, false, {}, QStringLiteral("empty_mime")};
+    if (isSensitiveMimeData(mime))
+        return {false, false, {}, QStringLiteral("sensitive_mime")};
+    if (!mime->hasFormat(QStringLiteral("text/plain")))
+        return {false, false, {}, QStringLiteral("non_text_mime")};
+    return evaluateAutomaticCaptureText(mime->text(), limits);
 }
 
 QString ClipboardInput::explicitQuery(const QMimeData *mime)

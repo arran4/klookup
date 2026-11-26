@@ -30,4 +30,4 @@ Configuration is stored in `klookuprc` under `[ProviderDirectories]` (`Count`, `
 
 ## Minimal HTTP Example Provider
 
-See [`examples/providers/minimal-http/`](../examples/providers/minimal-http/README.md) for a ready-to-copy template with `provider.json`, `main.mjs`, and `diagnostics.json`.
+See `examples/providers/minimal-http/` (and `examples/providers/minimal-http/README.md` in the repository) for a ready-to-copy template with `provider.json`, `main.mjs`, and `diagnostics.json`.

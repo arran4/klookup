@@ -43,6 +43,11 @@ find_package(KF6 REQUIRED COMPONENTS
 
 find_package(ZLIB REQUIRED)
 
+option(KLOOKUP_BUILD_QML_EXPERIMENT "Build experimental QML MangaBaka presentation prototype (#206)" OFF)
+if(KLOOKUP_BUILD_QML_EXPERIMENT)
+    find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Quick QuickWidgets)
+endif()
+
 add_subdirectory(icons)
 add_subdirectory(src)
 add_subdirectory(providers/wikipedia)
@@ -61,6 +66,10 @@ add_subdirectory(runner)
 if(BUILD_TESTING)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+if(KLOOKUP_BUILD_QML_EXPERIMENT)
+    add_subdirectory(experiments/qml_mangabaka)
 endif()
 
 set(KLOOKUP_PROVIDERS

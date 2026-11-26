@@ -77,6 +77,9 @@ private:
     QList<SearchProvider*> m_providers;
     QList<ProviderPackageStatus> m_packages;
     QListWidget *m_packageList = nullptr;
+    QListWidget *m_providerDirectoriesList = nullptr;
+    QList<ConfiguredProviderDirectory> m_providerDirectories;
+    bool m_directoriesChanged = false;
     QMap<QString, bool> m_approvalDrafts;
     bool m_packagesChanged = false;
     bool m_retryPackages = false;

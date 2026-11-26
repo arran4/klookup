@@ -25,6 +25,7 @@
 #include <QPushButton>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QFileDialog>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QSettings>
@@ -204,6 +205,89 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     int packageButtonIndex = 0;
     for (auto *b : {approve, revoke, retry}) packageButtons->addWidget(b, packageButtonIndex / 2, packageButtonIndex % 2), ++packageButtonIndex;
     packageDetailsLayout->addLayout(packageButtons);
+
+    auto *dirGroupLabel = new QLabel(QStringLiteral("Configured dotfiles / user provider directories (manual rescan only):"), packagePage);
+    packageDetailsLayout->addWidget(dirGroupLabel);
+    m_providerDirectoriesList = new QListWidget(packagePage);
+    m_providerDirectoriesList->setObjectName(QStringLiteral("providerDirectoriesList"));
+    packageDetailsLayout->addWidget(m_providerDirectoriesList);
+    {
+        KSharedConfig::Ptr cfg = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+        m_providerDirectories = ProviderPackageDiscovery::readConfiguredDirectories(
+            KConfigGroup(cfg, QStringLiteral("ProviderDirectories")));
+        for (const auto &dirEntry : m_providerDirectories) {
+            const QString labelText = dirEntry.label.isEmpty() ? QStringLiteral("User directory") : dirEntry.label;
+            auto *dirItem = new QListWidgetItem(QStringLiteral("[%1] %2").arg(labelText, dirEntry.path), m_providerDirectoriesList);
+            dirItem->setFlags(dirItem->flags() | Qt::ItemIsUserCheckable);
+            dirItem->setCheckState(dirEntry.enabled ? Qt::Checked : Qt::Unchecked);
+            dirItem->setData(Qt::UserRole, dirEntry.path);
+            dirItem->setData(Qt::UserRole + 1, dirEntry.label);
+        }
+    }
+    auto *addDirBtn = new QPushButton(QStringLiteral("Add directory…"), packagePage);
+    addDirBtn->setObjectName(QStringLiteral("addProviderDirectoryButton"));
+    auto *labelDirBtn = new QPushButton(QStringLiteral("Set provenance label…"), packagePage);
+    labelDirBtn->setObjectName(QStringLiteral("editProviderDirectoryLabelButton"));
+    auto *removeDirBtn = new QPushButton(QStringLiteral("Remove directory"), packagePage);
+    removeDirBtn->setObjectName(QStringLiteral("removeProviderDirectoryButton"));
+    auto *dirButtons = new QHBoxLayout;
+    dirButtons->addWidget(addDirBtn);
+    dirButtons->addWidget(labelDirBtn);
+    dirButtons->addWidget(removeDirBtn);
+    packageDetailsLayout->addLayout(dirButtons);
+
+    connect(m_providerDirectoriesList, &QListWidget::itemChanged, this, [this](QListWidgetItem *item) {
+        const int row = m_providerDirectoriesList->row(item);
+        if (row >= 0 && row < m_providerDirectories.size()) {
+            m_providerDirectories[row].enabled = (item->checkState() == Qt::Checked);
+            m_directoriesChanged = true;
+        }
+    });
+    connect(addDirBtn, &QPushButton::clicked, this, [this] {
+        const QString dirPath = QFileDialog::getExistingDirectory(this, QStringLiteral("Select provider directory"));
+        if (dirPath.isEmpty())
+            return;
+        bool ok = false;
+        const QString label = QInputDialog::getText(this, QStringLiteral("Provenance label"),
+                                                    QStringLiteral("Optional provenance label (e.g. Dotfiles / Nix):"),
+                                                    QLineEdit::Normal, QStringLiteral("Dotfiles"), &ok);
+        ConfiguredProviderDirectory entry{dirPath, ok ? label.trimmed() : QString(), true};
+        m_providerDirectories.append(entry);
+        const QString displayLabel = entry.label.isEmpty() ? QStringLiteral("User directory") : entry.label;
+        auto *item = new QListWidgetItem(QStringLiteral("[%1] %2").arg(displayLabel, entry.path), m_providerDirectoriesList);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+        item->setData(Qt::UserRole, entry.path);
+        item->setData(Qt::UserRole + 1, entry.label);
+        m_directoriesChanged = true;
+    });
+    connect(labelDirBtn, &QPushButton::clicked, this, [this] {
+        const int row = m_providerDirectoriesList->currentRow();
+        if (row < 0 || row >= m_providerDirectories.size())
+            return;
+        bool ok = false;
+        const QString next = QInputDialog::getText(this, QStringLiteral("Provenance label"),
+                                                   QStringLiteral("Provenance label:"),
+                                                   QLineEdit::Normal, m_providerDirectories[row].label, &ok);
+        if (!ok)
+            return;
+        m_providerDirectories[row].label = next.trimmed();
+        const QString displayLabel = m_providerDirectories[row].label.isEmpty() ? QStringLiteral("User directory") : m_providerDirectories[row].label;
+        auto *item = m_providerDirectoriesList->item(row);
+        const QSignalBlocker blocker(m_providerDirectoriesList);
+        item->setText(QStringLiteral("[%1] %2").arg(displayLabel, m_providerDirectories[row].path));
+        item->setData(Qt::UserRole + 1, m_providerDirectories[row].label);
+        m_directoriesChanged = true;
+    });
+    connect(removeDirBtn, &QPushButton::clicked, this, [this] {
+        const int row = m_providerDirectoriesList->currentRow();
+        if (row < 0 || row >= m_providerDirectories.size())
+            return;
+        m_providerDirectories.removeAt(row);
+        delete m_providerDirectoriesList->takeItem(row);
+        m_directoriesChanged = true;
+    });
+
     auto updatePackage = [this, identity, approve, revoke](int row) {
         const bool selected = row >= 0 && row < m_packages.size();
         approve->setEnabled(selected && m_packages[row].package.isValid());
@@ -211,8 +295,15 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
         if (!selected) { identity->clear(); return; }
         const auto &record = m_packages[row];
         const auto &pkg = record.package;
-        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + ProviderDefaults::reason(pkg.id()) + QLatin1Char('\n') + (pkg.manifest().authentication.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication: %1 — script credential execution is unavailable (issue #85)").arg(pkg.manifest().authentication.methods().join(QStringLiteral(", ")))) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)\nOrigins: %6\nSecret capabilities: %7\nStatus: %8\nApproval fingerprint: %9")
-            .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.packageDir(), pkg.provenance(),
+        QString symlinkLine;
+        if (pkg.isSymlinkBacked() && pkg.displayPath() != pkg.canonicalPath())
+            symlinkLine = QStringLiteral("\nResolved target: %1").arg(pkg.canonicalPath());
+        QString shadowLine;
+        if (!pkg.shadowedBy().isEmpty())
+            shadowLine = QStringLiteral("\nShadowed by: %1").arg(pkg.shadowedBy());
+        identity->setText(pkg.manifest().classification.description() + QLatin1Char('\n') + ProviderDefaults::reason(pkg.id()) + QLatin1Char('\n') + (pkg.manifest().authentication.mode == AuthenticationMode::None ? QStringLiteral("No authentication required") : QStringLiteral("Declared authentication: %1 — script credential execution is unavailable (issue #85)").arg(pkg.manifest().authentication.methods().join(QStringLiteral(", ")))) + QLatin1Char('\n') + QStringLiteral("%1 (%2)\nVersion: %3\nSource: %4 (%5)%6%7\nOrigins: %8\nSecret capabilities: %9\nStatus: %10\nApproval fingerprint: %11")
+            .arg(pkg.name(), pkg.id(), pkg.manifest().version, pkg.displayPath(), pkg.provenanceLabel(),
+                 symlinkLine, shadowLine,
                  pkg.manifest().permissions.origins.join(QStringLiteral(", ")),
                  pkg.manifest().permissions.secrets.join(QStringLiteral(", ")), record.status,
                  QString::fromLatin1(pkg.approvalFingerprint())));
@@ -537,7 +628,7 @@ void SettingsDialog::saveSettings()
         const bool oldRevoked = providersGroup.readEntry(pkg.id() + QStringLiteral("_Revoked"), false);
         if (m_approvalDrafts.contains(pkg.id())) {
             const bool approve = m_approvalDrafts.value(pkg.id());
-            const auto current = ProviderPackage::fromDirectory(pkg.packageDir(), pkg.locationType());
+            const auto current = ProviderPackage::fromDirectory(pkg.packageDir(), pkg.locationType(), pkg.symlinkPolicy());
             if (approve && (!current.isValid() || current.approvalFingerprint() != pkg.approvalFingerprint())) {
                 displayWarning(QStringLiteral("Package changed"), QStringLiteral("The package changed during review. Retry discovery and review it again."));
                 return;
@@ -564,6 +655,7 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
+<<<<<<< HEAD
     ClipboardPolicy::Policy policy = ClipboardPolicy::read(genGroup);
     policy.capture = ClipboardPolicy::Capture(m_captureMode->currentIndex());
     policy.trigger = ClipboardPolicy::Trigger(m_searchTrigger->currentIndex());
@@ -589,6 +681,11 @@ void SettingsDialog::saveSettings()
     if (policy.autoOnlineEnabled)
         policy.autoAcknowledgedOnlineProviderIds = acknowledgedOnline;
     ClipboardPolicy::write(genGroup, policy);
+    if (m_directoriesChanged) {
+        KConfigGroup dirGroup(config, QStringLiteral("ProviderDirectories"));
+        ProviderPackageDiscovery::writeConfiguredDirectories(dirGroup, m_providerDirectories);
+        m_retryPackages = true;
+    }
     config->sync();
     if (m_autostartManager) {
         m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());

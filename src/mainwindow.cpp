@@ -732,14 +732,18 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         }
     }
 
-    // 3. Discover and instantiate scripted provider packages (XDG and custom paths)
+    // 3. Discover and instantiate scripted provider packages (configured dotfiles, XDG, and custom paths)
     m_customPackagePaths = customPackagePaths;
     m_customPluginPaths = customPluginPaths;
-    const auto packages = ProviderPackageDiscovery::discoverPackages(customPackagePaths);
-    m_packages.clear();
-    qCDebug(KLOOKUP_PLUGINS) << "Discovered scripted packages count:" << packages.size();
-
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
+    const auto configuredDirs = ProviderPackageDiscovery::readConfiguredDirectories(
+        KConfigGroup(config, QStringLiteral("ProviderDirectories")));
+    const auto packages = ProviderPackageDiscovery::discoverPackages(
+        configuredDirs, customPackagePaths, &m_shadowedPackages);
+    m_packages.clear();
+    qCDebug(KLOOKUP_PLUGINS) << "Discovered scripted packages count:" << packages.size()
+                             << "shadowed:" << m_shadowedPackages.size();
+
     KConfigGroup providersGroup(config, QStringLiteral("Providers"));
 
     for (auto pkg : packages) {
@@ -809,6 +813,11 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
     qCDebug(KLOOKUP_PLUGINS) << "Plugin discovery finished. Total loaded providers:" << m_providers.size();
 }
 
+void MainWindow::rescanProviders()
+{
+    loadPlugins(m_customPackagePaths, m_customPluginPaths);
+}
+
 void MainWindow::refreshDashboardScopes()
 {
     if (!m_dashboard)
@@ -868,7 +877,7 @@ void MainWindow::setPackageTrusted(const QString &id, bool trusted)
     KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
     for (const auto &record : m_packages) {
         if (record.package.id() == id) {
-            const auto current = ProviderPackage::fromDirectory(record.package.packageDir(), record.package.locationType());
+            const auto current = ProviderPackage::fromDirectory(record.package.packageDir(), record.package.locationType(), record.package.symlinkPolicy());
             // Never approve contents the caller has not reviewed.
             if (!trusted || (current.isValid() && current.approvalFingerprint() == record.package.approvalFingerprint()))
                 record.package.saveApproval(group, trusted);

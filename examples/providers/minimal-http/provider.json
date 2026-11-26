@@ -1,0 +1,27 @@
+{
+  "id": "example-minimal-http",
+  "name": "Example Minimal HTTP Provider",
+  "description": "Minimal dotfiles-friendly reference provider demonstrating host.fetch(), normalized results, and offline diagnostics.",
+  "version": "1.0.0",
+  "author": "KLookup contributors",
+  "license": "GPL-3.0-or-later",
+  "runtime": "javascript",
+  "entry": "main.mjs",
+  "permissions": {
+    "origins": [
+      "api.example.invalid"
+    ]
+  },
+  "capabilities": {
+    "pagination": false,
+    "details": true,
+    "separateContent": true,
+    "hierarchy": false
+  },
+  "classification": {
+    "version": "1.0.0",
+    "facets": [
+      "topic:web"
+    ]
+  }
+}

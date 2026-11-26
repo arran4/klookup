@@ -90,35 +90,97 @@ bool ProviderPackage::isSecretAllowed(const QString &secretKey) const
     return m_manifest.permissions.secrets.contains(secretKey);
 }
 
-ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationType locType)
+ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationType locType, SymlinkPolicy symlinkPolicy)
 {
     ProviderPackage pkg;
     pkg.m_locationType = locType;
-    pkg.m_packageDir = QDir::cleanPath(QFileInfo(dirPath).absoluteFilePath());
-    pkg.m_manifest.id = QFileInfo(pkg.m_packageDir).fileName();
+    pkg.m_symlinkPolicy = symlinkPolicy;
+    pkg.m_displayPath = QDir::cleanPath(QFileInfo(dirPath).absoluteFilePath());
+    pkg.m_packageDir = pkg.m_displayPath;
+    pkg.m_manifest.id = QFileInfo(pkg.m_displayPath).fileName();
     pkg.m_manifest.name = pkg.m_manifest.id;
 
+    const QFileInfo dirInfo(pkg.m_displayPath);
+    if (dirInfo.isSymLink())
+        pkg.m_symlinkBacked = true;
+
     QDir dir(pkg.m_packageDir);
-    if (!dir.exists()) {
-        pkg.m_validationError = QStringLiteral("Directory does not exist: %1").arg(pkg.m_packageDir);
+    if (!dirInfo.exists() || !dir.exists()) {
+        pkg.m_validationError = dirInfo.isSymLink()
+            ? QStringLiteral("Broken or unreadable symlinked provider directory: %1").arg(pkg.m_displayPath)
+            : QStringLiteral("Directory does not exist: %1").arg(pkg.m_displayPath);
         return pkg;
     }
 
-    const QString canonicalPackageDir = QFileInfo(pkg.m_packageDir).canonicalFilePath();
-    if (canonicalPackageDir.isEmpty()) {
-        pkg.m_validationError = QStringLiteral("Cannot resolve canonical path for %1").arg(pkg.m_packageDir);
+    const QString canonicalPackageDir = dirInfo.canonicalFilePath();
+    if (canonicalPackageDir.isEmpty() || !QFileInfo(canonicalPackageDir).isDir()) {
+        pkg.m_validationError = QStringLiteral("Cannot resolve canonical path for %1").arg(pkg.m_displayPath);
         return pkg;
     }
 
     pkg.m_packageDir = canonicalPackageDir;
+    dir.setPath(canonicalPackageDir);
+
+    auto inspectRegularFile = [&pkg, &canonicalPackageDir, symlinkPolicy](const QString &filePath, QString *resolvedOut, QString *errorOut) -> bool {
+        const QFileInfo info(filePath);
+        if (!info.exists()) {
+            *errorOut = info.isSymLink()
+                ? QStringLiteral("Broken symlink: %1").arg(QDir(canonicalPackageDir).relativeFilePath(filePath))
+                : QStringLiteral("File does not exist: %1").arg(QDir(canonicalPackageDir).relativeFilePath(filePath));
+            return false;
+        }
+        if (info.isSymLink()) {
+            if (symlinkPolicy != SymlinkPolicy::AllowSafeFileSymlinks) {
+                *errorOut = QStringLiteral("Package contains symlinks, special files or too many entries");
+                return false;
+            }
+            const QString target = info.canonicalFilePath();
+            const QFileInfo targetInfo(target);
+            if (target.isEmpty() || !targetInfo.exists() || !targetInfo.isFile() || targetInfo.isDir()) {
+                *errorOut = QStringLiteral("Unsafe or broken file symlink: %1").arg(QDir(canonicalPackageDir).relativeFilePath(filePath));
+                return false;
+            }
+            for (const QLatin1String &forbidden : {QLatin1String("/etc/"), QLatin1String("/proc/"), QLatin1String("/sys/"),
+                                                    QLatin1String("/dev/"), QLatin1String("/run/"), QLatin1String("/boot/")}) {
+                if (target.startsWith(forbidden)) {
+                    *errorOut = QStringLiteral("Unsafe symlink target path blocked: %1").arg(target);
+                    return false;
+                }
+            }
+#ifdef Q_OS_UNIX
+            const QFileInfo pkgDirInfo(canonicalPackageDir);
+            if (!target.startsWith(QStringLiteral("/nix/store/")) && targetInfo.ownerId() != pkgDirInfo.ownerId()) {
+                *errorOut = QStringLiteral("Cross-owner symlink target blocked: %1").arg(target);
+                return false;
+            }
+#endif
+            pkg.m_symlinkBacked = true;
+            if (resolvedOut)
+                *resolvedOut = target;
+            return true;
+        }
+        if (!info.isFile() || info.isDir()) {
+            *errorOut = QStringLiteral("Special files and non-regular entries are not allowed: %1").arg(QDir(canonicalPackageDir).relativeFilePath(filePath));
+            return false;
+        }
+        if (resolvedOut)
+            *resolvedOut = info.canonicalFilePath();
+        return true;
+    };
+
     const QString manifestPath = dir.filePath(QStringLiteral("provider.json"));
-    QFile manifestFile(manifestPath);
-    if (!manifestFile.exists()) {
+    QString manifestTarget;
+    QString fileErr;
+    if (!QFileInfo::exists(manifestPath) && !QFileInfo(manifestPath).isSymLink()) {
         pkg.m_validationError = QStringLiteral("provider.json not found in %1").arg(pkg.m_packageDir);
         return pkg;
     }
-
-    if (QFileInfo(manifestPath).isSymLink() || manifestFile.size() > 1024 * 1024) {
+    if (!inspectRegularFile(manifestPath, &manifestTarget, &fileErr)) {
+        pkg.m_validationError = fileErr;
+        return pkg;
+    }
+    QFile manifestFile(manifestTarget);
+    if (manifestFile.size() > 1024 * 1024) {
         pkg.m_validationError = QStringLiteral("provider.json exceeds 1 MiB size limit");
         return pkg;
     }
@@ -198,18 +260,18 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
 
     // Verify entry file path resolution and check against path traversal
     const QString entryPath = dir.filePath(pkg.m_manifest.entry);
-    const QFileInfo entryInfo(entryPath);
-    if (!entryInfo.isFile() || entryInfo.isSymLink()) {
-        pkg.m_validationError = QStringLiteral("Entry file does not exist: %1").arg(pkg.m_manifest.entry);
+    QString entryTarget;
+    if (!inspectRegularFile(entryPath, &entryTarget, &fileErr)) {
+        pkg.m_validationError = fileErr.isEmpty() ? QStringLiteral("Entry file does not exist: %1").arg(pkg.m_manifest.entry) : fileErr;
         return pkg;
     }
 
-    const QString canonicalEntryPath = entryInfo.canonicalFilePath();
-    if (!canonicalEntryPath.startsWith(canonicalPackageDir + QLatin1Char('/')) && canonicalEntryPath != canonicalPackageDir) {
+    const QString cleanedEntry = QDir::cleanPath(dir.filePath(pkg.m_manifest.entry));
+    if (!cleanedEntry.startsWith(canonicalPackageDir + QLatin1Char('/')) && cleanedEntry != canonicalPackageDir) {
         pkg.m_validationError = QStringLiteral("Entry file escapes package directory (symlink traversal blocked)");
         return pkg;
     }
-    pkg.m_entryFilePath = canonicalEntryPath;
+    pkg.m_entryFilePath = entryTarget;
 
     // Permissions are displayed before approval, so reject values that the UI
     // would otherwise silently coerce or omit.
@@ -266,8 +328,9 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
         pkg.m_manifest.authentication.mode = AuthenticationMode::Unsupported;
     }
 
-    // Snapshot every asset, including extensionless imports and hidden files. Fail
-    // closed on unreadable files, symlinks and bounded-read violations.
+    // Snapshot every asset, including regular-file symlinks (GNU Stow pattern) and
+    // hidden files. Reject broken symlinks, directory symlinks, special files, and
+    // bounded-read violations. Hash resolved target paths alongside contents.
     QDirIterator it(canonicalPackageDir, QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden,
                     QDirIterator::Subdirectories);
     qint64 total = 0;
@@ -275,12 +338,23 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
     while (it.hasNext()) {
         it.next();
         const QFileInfo info = it.fileInfo();
-        if (++entries > 512 || info.isSymLink() || (!info.isDir() && !info.isFile())) {
+        if (++entries > 512) {
             pkg.m_validationError = QStringLiteral("Package contains symlinks, special files or too many entries");
             return pkg;
         }
-        if (info.isDir()) continue;
-        QFile file(info.filePath());
+        if (info.isDir()) {
+            if (info.isSymLink()) {
+                pkg.m_validationError = QStringLiteral("Package contains internal directory symlink: %1").arg(info.fileName());
+                return pkg;
+            }
+            continue;
+        }
+        QString resolvedTarget;
+        if (!inspectRegularFile(info.filePath(), &resolvedTarget, &fileErr)) {
+            pkg.m_validationError = fileErr;
+            return pkg;
+        }
+        QFile file(resolvedTarget);
         if (!file.open(QIODevice::ReadOnly)) {
             pkg.m_validationError = QStringLiteral("Package asset is unreadable");
             return pkg;
@@ -291,7 +365,9 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
             pkg.m_validationError = QStringLiteral("Package exceeds asset or total size limit");
             return pkg;
         }
-        pkg.m_files.insert(QDir(canonicalPackageDir).relativeFilePath(info.filePath()), bytes);
+        const QString relPath = QDir(canonicalPackageDir).relativeFilePath(info.filePath());
+        pkg.m_files.insert(relPath, bytes);
+        pkg.m_resolvedTargets.insert(relPath, resolvedTarget);
     }
     if (pkg.m_files.value(QStringLiteral("provider.json")) != manifestBytes) {
         pkg.m_validationError = QStringLiteral("Manifest changed during discovery");
@@ -335,46 +411,106 @@ QStringList ProviderPackageDiscovery::defaultSearchPaths()
     return paths;
 }
 
+QList<ConfiguredProviderDirectory> ProviderPackageDiscovery::readConfiguredDirectories(const KConfigGroup &group)
+{
+    QList<ConfiguredProviderDirectory> dirs;
+    const int count = qBound(0, group.readEntry("Count", 0), 256);
+    for (int i = 0; i < count; ++i) {
+        const QString path = group.readEntry(QStringLiteral("Path%1").arg(i), QString()).trimmed();
+        if (path.isEmpty())
+            continue;
+        ConfiguredProviderDirectory entry;
+        entry.path = path;
+        entry.label = group.readEntry(QStringLiteral("Label%1").arg(i), QString()).trimmed();
+        entry.enabled = group.readEntry(QStringLiteral("Enabled%1").arg(i), true);
+        dirs.append(entry);
+    }
+    return dirs;
+}
+
+void ProviderPackageDiscovery::writeConfiguredDirectories(KConfigGroup &group,
+                                                          const QList<ConfiguredProviderDirectory> &dirs)
+{
+    for (const QString &key : group.keyList())
+        group.deleteEntry(key);
+    int idx = 0;
+    for (const auto &dir : dirs) {
+        const QString path = dir.path.trimmed();
+        if (path.isEmpty())
+            continue;
+        group.writeEntry(QStringLiteral("Path%1").arg(idx), path);
+        group.writeEntry(QStringLiteral("Label%1").arg(idx), dir.label.trimmed());
+        group.writeEntry(QStringLiteral("Enabled%1").arg(idx), dir.enabled);
+        ++idx;
+    }
+    group.writeEntry("Count", idx);
+    group.sync();
+}
+
 QList<ProviderPackage> ProviderPackageDiscovery::discoverPackages(const QStringList &customPaths)
+{
+    return discoverPackages({}, customPaths, nullptr);
+}
+
+QList<ProviderPackage> ProviderPackageDiscovery::discoverPackages(
+    const QList<ConfiguredProviderDirectory> &configuredDirs,
+    const QStringList &customPaths,
+    QList<ProviderPackage> *shadowed)
 {
     QList<ProviderPackage> results;
     QHash<QString, ProviderPackage> discoveredById;
+    if (shadowed)
+        shadowed->clear();
 
-    auto scanDir = [&](const QString &basePath, ProviderPackage::LocationType locType) {
+    auto scanDir = [&](const QString &basePath, ProviderPackage::LocationType locType,
+                       const QString &provenanceLabel, ProviderPackage::SymlinkPolicy symlinkPolicy) {
         QDir dir(basePath);
         if (!dir.exists())
             return;
 
+        // Include symlinked package directories when scanning dotfiles-managed roots.
         const auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name);
         for (const auto &info : entries) {
-            // Passive scan: only inspect immediate subdirectory
             const QString pkgDir = info.absoluteFilePath();
-            auto pkg = ProviderPackage::fromDirectory(pkgDir, locType);
+            auto pkg = ProviderPackage::fromDirectory(pkgDir, locType, symlinkPolicy);
+            if (!provenanceLabel.isEmpty())
+                pkg.setProvenanceLabel(provenanceLabel);
             if (ProviderPackageDiscovery::isValidPackageId(pkg.id())) {
                 if (!discoveredById.contains(pkg.id())) {
                     discoveredById.insert(pkg.id(), pkg);
                     results.append(pkg);
+                } else if (shadowed) {
+                    pkg.setShadowedBy(discoveredById.value(pkg.id()).displayPath());
+                    shadowed->append(pkg);
                 }
             }
         }
     };
 
     const QStringList normalPaths = defaultSearchPaths();
-    // An explicit path must not relabel the same installed or user directory.
     for (const auto &p : customPaths) {
         bool normal = false;
         for (const auto &known : normalPaths) {
             if (QDir::cleanPath(QFileInfo(p).absoluteFilePath()) == QDir::cleanPath(QFileInfo(known).absoluteFilePath())) normal = true;
         }
-        if (!normal) scanDir(p, ProviderPackage::LocationType::Custom);
+        if (!normal) scanDir(p, ProviderPackage::LocationType::Custom, QString(), ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks);
     }
 
-    // 2. Default XDG search paths (User then System)
+    // Configured user/dotfiles provider directories in explicit precedence order.
+    for (const auto &cfg : configuredDirs) {
+        if (!cfg.enabled || cfg.path.trimmed().isEmpty())
+            continue;
+        const QString label = cfg.label.trimmed().isEmpty() ? QStringLiteral("User directory") : cfg.label.trimmed();
+        scanDir(cfg.path, ProviderPackage::LocationType::Custom, label, ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks);
+    }
+
+    // Default XDG search paths (User then System)
     const QStringList defaults = defaultSearchPaths();
     bool isFirst = true;
     for (const auto &p : defaults) {
         const auto locType = isFirst ? ProviderPackage::LocationType::User : ProviderPackage::LocationType::System;
-        scanDir(p, locType);
+        const auto policy = isFirst ? ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks : ProviderPackage::SymlinkPolicy::PackageDirOnly;
+        scanDir(p, locType, QString(), policy);
         isFirst = false;
     }
 
@@ -394,8 +530,19 @@ QString ProviderPackage::provenance() const
 QByteArray ProviderPackage::approvalFingerprint() const
 {
     if (!m_valid) return {};
-    return QCryptographicHash::hash(m_contentHash + '\0' + m_packageDir.toUtf8() + '\0' + provenance().toUtf8(),
-                                    QCryptographicHash::Sha256).toHex();
+    QCryptographicHash fp(QCryptographicHash::Sha256);
+    fp.addData(m_contentHash);
+    fp.addData(QByteArrayView("\0", 1));
+    fp.addData(m_packageDir.toUtf8());
+    fp.addData(QByteArrayView("\0", 1));
+    fp.addData(provenance().toUtf8());
+    for (auto it = m_resolvedTargets.cbegin(); it != m_resolvedTargets.cend(); ++it) {
+        fp.addData(QByteArrayView("\0", 1));
+        fp.addData(it.key().toUtf8());
+        fp.addData(QByteArrayView("=", 1));
+        fp.addData(it.value().toUtf8());
+    }
+    return fp.result().toHex();
 }
 
 static bool protectedPath(QString path)
@@ -467,7 +614,7 @@ QString ProviderPackage::resolveRelativeModulePath(const QString &fromFile, cons
 
 bool ProviderPackage::verifiedFiles(QMap<QString, QByteArray> *files, QString *entryRelPath, QString *error) const
 {
-    const auto current = fromDirectory(m_packageDir, m_locationType);
+    const auto current = fromDirectory(m_packageDir, m_locationType, m_symlinkPolicy);
     if (!m_valid || !current.isValid() || current.approvalFingerprint() != approvalFingerprint()) {
         if (error)
             *error = QStringLiteral("Package changed since approval/discovery; review it again");

@@ -12,6 +12,7 @@
 #include "searchwindow.h"
 #include "providereligibility.h"
 #include "resultdetailwindow.h"
+#include "searchtab.h"
 
 class QSystemTrayIcon;
 class QPluginLoader;
@@ -67,6 +68,7 @@ public slots:
     bool isPackageTrusted(const QString &id) const;
     const QList<ProviderPackageStatus> &packages() const { return m_packages; }
     ProviderAuthManager *authManager() const { return m_authManager; }
+    SearchTab *reusableAutoTab() const { return m_reusableAutoTab.data(); }
 
 signals:
     void packageReloaded(const QString &id);
@@ -91,6 +93,7 @@ private:
     void searchSelectedSources(SearchTab *tab, const QSet<QString> &selected);
     void performSearchInternal(const QString &query, bool clipboard, bool recordActivity);
     void performSearchScoped(const QString &query, const QueryScope &scope, bool clipboard, bool recordActivity);
+    void performAutomaticLookup(const QString &query, const QueryScope &scope);
     void refreshDashboardScopes();
     void loadSettings();
     void saveSettings();
@@ -128,6 +131,7 @@ private:
     GlobalShortcuts *m_globalShortcuts = nullptr;
     QList<QPointer<SearchWindow>> m_searchWindows;
     QList<QPointer<ResultDetailWindow>> m_detailWindows;
+    QPointer<SearchTab> m_reusableAutoTab;
 
 protected:
     virtual void loadWalletCredentials(SearchProvider *provider);

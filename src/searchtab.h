@@ -40,6 +40,12 @@ public:
     void setError(const QString &providerName, const QString &errorMsg);
 
     QString query() const { return m_query; }
+    void setAutomaticResultsMode(bool automatic);
+    bool isAutomaticResultsTab() const { return m_automaticMode; }
+    bool isPromotedFromAutomatic() const { return m_promoted; }
+    quint64 queryGeneration() const { return m_queryGeneration; }
+    void resetForAutomaticQuery(const QString &query);
+    void markUserInteracted(const QString &reason = {});
     void setPoppedOut(bool poppedOut);
     QSplitter *mainSplitter() const;
     QSplitter *detailSplitter() const;
@@ -55,6 +61,7 @@ signals:
     void detailWindowCreated(ResultDetailWindow *window);
     void popOutRequested();
     void settingsRequested(const QString &providerId, const QString &target = {});
+    void promotedFromAutomatic(const QString &query, const QString &reason);
 
 public slots:
     void loadMore(const QString &providerId);
@@ -133,6 +140,13 @@ private:
     QPushButton *m_detailsButton;
     QPushButton *m_openDetailsWindowButton = nullptr;
     QPushButton *m_popOutButton = nullptr;
+    QPushButton *m_pinAutoTabButton = nullptr;
+    QLabel *m_autoBadge = nullptr;
+    QLabel *m_queryLabel = nullptr;
+    bool m_automaticMode = false;
+    bool m_promoted = false;
+    bool m_suppressInteractionTracking = false;
+    quint64 m_queryGeneration = 0;
     QMap<QString, ProviderState> m_states;
     quint64 m_nextRequest = 0;
     int m_nextProviderOrder = 0;

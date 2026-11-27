@@ -113,6 +113,8 @@ private:
     QSpinBox *m_autoMaxWords = nullptr;
     QSpinBox *m_autoDebounceMs = nullptr;
     QComboBox *m_autoHistoryMode = nullptr;
+    QCheckBox *m_autoOnlineEnabled = nullptr;
+    QListWidget *m_autoOnlineProviders = nullptr;
     QCheckBox *m_showRecent;
     QCheckBox *m_recordClipboardRecent;
     QCheckBox *m_persistClipboardRecent;

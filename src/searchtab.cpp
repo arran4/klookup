@@ -174,6 +174,14 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_expandScopeButton->setToolTip(i18n("Deliberately query additional approved sources matching the selected tags. Already loaded results are retained."));
     m_expandScopeButton->setVisible(false);
     sourceControls->addWidget(m_expandScopeButton);
+    m_expandScopeMenuButton = new QToolButton(this);
+    m_expandScopeMenuButton->setObjectName(QStringLiteral("expandScopeMenuButton"));
+    m_expandScopeMenuButton->setText(i18n("Expand to…"));
+    m_expandScopeMenuButton->setPopupMode(QToolButton::InstantPopup);
+    m_expandScopeMenuButton->setFocusPolicy(Qt::StrongFocus);
+    m_expandScopeMenuButton->setToolTip(i18n("Expand this search to additional sources without discarding loaded results."));
+    m_expandScopeMenuButton->setVisible(false);
+    sourceControls->addWidget(m_expandScopeMenuButton);
     m_sourceButton->setVisible(false); m_applySources->setVisible(false);
     connect(m_applySources, &QPushButton::clicked, this, [this] {
         markUserInteracted(QStringLiteral("scope"));
@@ -475,6 +483,7 @@ void SearchTab::startProvider(SearchProvider *provider, ProviderAuthSession *aut
     const quint64 generation = m_queryGeneration;
     m_states.insert(id, state);
     updateDisplayFilters();
+    rebuildExpandScopeMenu();
     m_suppressInteractionTracking = false;
     connect(provider, &SearchProvider::pageCompleted, this, [this, id, generation](quint64 requestId, const SearchPage &page) {
         if (generation != m_queryGeneration || !m_states.contains(id))
@@ -1464,6 +1473,64 @@ void SearchTab::applyDisplayFilters()
     }
 }
 
+void SearchTab::rebuildExpandScopeMenu()
+{
+    if (!m_expandScopeMenuButton)
+        return;
+
+    QSet<QString> unqueriedIds;
+    QMap<QString, QSet<QString>> facetToIds;
+    QMap<QString, QString> facetLabels;
+    for (const auto &choice : std::as_const(m_sourceChoices)) {
+        if (!choice.selectable || hasProvider(choice.id))
+            continue;
+        unqueriedIds.insert(choice.id);
+        for (const QString &facet : choice.classification.facets) {
+            facetToIds[facet].insert(choice.id);
+            if (!facetLabels.contains(facet))
+                facetLabels.insert(facet, choice.classification.label(facet));
+        }
+    }
+
+    auto *menu = new QMenu(m_expandScopeMenuButton);
+    if (!unqueriedIds.isEmpty()) {
+        auto *allAction = menu->addAction(i18n("All enabled sources (%1 unqueried)", unqueriedIds.size()));
+        allAction->setObjectName(QStringLiteral("expandScopeAll"));
+        connect(allAction, &QAction::triggered, this, [this, unqueriedIds] {
+            markUserInteracted(QStringLiteral("expand"));
+            QSet<QString> expanded = m_appliedSources;
+            for (auto it = m_states.cbegin(); it != m_states.cend(); ++it)
+                expanded.insert(it.key());
+            expanded.unite(unqueriedIds);
+            emit searchSelectedSourcesRequested(expanded);
+        });
+
+        if (!facetToIds.isEmpty())
+            menu->addSeparator();
+
+        QStringList sortedFacets = facetToIds.keys();
+        sortedFacets.sort();
+        for (const QString &facet : sortedFacets) {
+            const QSet<QString> addIds = facetToIds.value(facet);
+            auto *act = menu->addAction(i18n("%1 (%2)", facetLabels.value(facet, facet), addIds.size()));
+            act->setObjectName(QStringLiteral("expandScopeFacet-") + facet);
+            connect(act, &QAction::triggered, this, [this, addIds] {
+                markUserInteracted(QStringLiteral("expand"));
+                QSet<QString> expanded = m_appliedSources;
+                for (auto it = m_states.cbegin(); it != m_states.cend(); ++it)
+                    expanded.insert(it.key());
+                expanded.unite(addIds);
+                emit searchSelectedSourcesRequested(expanded);
+            });
+        }
+    }
+
+    if (auto *old = m_expandScopeMenuButton->menu())
+        old->deleteLater();
+    m_expandScopeMenuButton->setMenu(menu);
+    m_expandScopeMenuButton->setVisible(!unqueriedIds.isEmpty());
+}
+
 void SearchTab::setSourceChoices(const QList<SearchSourceChoice> &choices)
 {
     m_respectSourcePolicy = true;
@@ -1483,6 +1550,7 @@ void SearchTab::setSourceChoices(const QList<SearchSourceChoice> &choices)
     m_sourceButton->setMenu(menu);
     m_sourceButton->setVisible(!choices.isEmpty()); m_applySources->setVisible(!choices.isEmpty());
     updateDisplayFilters();
+    rebuildExpandScopeMenu();
 }
 
 void SearchTab::applySourceEligibility(const QSet<QString> &selected)
@@ -1503,6 +1571,7 @@ void SearchTab::applySourceEligibility(const QSet<QString> &selected)
     }
     updateDetailsControl();
     applyDisplayFilters();
+    rebuildExpandScopeMenu();
 }
 
 bool SearchTab::sourceEligible(SearchProvider *provider) const

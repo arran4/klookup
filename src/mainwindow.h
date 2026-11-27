@@ -69,6 +69,8 @@ public slots:
     const QList<ProviderPackageStatus> &packages() const { return m_packages; }
     ProviderAuthManager *authManager() const { return m_authManager; }
     SearchTab *reusableAutoTab() const { return m_reusableAutoTab.data(); }
+    bool isVerifiedLocalProvider(const QString &id) const { return m_verifiedLocalProviderIds.contains(id); }
+    QueryScope automaticLookupScopeForPolicy(const ClipboardPolicy::Policy &policy) const;
 
 signals:
     void packageReloaded(const QString &id);
@@ -114,6 +116,7 @@ private:
     QHash<QString, SearchProvider *> m_fallbackProviders;
     QList<SearchProvider *> m_scriptedAdapters;
     QList<ProviderPackageStatus> m_packages;
+    QSet<QString> m_verifiedLocalProviderIds;
     QStringList m_customPackagePaths;
     QStringList m_customPluginPaths;
     std::function<QNetworkAccessManager *(QObject *)> m_namFactory;

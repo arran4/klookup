@@ -112,6 +112,7 @@ private:
 
     void updateDisplayFilters();
     void applyDisplayFilters();
+    void rebuildExpandScopeMenu();
     QMap<QString, QToolButton *> m_filterButtons;
     QSet<QString> m_selectedFacets;
     FlowLayout *m_filterLayout = nullptr;
@@ -126,6 +127,7 @@ private:
     QToolButton *m_sourceButton = nullptr;
     QPushButton *m_applySources = nullptr;
     QPushButton *m_expandScopeButton = nullptr;
+    QToolButton *m_expandScopeMenuButton = nullptr;
     QString m_query;
     QSplitter *m_mainSplitter = nullptr;
     QSplitter *m_detailSplitter = nullptr;

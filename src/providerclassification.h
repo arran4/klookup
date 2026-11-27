@@ -12,12 +12,14 @@
 
 // Provider-level descriptors, never result/story taxonomy or authorization.
 struct ProviderClassification {
+    static constexpr const char *LocalVirtualFacet = "scope:local";
     QString version = QStringLiteral("1.0.0");
     QStringList facets;
     QStringList requirements;
     QMap<QString, QMap<QString, QString>> labels;
     QString label(const QString &id, const QLocale &locale = QLocale()) const;
     QString description() const;
+    void addHostVirtualFacet(const QString &facet);
     static ProviderClassification builtin(const QString &providerId);
     static bool fromJson(const QJsonValue &value, ProviderClassification *result, QString *error);
 };

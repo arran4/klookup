@@ -22,6 +22,7 @@ namespace KWallet {
 }
 class QCheckBox;
 class QComboBox;
+class QSpinBox;
 
 class SettingsDialog : public KPageDialog
 {
@@ -104,6 +105,14 @@ private:
     std::unique_ptr<AutostartManager> m_autostartManager;
     QComboBox *m_captureMode;
     QComboBox *m_searchTrigger;
+    QComboBox *m_inputSource = nullptr;
+    QCheckBox *m_autoLookupEnabled = nullptr;
+    QCheckBox *m_explicitImmediateSearch = nullptr;
+    QCheckBox *m_readExistingOnOpen = nullptr;
+    QSpinBox *m_autoMaxChars = nullptr;
+    QSpinBox *m_autoMaxWords = nullptr;
+    QSpinBox *m_autoDebounceMs = nullptr;
+    QComboBox *m_autoHistoryMode = nullptr;
     QCheckBox *m_showRecent;
     QCheckBox *m_recordClipboardRecent;
     QCheckBox *m_persistClipboardRecent;

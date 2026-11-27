@@ -20,6 +20,8 @@ class GlobalShortcuts;
 class RecentActivity;
 class SearchTab;
 class QNetworkAccessManager;
+class QTimer;
+class QAction;
 
 class MainWindow : public KXmlGuiWindow
 {
@@ -37,6 +39,8 @@ public slots:
     void showSearchViaShortcut();
     void searchClipboardNow();
     void notifyClipboardShortcutUsed();
+    void setAutoLookupPaused(bool paused);
+    bool isAutoLookupPaused() const;
     void restoreFromTray();
     void clearSearchTabs();
 
@@ -73,6 +77,7 @@ protected:
 
 private slots:
     void onClipboardChanged();
+    void onSelectionChanged();
     void showSettingsDialog();
     void openProviderSettings(const QString &providerId, const QString &target = {});
     void configureShortcuts();
@@ -92,7 +97,9 @@ private:
     void setupActions();
     void setupTrayIcon();
     void closeSearchTab(int index);
+    bool hasVisibleKLookupWindow() const;
     void handleClipboardEvent(ClipboardPolicy::Event event);
+    void dispatchPendingAutoLookup();
 
     QTabWidget *m_tabWidget;
     SearchDashboard *m_dashboard;
@@ -110,7 +117,11 @@ private:
     QSystemTrayIcon *m_trayIcon;
     QString m_lastAutoSearchClipboardText;
     QString m_lastCapturedClipboardText;
+    QString m_pendingAutoLookupText;
+    QTimer *m_autoLookupDebounceTimer = nullptr;
+    QAction *m_pauseAutoLookupAction = nullptr;
     bool m_clipboardReady = false;
+    bool m_autoLookupPaused = false;
     bool m_hadFocus = false;
     bool m_settingsSaved = false;
     ProviderAuthManager *m_authManager;

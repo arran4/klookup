@@ -1,5 +1,6 @@
 #include "clipboardpolicy.h"
 #include <KConfigGroup>
+#include <QtGlobal>
 
 bool ClipboardPolicy::Policy::permitsCapture(bool visible, bool focused) const
 {
@@ -14,6 +15,14 @@ bool ClipboardPolicy::Policy::permitsCapture(bool visible, bool focused) const
         return true;
     }
     return false;
+}
+
+bool ClipboardPolicy::Policy::permitsAutomaticLookup(bool hasVisibleWindow, bool focused) const
+{
+    // Tray-only / hidden / minimized windows must never perform automatic lookups.
+    if (!hasVisibleWindow)
+        return false;
+    return permitsCapture(true, focused);
 }
 
 bool ClipboardPolicy::Policy::searchesOn(Event event) const
@@ -41,6 +50,26 @@ ClipboardPolicy::Policy ClipboardPolicy::read(const KConfigGroup &group)
     } else if (group.readEntry("MonitorClipboard", false) && group.readEntry("AutoSearchClipboard", false)) {
         policy.trigger = Trigger::ClipboardChanged;
     }
+
+    const int inputSourceValue = group.readEntry("ClipboardInputSource", int(InputSource::Clipboard));
+    if (inputSourceValue == int(InputSource::Clipboard) || inputSourceValue == int(InputSource::PrimarySelection))
+        policy.inputSource = InputSource(inputSourceValue);
+
+    policy.reactOnlyToNewCopy = group.readEntry("ClipboardReactOnlyToNewCopy", true);
+    policy.readExistingOnOpen = group.readEntry("ClipboardReadExistingOnOpen", false);
+    if (group.hasKey("ClipboardAutoLookupEnabled")) {
+        policy.autoLookupEnabled = group.readEntry("ClipboardAutoLookupEnabled", false);
+    } else {
+        policy.autoLookupEnabled = (policy.trigger != Trigger::Never);
+    }
+    policy.explicitCaptureImmediateSearch = group.readEntry("ClipboardExplicitCaptureImmediateSearch", false);
+    policy.autoMaxChars = qBound(20, group.readEntry("ClipboardAutoMaxChars", 180), 4096);
+    policy.autoMaxWords = qBound(1, group.readEntry("ClipboardAutoMaxWords", 10), 500);
+    policy.autoDebounceMs = qBound(0, group.readEntry("ClipboardAutoDebounceMs", 300), 5000);
+
+    const int historyValue = group.readEntry("ClipboardAutoHistoryMode", int(AutoHistoryMode::OnInteraction));
+    if (historyValue >= int(AutoHistoryMode::Never) && historyValue <= int(AutoHistoryMode::Always))
+        policy.autoHistoryMode = AutoHistoryMode(historyValue);
     return policy;
 }
 
@@ -48,6 +77,15 @@ void ClipboardPolicy::write(KConfigGroup &group, const Policy &policy)
 {
     group.writeEntry("ClipboardCaptureMode", int(policy.capture));
     group.writeEntry("ClipboardSearchTrigger", int(policy.trigger));
+    group.writeEntry("ClipboardInputSource", int(policy.inputSource));
+    group.writeEntry("ClipboardReactOnlyToNewCopy", policy.reactOnlyToNewCopy);
+    group.writeEntry("ClipboardReadExistingOnOpen", policy.readExistingOnOpen);
+    group.writeEntry("ClipboardAutoLookupEnabled", policy.autoLookupEnabled);
+    group.writeEntry("ClipboardExplicitCaptureImmediateSearch", policy.explicitCaptureImmediateSearch);
+    group.writeEntry("ClipboardAutoMaxChars", qBound(20, policy.autoMaxChars, 4096));
+    group.writeEntry("ClipboardAutoMaxWords", qBound(1, policy.autoMaxWords, 500));
+    group.writeEntry("ClipboardAutoDebounceMs", qBound(0, policy.autoDebounceMs, 5000));
+    group.writeEntry("ClipboardAutoHistoryMode", int(policy.autoHistoryMode));
 }
 
 void ClipboardPolicy::migrate(KConfigGroup &group)

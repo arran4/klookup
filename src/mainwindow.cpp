@@ -173,7 +173,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_dashboard, &SearchDashboard::searchInNewWindowScopedRequested, this, [this](const QString &query, const QueryScope &scope) {
         openSearchInNewWindow(query, scope);
     });
+    m_autoLookupDebounceTimer = new QTimer(this);
+    m_autoLookupDebounceTimer->setSingleShot(true);
+    connect(m_autoLookupDebounceTimer, &QTimer::timeout, this, &MainWindow::dispatchPendingAutoLookup);
     connect(QGuiApplication::clipboard(), &QClipboard::dataChanged, this, &MainWindow::onClipboardChanged);
+    connect(QGuiApplication::clipboard(), &QClipboard::selectionChanged, this, &MainWindow::onSelectionChanged);
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::saveSettings);
 
     new DBusAdaptor(this);
@@ -223,6 +227,12 @@ void MainWindow::setupActions()
     connect(show, &QAction::triggered, this, &MainWindow::showSearchViaShortcut);
     connect(clipboard, &QAction::triggered, this, &MainWindow::searchClipboardNow);
     m_globalShortcuts = new GlobalShortcuts({show, clipboard}, this);
+
+    m_pauseAutoLookupAction = actionCollection()->addAction(QStringLiteral("pause_auto_lookup"));
+    m_pauseAutoLookupAction->setText(i18n("Pause Automatic Lookup"));
+    m_pauseAutoLookupAction->setCheckable(true);
+    m_pauseAutoLookupAction->setChecked(false);
+    connect(m_pauseAutoLookupAction, &QAction::toggled, this, &MainWindow::setAutoLookupPaused);
 
     // Local shortcuts are active only in the KLookup window. Global shortcuts
     // remain opt-in and must not claim keys through KGlobalAccel by default.
@@ -295,6 +305,8 @@ void MainWindow::setupTrayIcon()
 
     QAction *restoreAction = trayMenu->addAction(QIcon::fromTheme(QStringLiteral("window-restore")), QStringLiteral("Restore"));
     connect(restoreAction, &QAction::triggered, this, &MainWindow::restoreFromTray);
+    if (m_pauseAutoLookupAction)
+        trayMenu->addAction(m_pauseAutoLookupAction);
 
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::KeyBindings)));
     trayMenu->addAction(actionCollection()->action(KStandardAction::name(KStandardAction::Preferences)));
@@ -351,13 +363,26 @@ void MainWindow::showSearch()
 
 void MainWindow::showSearchViaShortcut()
 {
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
     showSearch();
-    QTimer::singleShot(0, this, &MainWindow::notifyClipboardShortcutUsed);
+    if (policy.trigger == ClipboardPolicy::Trigger::GlobalShortcut || policy.readExistingOnOpen) {
+        QTimer::singleShot(0, this, &MainWindow::notifyClipboardShortcutUsed);
+    } else if (!m_dashboard->hasUserEditedQuery()) {
+        m_dashboard->clearQuery();
+    }
 }
 
 void MainWindow::searchClipboardNow()
 {
-    const QString query = ClipboardInput::explicitQuery(QGuiApplication::clipboard()->mimeData());
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
+    const auto *clipboard = QGuiApplication::clipboard();
+    const QClipboard::Mode mode =
+        (policy.inputSource == ClipboardPolicy::InputSource::PrimarySelection && clipboard->supportsSelection())
+            ? QClipboard::Selection
+            : QClipboard::Clipboard;
+    const QString query = ClipboardInput::explicitQuery(clipboard->mimeData(mode));
     // Reserve this text before activation so focus-trigger policy cannot add a
     // duplicate automatic tab for the same explicit invocation.
     if (!query.isEmpty()) {
@@ -367,8 +392,33 @@ void MainWindow::searchClipboardNow()
     showNormal();
     raise();
     activateWindow();
-    if (!query.isEmpty()) performSearch(query);
-    else showSearch();
+    if (!query.isEmpty() && policy.explicitCaptureImmediateSearch) {
+        performSearch(query);
+    } else {
+        m_tabWidget->setCurrentIndex(0);
+        if (!query.isEmpty()) {
+            m_dashboard->prepareCapturedQuery(query, true, true);
+        } else {
+            m_dashboard->focusQuery();
+        }
+    }
+}
+
+void MainWindow::setAutoLookupPaused(bool paused)
+{
+    m_autoLookupPaused = paused;
+    if (paused && m_autoLookupDebounceTimer) {
+        m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+    }
+    if (m_pauseAutoLookupAction && m_pauseAutoLookupAction->isChecked() != paused) {
+        m_pauseAutoLookupAction->setChecked(paused);
+    }
+}
+
+bool MainWindow::isAutoLookupPaused() const
+{
+    return m_autoLookupPaused;
 }
 
 void MainWindow::showSettingsDialog()
@@ -397,25 +447,105 @@ void MainWindow::openProviderSettings(const QString &providerId, const QString &
     // We re-check clipboard monitoring if settings change
 }
 
+bool MainWindow::hasVisibleKLookupWindow() const
+{
+    if (isVisible() && !isMinimized())
+        return true;
+    for (const auto &win : m_searchWindows) {
+        if (win && win->isVisible() && !win->isMinimized())
+            return true;
+    }
+    return false;
+}
+
 void MainWindow::onClipboardChanged()
 {
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
+    if (policy.inputSource != ClipboardPolicy::InputSource::Clipboard)
+        return;
     handleClipboardEvent(ClipboardPolicy::Event::ClipboardChanged);
+}
+
+void MainWindow::onSelectionChanged()
+{
+    const auto *clipboard = QGuiApplication::clipboard();
+    if (!clipboard || !clipboard->supportsSelection())
+        return;
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
+    if (policy.inputSource != ClipboardPolicy::InputSource::PrimarySelection)
+        return;
+    handleClipboardEvent(ClipboardPolicy::Event::ClipboardChanged);
+}
+
+void MainWindow::dispatchPendingAutoLookup()
+{
+    const QString text = m_pendingAutoLookupText;
+    m_pendingAutoLookupText.clear();
+    if (text.isEmpty() || !m_clipboardReady || m_autoLookupPaused)
+        return;
+    KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+    const auto policy = ClipboardPolicy::read(group);
+    if (!policy.permitsAutomaticLookup(hasVisibleKLookupWindow(), isActiveWindow()))
+        return;
+    processClipboardText(text, true);
 }
 
 void MainWindow::handleClipboardEvent(ClipboardPolicy::Event event)
 {
-    if (!m_clipboardReady) return;
+    if (!m_clipboardReady || m_autoLookupPaused)
+        return;
     KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
     const auto policy = ClipboardPolicy::read(group);
-    if (!policy.permitsCapture(isVisible() && !isMinimized(), isActiveWindow())) return;
-    const auto *mime = QGuiApplication::clipboard()->mimeData();
-    if (!mime || mime->hasFormat(QString::fromLatin1(SourceUrlClipboardMime))) return;
-    const auto input = ClipboardInput::classifyMimeData(mime);
-    if (!input.permitsAutomaticCapture()) return;
-    const bool changed = input.text != m_lastCapturedClipboardText;
-    m_lastCapturedClipboardText = input.text;
-    if (policy.searchesOn(event)) processClipboardText(input.text, true);
-    else if (changed) processClipboardText(input.text, false);
+    const bool hasVisibleWindow = hasVisibleKLookupWindow();
+    if (!policy.permitsCapture(hasVisibleWindow, isActiveWindow())) {
+        if (m_autoLookupDebounceTimer)
+            m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+        return;
+    }
+    const auto *clipboard = QGuiApplication::clipboard();
+    const QClipboard::Mode mode =
+        (policy.inputSource == ClipboardPolicy::InputSource::PrimarySelection && clipboard->supportsSelection())
+            ? QClipboard::Selection
+            : QClipboard::Clipboard;
+    const auto *mime = clipboard->mimeData(mode);
+    if (!mime || mime->hasFormat(QString::fromLatin1(SourceUrlClipboardMime))) {
+        if (m_autoLookupDebounceTimer)
+            m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+        return;
+    }
+    const auto decision = ClipboardInput::evaluateAutomaticCapture(mime, {policy.autoMaxChars, policy.autoMaxWords});
+    if (!decision.eligibleForManualPopulation) {
+        if (m_autoLookupDebounceTimer)
+            m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+        return;
+    }
+    const bool changed = decision.text != m_lastCapturedClipboardText;
+    m_lastCapturedClipboardText = decision.text;
+    const bool wantsAutoTrigger = policy.searchesOn(event) ||
+                                  (policy.autoLookupEnabled && event == ClipboardPolicy::Event::ClipboardChanged);
+    const bool wantsAutoLookup = decision.eligibleForAutomaticLookup && wantsAutoTrigger &&
+                                 policy.permitsAutomaticLookup(hasVisibleWindow, isActiveWindow());
+    if (wantsAutoLookup) {
+        if (event == ClipboardPolicy::Event::ClipboardChanged && policy.autoDebounceMs > 0 && m_autoLookupDebounceTimer) {
+            m_pendingAutoLookupText = decision.text;
+            m_autoLookupDebounceTimer->start(policy.autoDebounceMs);
+            return;
+        }
+        if (m_autoLookupDebounceTimer)
+            m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+        processClipboardText(decision.text, true);
+    } else if (changed) {
+        if (m_autoLookupDebounceTimer)
+            m_autoLookupDebounceTimer->stop();
+        m_pendingAutoLookupText.clear();
+        processClipboardText(decision.text, false);
+    }
 }
 
 void MainWindow::restoreFromTray()
@@ -424,7 +554,12 @@ void MainWindow::restoreFromTray()
     showNormal();
     raise();
     activateWindow();
-    if (opening) handleClipboardEvent(ClipboardPolicy::Event::TrayOpened);
+    if (opening) {
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        const auto policy = ClipboardPolicy::read(group);
+        if (policy.readExistingOnOpen || policy.trigger == ClipboardPolicy::Trigger::TrayOpened)
+            handleClipboardEvent(ClipboardPolicy::Event::TrayOpened);
+    }
 }
 
 void MainWindow::notifyClipboardShortcutUsed()
@@ -462,10 +597,9 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
         performSearchInternal(text, true, true);
     } else {
         m_recent->recordCapture(text);
-        // Just prepopulate
+        // Just prepopulate without clobbering manual edits or switching tabs/focus.
         m_lastAutoSearchClipboardText.clear();
-        // Passive capture updates the entry without switching tabs or focus.
-        m_dashboard->prepareQuery(text, false);
+        m_dashboard->prepareCapturedQuery(text, false, false);
     }
 }
 

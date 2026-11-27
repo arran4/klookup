@@ -20,6 +20,9 @@ SearchDashboard::SearchDashboard(QWidget *parent) : QWidget(parent), m_searchBar
 
     m_searchBar->setPlaceholderText(QStringLiteral("Enter search query..."));
     m_searchBar->setCompleter(m_completer);
+    connect(m_searchBar, &QLineEdit::textEdited, this, [this](const QString &text) {
+        m_userEditedQuery = !text.trimmed().isEmpty();
+    });
     layout->addWidget(m_searchBar);
 
     auto *searchButtonsLayout = new QHBoxLayout;
@@ -159,9 +162,38 @@ void SearchDashboard::prepareQuery(const QString &query, bool focus)
         m_searchBar->setFocus();
 }
 
+bool SearchDashboard::prepareCapturedQuery(const QString &query, bool focus, bool forceOverwrite)
+{
+    if (!forceOverwrite && m_userEditedQuery && !m_searchBar->text().trimmed().isEmpty())
+        return false;
+    m_searchBar->setText(query);
+    m_userEditedQuery = false;
+    m_searchBar->selectAll();
+    if (focus)
+        m_searchBar->setFocus();
+    return true;
+}
+
+void SearchDashboard::clearQuery()
+{
+    m_searchBar->clear();
+    m_userEditedQuery = false;
+}
+
+bool SearchDashboard::hasUserEditedQuery() const
+{
+    return m_userEditedQuery && !m_searchBar->text().trimmed().isEmpty();
+}
+
+QString SearchDashboard::currentQueryText() const
+{
+    return m_searchBar->text();
+}
+
 void SearchDashboard::onSearchTriggered()
 {
     QString query = m_searchBar->text().trimmed();
+    m_userEditedQuery = false;
     if (!query.isEmpty()) {
         m_history.removeAll(query);
         m_history.prepend(query);

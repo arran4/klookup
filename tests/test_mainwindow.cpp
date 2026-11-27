@@ -486,6 +486,7 @@ private slots:
         auto *entry = dashboard->findChild<QLineEdit *>();
         const int initial = tabs->count();
         write(group, {Capture::Visible, Trigger::ClipboardChanged});
+        group.writeEntry(QStringLiteral("ClipboardAutoDebounceMs"), 0);
         QGuiApplication::clipboard()->setText(QStringLiteral("hidden clipboard"));
         QCOMPARE(tabs->count(), initial); // tray-hidden process is not a visible window
         window.show();
@@ -580,6 +581,9 @@ private slots:
         KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
         write(group, {Capture::Never, Trigger::Never});
         auto *tabs = window.findChild<QTabWidget *>();
+        auto *dashboard = window.findChild<SearchDashboard *>();
+        auto *entry = dashboard->findChild<QLineEdit *>();
+        QVERIFY(tabs && dashboard && entry);
         const int initial = tabs->count();
         auto *show = window.actionCollection()->action(QStringLiteral("show_search"));
         auto *clipboard = window.actionCollection()->action(QStringLiteral("search_clipboard"));
@@ -587,14 +591,32 @@ private slots:
         QCOMPARE(show->property("componentName").toString(), QStringLiteral("org.kde.klookup"));
         window.hide();
         QGuiApplication::clipboard()->setText(QStringLiteral("https://example.org/explicit"));
+        // Default capture shortcut populates without launching a search (#207).
+        clipboard->trigger();
+        QCOMPARE(tabs->count(), initial);
+        QCOMPARE(tabs->currentIndex(), 0);
+        QCOMPARE(entry->text(), QStringLiteral("https://example.org/explicit"));
+        QVERIFY(window.isVisible());
+
+        // Blank open shortcut opens/focuses dashboard cleanly without pulling clipboard.
+        QGuiApplication::clipboard()->setText(QStringLiteral("unread clipboard entry"));
+        show->trigger();
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->currentIndex(), 0);
+        QCOMPARE(tabs->count(), initial);
+        QVERIFY(entry->text().isEmpty());
+
+        // Opt-in immediate search preference launches search tab on explicit capture shortcut.
+        Policy immediatePolicy{Capture::Never, Trigger::Never};
+        immediatePolicy.explicitCaptureImmediateSearch = true;
+        write(group, immediatePolicy);
+        window.hide();
+        QGuiApplication::clipboard()->setText(QStringLiteral("https://example.org/explicit"));
         clipboard->trigger();
         QCOMPARE(tabs->count(), initial + 1);
         QCOMPARE(tabs->tabText(tabs->currentIndex()), QStringLiteral("https://example.org/explicit"));
         QVERIFY(window.isVisible());
-        show->trigger();
-        QCoreApplication::processEvents();
-        QCOMPARE(tabs->currentIndex(), 0);
-        QCOMPARE(tabs->count(), initial + 1);
+
         write(group, {Capture::Running, Trigger::GlobalShortcut});
         QGuiApplication::clipboard()->setText(QStringLiteral("automatic shortcut query"));
         show->trigger();
@@ -604,6 +626,7 @@ private slots:
         QCoreApplication::processEvents();
         QCOMPARE(tabs->count(), initial + 2);
         write(group, {Capture::Running, Trigger::FocusGained});
+        group.writeEntry(QStringLiteral("ClipboardExplicitCaptureImmediateSearch"), true);
         window.hide();
         QGuiApplication::clipboard()->setText(QStringLiteral("one explicit activation"));
         clipboard->trigger();

@@ -24,6 +24,7 @@
 #include <QHBoxLayout>
 #include <QPushButton>
 #include <QCheckBox>
+#include <QSpinBox>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QSettings>
@@ -293,13 +294,43 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_searchTrigger = new QComboBox(this);
     m_searchTrigger->setObjectName(QStringLiteral("clipboardSearchTrigger"));
     m_searchTrigger->addItems({QStringLiteral("Never"), QStringLiteral("When opened from tray"), QStringLiteral("When clipboard changes"), QStringLiteral("When window gains focus"), QStringLiteral("When global shortcut is used")});
+    m_inputSource = new QComboBox(this);
+    m_inputSource->setObjectName(QStringLiteral("clipboardInputSource"));
+    m_inputSource->addItems({QStringLiteral("Clipboard copy"), QStringLiteral("Primary selection (X11/Wayland, if supported)")});
+    m_autoLookupEnabled = new QCheckBox(QStringLiteral("Enable automatic lookup when a KLookup window is visible"), this);
+    m_autoLookupEnabled->setObjectName(QStringLiteral("clipboardAutoLookupEnabled"));
+    m_explicitImmediateSearch = new QCheckBox(QStringLiteral("Launch search immediately when triggering explicit clipboard/selection capture shortcut"), this);
+    m_explicitImmediateSearch->setObjectName(QStringLiteral("clipboardExplicitImmediateSearch"));
+    m_readExistingOnOpen = new QCheckBox(QStringLiteral("Read existing clipboard text when opening KLookup"), this);
+    m_readExistingOnOpen->setObjectName(QStringLiteral("clipboardReadExistingOnOpen"));
+    m_autoMaxChars = new QSpinBox(this);
+    m_autoMaxChars->setObjectName(QStringLiteral("clipboardAutoMaxChars"));
+    m_autoMaxChars->setRange(20, 4096);
+    m_autoMaxWords = new QSpinBox(this);
+    m_autoMaxWords->setObjectName(QStringLiteral("clipboardAutoMaxWords"));
+    m_autoMaxWords->setRange(1, 500);
+    m_autoDebounceMs = new QSpinBox(this);
+    m_autoDebounceMs->setObjectName(QStringLiteral("clipboardAutoDebounceMs"));
+    m_autoDebounceMs->setRange(0, 5000);
+    m_autoDebounceMs->setSuffix(QStringLiteral(" ms"));
+    m_autoHistoryMode = new QComboBox(this);
+    m_autoHistoryMode->setObjectName(QStringLiteral("clipboardAutoHistoryMode"));
+    m_autoHistoryMode->addItems({QStringLiteral("Never"), QStringLiteral("On interaction (default)"), QStringLiteral("Always")});
     generalLayout->addWidget(m_minimizeToTrayCheck);
     generalLayout->addWidget(m_clearTabsOnCloseCheck);
     generalLayout->addWidget(m_autostartCheck);
     auto *clipboardForm = new QFormLayout;
+    clipboardForm->addRow(QStringLiteral("Automatic capture source:"), m_inputSource);
     clipboardForm->addRow(QStringLiteral("Capture clipboard while:"), m_captureMode);
     clipboardForm->addRow(QStringLiteral("Automatically search clipboard:"), m_searchTrigger);
+    clipboardForm->addRow(QStringLiteral("Automatic lookup char limit:"), m_autoMaxChars);
+    clipboardForm->addRow(QStringLiteral("Automatic lookup word limit:"), m_autoMaxWords);
+    clipboardForm->addRow(QStringLiteral("Selection/clipboard debounce:"), m_autoDebounceMs);
+    clipboardForm->addRow(QStringLiteral("Automatic search history:"), m_autoHistoryMode);
     generalLayout->addLayout(clipboardForm);
+    generalLayout->addWidget(m_autoLookupEnabled);
+    generalLayout->addWidget(m_explicitImmediateSearch);
+    generalLayout->addWidget(m_readExistingOnOpen);
     auto *hint = new QLabel(QStringLiteral("Capture permission is checked first. Capture alone quietly prepares the search field. Automatic searches never raise a window."), this);
     hint->setWordWrap(true);
     generalLayout->addWidget(hint);
@@ -333,6 +364,14 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     const auto policy = ClipboardPolicy::read(genGroup);
     m_captureMode->setCurrentIndex(int(policy.capture));
     m_searchTrigger->setCurrentIndex(int(policy.trigger));
+    m_inputSource->setCurrentIndex(int(policy.inputSource));
+    m_autoLookupEnabled->setChecked(policy.autoLookupEnabled);
+    m_explicitImmediateSearch->setChecked(policy.explicitCaptureImmediateSearch);
+    m_readExistingOnOpen->setChecked(policy.readExistingOnOpen);
+    m_autoMaxChars->setValue(policy.autoMaxChars);
+    m_autoMaxWords->setValue(policy.autoMaxWords);
+    m_autoDebounceMs->setValue(policy.autoDebounceMs);
+    m_autoHistoryMode->setCurrentIndex(int(policy.autoHistoryMode));
     m_showRecent->setChecked(genGroup.readEntry(QStringLiteral("ShowRecentActivity"), true));
     m_recordClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("RecordClipboardActivity"), false));
     m_persistClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("PersistClipboardActivity"), false));
@@ -499,7 +538,18 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
-    ClipboardPolicy::write(genGroup, {ClipboardPolicy::Capture(m_captureMode->currentIndex()), ClipboardPolicy::Trigger(m_searchTrigger->currentIndex())});
+    ClipboardPolicy::Policy policy = ClipboardPolicy::read(genGroup);
+    policy.capture = ClipboardPolicy::Capture(m_captureMode->currentIndex());
+    policy.trigger = ClipboardPolicy::Trigger(m_searchTrigger->currentIndex());
+    policy.inputSource = ClipboardPolicy::InputSource(m_inputSource->currentIndex());
+    policy.autoLookupEnabled = m_autoLookupEnabled->isChecked();
+    policy.explicitCaptureImmediateSearch = m_explicitImmediateSearch->isChecked();
+    policy.readExistingOnOpen = m_readExistingOnOpen->isChecked();
+    policy.autoMaxChars = m_autoMaxChars->value();
+    policy.autoMaxWords = m_autoMaxWords->value();
+    policy.autoDebounceMs = m_autoDebounceMs->value();
+    policy.autoHistoryMode = ClipboardPolicy::AutoHistoryMode(m_autoHistoryMode->currentIndex());
+    ClipboardPolicy::write(genGroup, policy);
     config->sync();
     if (m_autostartManager) {
         m_autostartManager->setAutostartEnabled(m_autostartCheck->isChecked());

@@ -22,6 +22,7 @@ struct PackagePermissions {
 };
 
 struct PackageManifest {
+    int apiVersion = 2;
     QString id;
     QString name;
     QString description;
@@ -59,7 +60,10 @@ public:
     bool isDistributionPackage() const;
     bool approved(const KConfigGroup &group) const;
     void saveApproval(KConfigGroup &group, bool approve) const;
+    bool verifiedFiles(QMap<QString, QByteArray> *files, QString *entryRelPath, QString *error) const;
     bool writeVerifiedSnapshot(const QString &destination, QString *error) const;
+
+    static QString resolveRelativeModulePath(const QString &fromFile, const QString &spec);
 
     bool isTrusted() const { return m_trusted; }
     void setTrusted(bool trusted) { m_trusted = trusted; }

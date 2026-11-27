@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: 2026 KLookup contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include "jsprovider.h"
 #include "providerpackage.h"
 
-#include <QCryptographicHash>
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -25,9 +26,10 @@ bool writeFile(const QString &path, const QByteArray &content)
 ProviderPackage buildPackage(const QString &dirPath, const QMap<QString, QByteArray> &modules)
 {
     QJsonObject manifest;
-    manifest[QStringLiteral("id")] = QStringLiteral("acorn_audit_pkg");
-    manifest[QStringLiteral("name")] = QStringLiteral("Acorn Audit Package");
+    manifest[QStringLiteral("id")] = QStringLiteral("script_api_v2_pkg");
+    manifest[QStringLiteral("name")] = QStringLiteral("Script API v2 Package");
     manifest[QStringLiteral("version")] = QStringLiteral("1.0.0");
+    manifest[QStringLiteral("apiVersion")] = 2;
     manifest[QStringLiteral("runtime")] = QStringLiteral("javascript");
     manifest[QStringLiteral("entry")] = QStringLiteral("main.mjs");
 
@@ -50,13 +52,11 @@ class TestAcornParserValidation : public QObject
     Q_OBJECT
 
 private slots:
-    void testCommentsStringsRegexesAndTemplatesDoNotTriggerFalseImports()
+    void testCommentsStringsRegexesTemplatesAndInMemoryRequire()
     {
-        QTemporaryDir pkgDir, snapDir;
-        QVERIFY(pkgDir.isValid() && snapDir.isValid());
+        QTemporaryDir pkgDir;
+        QVERIFY(pkgDir.isValid());
 
-        // Real static import is ./helper.mjs; all other "import" strings are inside comments,
-        // string literals, regex literals, and template substitutions.
         const QByteArray mainCode =
             "// import { evil } from '../outside.mjs';\n"
             "/*\n"
@@ -66,102 +66,104 @@ private slots:
             "const s2 = 'import(\"./nonexistent2.mjs\")';\n"
             "const re = /import\\s+foo\\s+from\\s+['\"]\\.\\/nonexistent3\\.mjs['\"]/;\n"
             "const tpl = `prefix ${\"import('./nonexistent4.mjs')\"} suffix`;\n"
-            "import { val } from './helper.mjs';\n"
-            "export function search(q) { return [{ id: '1', title: s1 + s2 + re.source + tpl + val }]; }\n";
+            "const { val } = host.require('./helper.mjs');\n"
+            "module.exports = {\n"
+            "    search: function(q) { return [{ id: '1', title: val + ':' + host.apiVersion + ':' + q + ':' + s1.length + s2.length + re.source.length + tpl.length }]; }\n"
+            "};\n";
 
         auto pkg = buildPackage(pkgDir.path(), {
             {QStringLiteral("main.mjs"), mainCode},
-            {QStringLiteral("helper.mjs"), QByteArrayLiteral("export const val = 'ok';\n")}
+            {QStringLiteral("helper.mjs"), QByteArrayLiteral("module.exports = { val: 'ok' };\n")}
         });
         QVERIFY(pkg.isValid());
 
-        QString error;
-        QVERIFY2(pkg.writeVerifiedSnapshot(snapDir.path(), &error), qPrintable(error));
-        QVERIFY(QFile::exists(snapDir.filePath(QStringLiteral("main.mjs"))));
-        QVERIFY(QFile::exists(snapDir.filePath(QStringLiteral("helper.mjs"))));
+        JsProvider provider(pkg);
+        QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
+        QSignalSpy spy(&provider, &ProviderApiV1::ProviderV1::pageReady);
+        provider.search(QStringLiteral("hello"));
+        QTRY_COMPARE(spy.count(), 1);
+        const SearchPage page = spy.first().at(1).value<SearchPage>();
+        QCOMPARE(page.results.size(), 1);
+        QVERIFY(page.results.first().title.startsWith(QStringLiteral("ok:2:hello:")));
     }
 
-    void testStaticReexportsAndDuplicateDiamondGraph()
+    void testStaticAndDynamicImportsStructurallyRejectedBeforeExecution()
     {
-        QTemporaryDir pkgDir, snapDir;
-        QVERIFY(pkgDir.isValid() && snapDir.isValid());
+        QTemporaryDir pkgDir;
+        QVERIFY(pkgDir.isValid());
+
+        for (const QByteArray &script : {
+                 QByteArray("throw new Error('MUST_NOT_EXECUTE');\nimport { val } from './helper.mjs';\nmodule.exports = { search: function() {} };\n"),
+                 QByteArray("throw new Error('MUST_NOT_EXECUTE');\nexport function search() { return []; }\n"),
+                 QByteArray("throw new Error('MUST_NOT_EXECUTE');\nmodule.exports = { search: function() { return import('file:///etc/passwd'); } };\n")}) {
+            auto pkg = buildPackage(pkgDir.path(), {
+                {QStringLiteral("main.mjs"), script},
+                {QStringLiteral("helper.mjs"), QByteArrayLiteral("module.exports = { val: 1 };\n")}
+            });
+            QVERIFY(pkg.isValid());
+
+            JsProvider provider(pkg);
+            QVERIFY(!provider.isLoaded());
+            QVERIFY(!provider.loadError().contains(QStringLiteral("MUST_NOT_EXECUTE")));
+            QVERIFY(provider.loadError().contains(QStringLiteral("import")));
+        }
+
+        // Runtime eval('import(...)') also fails closed with SyntaxError inside Script mode
+        auto evalPkg = buildPackage(pkgDir.path(), {
+            {QStringLiteral("main.mjs"), QByteArrayLiteral("module.exports = { search: function() { return eval(\"import('file:///etc/passwd')\"); } };\n")}
+        });
+        QVERIFY(evalPkg.isValid());
+        JsProvider evalProvider(evalPkg);
+        QVERIFY(evalProvider.isLoaded());
+        QSignalSpy failSpy(&evalProvider, &ProviderApiV1::ProviderV1::pageFailed);
+        evalProvider.search(QStringLiteral("q"));
+        QTRY_COMPARE(failSpy.count(), 1);
+        QVERIFY(failSpy.first().at(2).toString().contains(QStringLiteral("import")));
+    }
+
+    void testInMemoryRequireBlocksEscapingAndCircularDeps()
+    {
+        QTemporaryDir pkgDir;
+        QVERIFY(pkgDir.isValid());
+
+        auto escaping = buildPackage(pkgDir.path(), {
+            {QStringLiteral("main.mjs"), QByteArrayLiteral("const x = host.require('../secret.mjs'); module.exports = { search: function() { return []; } };\n")}
+        });
+        QVERIFY(escaping.isValid());
+        JsProvider p1(escaping);
+        QVERIFY(!p1.isLoaded());
+
+        auto circular = buildPackage(pkgDir.path(), {
+            {QStringLiteral("main.mjs"), QByteArrayLiteral("const a = host.require('./a.mjs'); module.exports = { search: function() { return []; } };\n")},
+            {QStringLiteral("a.mjs"), QByteArrayLiteral("const b = host.require('./main.mjs'); module.exports = { a: 1 };\n")}
+        });
+        QVERIFY(circular.isValid());
+        JsProvider p2(circular);
+        QVERIFY(!p2.isLoaded());
+        QVERIFY(p2.loadError().contains(QStringLiteral("Circular")));
+    }
+
+    void testTamperedDiskContentAfterApprovalRejectedBeforeEvaluation()
+    {
+        QTemporaryDir pkgDir;
+        QVERIFY(pkgDir.isValid());
 
         auto pkg = buildPackage(pkgDir.path(), {
-            {QStringLiteral("main.mjs"), QByteArrayLiteral(
-                "import { a } from './a.mjs';\n"
-                "export { b } from './b.mjs';\n"
-                "export * from './shared.mjs';\n"
-                "export function search() { return []; }\n"
-            )},
-            {QStringLiteral("a.mjs"), QByteArrayLiteral("import { s } from './shared.mjs'; export const a = s;\n")},
-            {QStringLiteral("b.mjs"), QByteArrayLiteral("import { s } from './shared.mjs'; export const b = s;\n")},
-            {QStringLiteral("shared.mjs"), QByteArrayLiteral("export const s = 42;\n")}
+            {QStringLiteral("main.mjs"), QByteArrayLiteral("module.exports = { search: function() { return []; } };\n")}
         });
         QVERIFY(pkg.isValid());
+        QVERIFY(writeFile(pkgDir.filePath(QStringLiteral("main.mjs")),
+                          QByteArrayLiteral("throw new Error('TAMPERED_EXECUTED');\nmodule.exports = { search: function() { return []; } };\n")));
 
-        QString error;
-        QVERIFY2(pkg.writeVerifiedSnapshot(snapDir.path(), &error), qPrintable(error));
-        QVERIFY(QFile::exists(snapDir.filePath(QStringLiteral("shared.mjs"))));
+        JsProvider provider(pkg);
+        QVERIFY(!provider.isLoaded());
+        QVERIFY(provider.loadError().contains(QStringLiteral("changed")));
+        QVERIFY(!provider.loadError().contains(QStringLiteral("TAMPERED_EXECUTED")));
     }
 
-    void testDynamicImportRejectedBeforeExecution()
+    void testVendoredAcornRemoved()
     {
-        QTemporaryDir pkgDir, snapDir;
-        QVERIFY(pkgDir.isValid() && snapDir.isValid());
-
-        // Top-level throw ensures we prove validation never executes module code!
-        auto pkg = buildPackage(pkgDir.path(), {
-            {QStringLiteral("main.mjs"), QByteArrayLiteral(
-                "throw new Error('MUST_NOT_EXECUTE_DURING_VALIDATION');\n"
-                "export function load() { return import('./helper.mjs'); }\n"
-            )},
-            {QStringLiteral("helper.mjs"), QByteArrayLiteral("export const x = 1;\n")}
-        });
-        QVERIFY(pkg.isValid());
-
-        QString error;
-        QVERIFY(!pkg.writeVerifiedSnapshot(snapDir.path(), &error));
-        QVERIFY(error.contains(QStringLiteral("Dynamic imports are unsupported")));
-        QVERIFY(!error.contains(QStringLiteral("MUST_NOT_EXECUTE")));
-    }
-
-    void testTraversalAndEscapingImportsRejected()
-    {
-        QTemporaryDir pkgDir, snapDir;
-        QVERIFY(pkgDir.isValid() && snapDir.isValid());
-
-        auto pkg = buildPackage(pkgDir.path(), {
-            {QStringLiteral("main.mjs"), QByteArrayLiteral("import { x } from '../secret.mjs';\n")}
-        });
-        QVERIFY(pkg.isValid());
-
-        QString error;
-        QVERIFY(!pkg.writeVerifiedSnapshot(snapDir.path(), &error));
-        QVERIFY(error.contains(QStringLiteral("Unsupported or escaping module import")));
-    }
-
-    void testMalformedSyntaxRejectedWithoutExecution()
-    {
-        QTemporaryDir pkgDir, snapDir;
-        QVERIFY(pkgDir.isValid() && snapDir.isValid());
-
-        auto pkg = buildPackage(pkgDir.path(), {
-            {QStringLiteral("main.mjs"), QByteArrayLiteral("function broken( { return ;;;\n")}
-        });
-        QVERIFY(pkg.isValid());
-
-        QString error;
-        QVERIFY(!pkg.writeVerifiedSnapshot(snapDir.path(), &error));
-        QVERIFY(error.contains(QStringLiteral("Module syntax/import validation failed")));
-    }
-
-    void testBundledAcornIntegrityChecksum()
-    {
-        QFile bundled(QStringLiteral(":/klookup/acorn.js"));
-        QVERIFY(bundled.open(QIODevice::ReadOnly));
-        const QByteArray digest = QCryptographicHash::hash(bundled.readAll(), QCryptographicHash::Sha256).toHex();
-        QCOMPARE(QString::fromLatin1(digest),
-                 QStringLiteral("16bcf7923b6c8ddfa536e09cd407b1d0068fe20efbdad5330a50f3280923e414"));
+        QVERIFY(!QFile::exists(QStringLiteral(":/klookup/acorn.js")));
     }
 };
 

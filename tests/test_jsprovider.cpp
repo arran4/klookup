@@ -410,7 +410,7 @@ private Q_SLOTS:
         manifest.close();
         QFile source(temporary.filePath(QStringLiteral("main.mjs")));
         QVERIFY(source.open(QIODevice::WriteOnly));
-        source.write("while (true) {} export function search() { return []; }");
+        source.write("while (true) {} module.exports = { search: function() { return []; } };");
         source.close();
         auto pkg = ProviderPackage::fromDirectory(temporary.path());
         pkg.setTrusted(true);

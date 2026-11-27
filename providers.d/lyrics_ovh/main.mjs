@@ -21,7 +21,7 @@ function mapSuggestions(data) {
             additionalData: {artist: artist, album: album, attribution: "Lyrics.ovh / Deezer"}};
     });
 }
-export function search(query) {
+function search(query) {
     if (typeof query !== "string" || !query.trim()) return [];
     if (Date.now() < retryAt) throw new Error("Lyrics.ovh rate limited; retry after " + Math.ceil((retryAt - Date.now()) / 1000) + " seconds");
     if (cached[query] && Date.now() - cached[query].at < 60000) return cached[query].rows;
@@ -41,7 +41,7 @@ export function search(query) {
         return rows;
     });
 }
-export function selfTest(fixture) {
+function selfTest(fixture) {
     if (!fixture) throw new Error("Missing Lyrics.ovh fixtures");
     var valid = mapSuggestions(fixture.valid);
     var partial = mapSuggestions(fixture.partial);
@@ -51,3 +51,4 @@ export function selfTest(fixture) {
         valid[0].id === fixture.expected.id && valid[0].title === fixture.expected.title && valid[0].url === fixture.expected.url &&
         valid[0].additionalData.artist === fixture.expected.additionalData.artist && valid[0].additionalData.album === fixture.expected.additionalData.album};
 }
+module.exports = { search: search, selfTest: selfTest };

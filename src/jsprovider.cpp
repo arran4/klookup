@@ -306,6 +306,25 @@ public:
         return QString();
     }
 
+    Q_INVOKABLE QJSValue requireModule(const QString &fromFile, const QString &spec)
+    {
+        if (!m_engine || !m_provider)
+            return QJSValue();
+        const QString resolved = ProviderPackage::resolveRelativeModulePath(fromFile, spec);
+        if (resolved.isEmpty() || !m_provider->m_verifiedFiles.contains(resolved)) {
+            m_engine->throwError(QJSValue::URIError,
+                                 QStringLiteral("Unsupported or escaping module require in %1: %2").arg(fromFile, spec));
+            return QJSValue();
+        }
+        QString err;
+        const QJSValue exportsVal = m_provider->evaluateVerifiedScriptModule(resolved, &err);
+        if (!err.isEmpty()) {
+            m_engine->throwError(QJSValue::GenericError, err);
+            return QJSValue();
+        }
+        return exportsVal;
+    }
+
     Q_INVOKABLE void log(const QString &msg)
     {
         if (!m_hostService || !m_hostService->isDiagnosticMode()) qDebug() << "[JS Provider]" << msg;
@@ -383,6 +402,10 @@ void JsProvider::disposeEngine()
     m_bridge = nullptr;
     m_module = {};
     m_helpers = {};
+    m_baseHost = {};
+    m_requiredModules.clear();
+    m_loadingModules.clear();
+    m_verifiedFiles.clear();
     delete m_engine;
     m_engine = nullptr;
 }
@@ -574,7 +597,8 @@ bool JsProvider::initEngine()
 {
     if (!m_package.isValid()) { m_loadError = m_package.validationError(); return false; }
     if (!m_package.isTrusted()) { m_loadError = QStringLiteral("Untrusted provider package cannot execute code."); return false; }
-    if (!m_snapshot.isValid() || !m_package.writeVerifiedSnapshot(m_snapshot.path(), &m_loadError)) return false;
+    QString entryRelPath;
+    if (!m_package.verifiedFiles(&m_verifiedFiles, &entryRelPath, &m_loadError)) return false;
     m_engine = new QJSEngine(this);
     JsInterruptionGate::instance()->add(this);
     m_registeredWithGate = true;
@@ -615,14 +639,18 @@ bool JsProvider::initEngine()
                 }});
             });
             Object.defineProperty(this, 'Promise', {value: OperationPromise, writable: false, configurable: false});
-            // Module code sees only the public host API. Operation accounting
-            // and the original Promise functions stay in this private closure.
-            Object.defineProperty(this, 'host', {writable: false, configurable: false,
-                value: Object.freeze({
+            function makeHost(modulePath) {
+                return Object.freeze({
+                    apiVersion: 2,
                     fetch: function(url, options) { return bridge.fetch(url, options); },
                     getSecret: function(key) { return bridge.getSecret(key); },
-                    log: function(message) { bridge.log(message); }
-                })});
+                    log: function(message) { bridge.log(message); },
+                    require: function(spec) { return bridge.requireModule(modulePath, spec); }
+                });
+            }
+            // Module code sees only the public host API. Operation accounting
+            // and the original Promise functions stay in this private closure.
+            Object.defineProperty(this, 'host', {writable: false, configurable: false, value: makeHost('')});
             function bind(fn, token) {
                 if (typeof fn !== 'function') return fn;
                 return function(value) {
@@ -660,6 +688,13 @@ bool JsProvider::initEngine()
                 }});
             return {
                 parseFixture: JSON.parse,
+                makeHost: makeHost,
+                runModuleFn: function(fn, modulePath) {
+                    var modHost = makeHost(modulePath);
+                    var mod = { exports: {} };
+                    fn(modHost, mod, mod.exports);
+                    return mod.exports;
+                },
                 createDeferred: function() {
                     var resolve, reject;
                     var promise = new NativePromise(function(a, b) { resolve = a; reject = b; });
@@ -678,13 +713,54 @@ bool JsProvider::initEngine()
     m_engine->globalObject().deleteProperty(QStringLiteral("__klookupBridge"));
     m_helpers = helpers;
     if (helpers.isError()) { m_loadError = helpers.toString(); m_watchdog->disarm(); return false; }
-    m_module = m_engine->importModule(QDir(m_snapshot.path()).filePath(QDir(m_package.packageDir()).relativeFilePath(m_package.entryFilePath())));
+    m_module = evaluateVerifiedScriptModule(entryRelPath, &m_loadError);
     m_watchdog->disarm();
     if (m_engine->isInterrupted()) { executionInterrupted(); m_loadError = QStringLiteral("Module initialization exceeded its CPU budget"); return false; }
-    if (m_module.isError()) { m_loadError = QStringLiteral("Error importing module: %1").arg(m_module.toString()); return false; }
+    if (!m_loadError.isEmpty() || m_module.isError()) {
+        if (m_loadError.isEmpty()) m_loadError = QStringLiteral("Error loading provider script: %1").arg(m_module.toString());
+        return false;
+    }
     if (!m_module.property(QStringLiteral("search")).isCallable()) { m_loadError = QStringLiteral("Module does not export callable search"); return false; }
     m_loaded = true;
     return true;
+}
+
+QJSValue JsProvider::evaluateVerifiedScriptModule(const QString &moduleRelPath, QString *error)
+{
+    if (!m_engine) {
+        if (error) *error = QStringLiteral("Script engine unavailable");
+        return {};
+    }
+    if (m_requiredModules.contains(moduleRelPath))
+        return m_requiredModules.value(moduleRelPath);
+    if (m_loadingModules.contains(moduleRelPath)) {
+        if (error) *error = QStringLiteral("Circular module dependency requiring %1").arg(moduleRelPath);
+        return {};
+    }
+    if (!m_verifiedFiles.contains(moduleRelPath)) {
+        if (error) *error = QStringLiteral("Missing verified module file: %1").arg(moduleRelPath);
+        return {};
+    }
+    m_loadingModules.insert(moduleRelPath);
+    const QString source = QString::fromUtf8(m_verifiedFiles.value(moduleRelPath));
+    const QString wrapped = QStringLiteral("(function(host, module, exports) { \"use strict\";\n%1\n})").arg(source);
+    const QJSValue compiled = m_engine->evaluate(wrapped, QStringLiteral("klookup-provider://%1/%2").arg(m_package.id(), moduleRelPath), 0);
+    if (m_engine->isInterrupted() || compiled.isError() || !compiled.isCallable()) {
+        m_loadingModules.remove(moduleRelPath);
+        if (error) {
+            *error = QStringLiteral("Module syntax/import validation failed in %1: %2 (ES module import/export is unsupported; use module.exports and host.require)")
+                         .arg(moduleRelPath, compiled.toString());
+        }
+        return {};
+    }
+    const QJSValue exportsObj = m_helpers.property(QStringLiteral("runModuleFn")).call({compiled, moduleRelPath});
+    m_loadingModules.remove(moduleRelPath);
+    if (m_engine->isInterrupted() || exportsObj.isError()) {
+        if (error) *error = QStringLiteral("Error initializing module %1: %2").arg(moduleRelPath, exportsObj.toString());
+        return {};
+    }
+    m_requiredModules.insert(moduleRelPath, exportsObj);
+    return exportsObj;
 }
 
 quint64 JsProvider::invoke(const QString &method, const QJSValueList &arguments, Kind kind,
@@ -788,12 +864,10 @@ bool JsProvider::hasCheck(bool live) const
 quint64 JsProvider::check(bool live, quint64 requestId)
 {
     QJSValue fixture;
-    if (!live && m_engine) {
-        QFile file(QDir(m_snapshot.path()).filePath(QStringLiteral("diagnostics.json")));
-        if (file.open(QIODevice::ReadOnly)) {
-            const auto document = QJsonDocument::fromJson(file.read(1024 * 1024 + 1));
-            if (document.isObject()) fixture = m_helpers.property(QStringLiteral("parseFixture")).call({QString::fromUtf8(document.toJson(QJsonDocument::Compact))});
-        }
+    if (!live && m_engine && m_verifiedFiles.contains(QStringLiteral("diagnostics.json"))) {
+        const auto document = QJsonDocument::fromJson(m_verifiedFiles.value(QStringLiteral("diagnostics.json")).left(1024 * 1024));
+        if (document.isObject())
+            fixture = m_helpers.property(QStringLiteral("parseFixture")).call({QString::fromUtf8(document.toJson(QJsonDocument::Compact))});
     }
     return invoke(live ? QStringLiteral("liveCheck") : QStringLiteral("selfTest"),
                   {fixture}, Kind::Check, {}, requestId);

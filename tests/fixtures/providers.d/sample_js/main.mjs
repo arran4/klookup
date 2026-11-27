@@ -55,4 +55,4 @@ function getContent(resultId, contentToken) {
     return Promise.resolve("# Markdown Content\n\nFetched lazily for result " + resultId);
 }
 
-export { search, getPage, getDetails, getContent };
+module.exports = { search: search, getPage: getPage, getDetails: getDetails, getContent: getContent };

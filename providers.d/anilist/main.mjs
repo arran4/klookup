@@ -24,7 +24,7 @@ function mapAnime(response) {
     if (errors.length && !rows.length) throw new Error("AniList GraphQL request failed");
     return rows;
 }
-export function search(query) {
+function search(query) {
     if (typeof query !== "string" || !query.trim()) return [];
     if (Date.now() < retryAt) throw new Error("AniList rate limited; retry after " + Math.ceil((retryAt - Date.now()) / 1000) + " seconds");
     if (cache[query] && Date.now() - cache[query].at < 60000) return cache[query].rows;
@@ -44,7 +44,7 @@ export function search(query) {
         cache[query] = {at: Date.now(), rows: rows}; return rows;
     });
 }
-export function selfTest(fixture) {
+function selfTest(fixture) {
     if (!fixture) throw new Error("Missing AniList fixtures");
     var rows = mapAnime(fixture.valid), partial = mapAnime(fixture.partial), rejected = false;
     try { mapAnime(fixture.invalid); } catch (_) { rejected = true; }
@@ -52,3 +52,4 @@ export function selfTest(fixture) {
         rows[0].id === fixture.expected.id && rows[0].title === fixture.expected.title && rows[0].url === fixture.expected.url &&
         rows[0].additionalData.score === 82 && rows[0].additionalData.episodes === 12 && partial[0].additionalData.api_warning === "Partial AniList response"};
 }
+module.exports = { search: search, selfTest: selfTest };

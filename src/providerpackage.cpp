@@ -16,8 +16,6 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QSet>
-#include <QJSEngine>
-#include <QJSValue>
 
 bool ProviderPackageDiscovery::isValidPackageId(const QString &id)
 {
@@ -162,6 +160,14 @@ ProviderPackage ProviderPackage::fromDirectory(const QString &dirPath, LocationT
     pkg.m_manifest.name = root.value(QStringLiteral("name")).toString().trimmed();
     pkg.m_manifest.description = root.value(QStringLiteral("description")).toString().trimmed();
     pkg.m_manifest.version = root.value(QStringLiteral("version")).toString().trimmed();
+    if (root.contains(QStringLiteral("apiVersion"))) {
+        const auto apiVal = root.value(QStringLiteral("apiVersion"));
+        if (!apiVal.isDouble() || (apiVal.toInt(-1) != 1 && apiVal.toInt(-1) != 2)) {
+            pkg.m_validationError = QStringLiteral("Unsupported manifest apiVersion");
+            return pkg;
+        }
+        pkg.m_manifest.apiVersion = apiVal.toInt();
+    }
     pkg.m_manifest.author = root.value(QStringLiteral("author")).toString().trimmed();
     pkg.m_manifest.license = root.value(QStringLiteral("license")).toString().trimmed();
     pkg.m_manifest.runtime = root.value(QStringLiteral("runtime")).toString(QStringLiteral("javascript")).trimmed();
@@ -444,88 +450,54 @@ void ProviderPackage::saveApproval(KConfigGroup &group, bool approve) const
     group.sync();
 }
 
-// Parse source as data with a pinned, bundled ECMAScript parser. A lexer/regex
-// heuristic is insufficient here: regex literals and template substitutions can
-// hide imports from such scanners. The parser never evaluates provider source.
-static QJSValue moduleImportParser(QJSEngine &engine)
+QString ProviderPackage::resolveRelativeModulePath(const QString &fromFile, const QString &spec)
 {
-    Q_INIT_RESOURCE(provider_parser);
-    QFile parser(QStringLiteral(":/klookup/acorn.js"));
-    if (!parser.open(QIODevice::ReadOnly)) return {};
-    if (engine.evaluate(QString::fromUtf8(parser.readAll())).isError()) return {};
-    // Qt 6.11 loses Acorn's `return prop.key = expression` side effect when
-    // the caller discards its return value. Preserve it explicitly in the
-    // adapter, leaving the vendored release unmodified (object-literal tests).
-    engine.evaluate(QStringLiteral("var originalPropertyName = acorn.Parser.prototype.parsePropertyName; acorn.Parser.prototype.parsePropertyName = function(prop) { var result = originalPropertyName.call(this, prop); prop.key = result; return result; };"));
-    return engine.evaluate(QStringLiteral(R"JS(
-        (function(source) {
-            var ast = acorn.parse(source, {ecmaVersion: 2020, sourceType: 'module'});
-            var pending = [ast], imports = [];
-            while (pending.length) {
-                var node = pending.pop();
-                if (!node || typeof node !== 'object') continue;
-                if (node.type === 'ImportExpression') throw new Error('Dynamic imports are unsupported');
-                if ((node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration' ||
-                     node.type === 'ExportAllDeclaration') && node.source) imports.push(node.source.value);
-                Object.keys(node).forEach(function(key) {
-                    var child = node[key];
-                    if (child && typeof child === 'object') {
-                        if (Array.isArray(child)) child.forEach(function(value) { pending.push(value); });
-                        else pending.push(child);
-                    }
-                });
-            }
-            return imports;
-        })
-    )JS"));
+    if ((!spec.startsWith(QStringLiteral("./")) && !spec.startsWith(QStringLiteral("../"))) ||
+        spec.contains(QLatin1Char(':')) || spec.contains(QLatin1Char('\\')) || spec.contains(QLatin1Char('%')) ||
+        spec.contains(QLatin1Char('?')) || spec.contains(QLatin1Char('#')) || spec.contains(QChar::Null)) {
+        return {};
+    }
+    const QString baseDir = QFileInfo(fromFile).path();
+    const QString resolved = QDir::cleanPath((baseDir.isEmpty() ? QStringLiteral(".") : baseDir) + QLatin1Char('/') + spec);
+    if (resolved.isEmpty() || resolved == QLatin1String(".") || resolved.startsWith(QStringLiteral("../")) || QDir::isAbsolutePath(resolved)) {
+        return {};
+    }
+    return resolved;
+}
+
+bool ProviderPackage::verifiedFiles(QMap<QString, QByteArray> *files, QString *entryRelPath, QString *error) const
+{
+    const auto current = fromDirectory(m_packageDir, m_locationType);
+    if (!m_valid || !current.isValid() || current.approvalFingerprint() != approvalFingerprint()) {
+        if (error)
+            *error = QStringLiteral("Package changed since approval/discovery; review it again");
+        return false;
+    }
+    if (files)
+        *files = m_files;
+    if (entryRelPath)
+        *entryRelPath = QDir(m_packageDir).relativeFilePath(m_entryFilePath);
+    return true;
 }
 
 bool ProviderPackage::writeVerifiedSnapshot(const QString &destination, QString *error) const
 {
-    const auto current = fromDirectory(m_packageDir, m_locationType);
-    if (!m_valid || !current.isValid() || current.approvalFingerprint() != approvalFingerprint()) {
-        *error = QStringLiteral("Package changed since approval/discovery; review it again");
+    QMap<QString, QByteArray> files;
+    if (!verifiedFiles(&files, nullptr, error))
         return false;
-    }
-    // Walk the import graph, including extensionless modules. Other assets may
-    // contain arbitrary binary data and are hashed/copied without parsing.
-    QStringList pending{QDir(m_packageDir).relativeFilePath(m_entryFilePath)};
-    QSet<QString> visited;
-    QJSEngine parserEngine;
-    const auto parseImports = moduleImportParser(parserEngine);
-    if (!parseImports.isCallable()) {
-        *error = QStringLiteral("Bundled module parser unavailable");
-        return false;
-    }
-    while (!pending.isEmpty()) {
-        const QString module = pending.takeLast();
-        if (visited.contains(module)) continue;
-        visited.insert(module);
-        const auto imports = parseImports.call({QString::fromUtf8(m_files.value(module))});
-        if (imports.isError() || !imports.isArray()) {
-            *error = QStringLiteral("Module syntax/import validation failed in %1: %2").arg(module, imports.toString());
+    for (auto it = files.cbegin(); it != files.cend(); ++it) {
+        if (it.key().isEmpty() || QDir::isAbsolutePath(it.key()) || it.key().startsWith(QStringLiteral("../"))) {
+            if (error)
+                *error = QStringLiteral("Invalid relative path in verified package");
             return false;
         }
-        const quint32 count = imports.property(QStringLiteral("length")).toUInt();
-        for (quint32 index = 0; index < count; ++index) {
-            const QString spec = imports.property(index).toString();
-            const QString resolved = QDir::cleanPath(QFileInfo(module).path() + QLatin1Char('/') + spec);
-            if ((!spec.startsWith(QStringLiteral("./")) && !spec.startsWith(QStringLiteral("../"))) ||
-                spec.contains(QLatin1Char(':')) || spec.contains(QLatin1Char('\\')) || spec.contains(QLatin1Char('%')) ||
-                spec.contains(QLatin1Char('?')) || spec.contains(QLatin1Char('#')) || spec.contains(QChar::Null) ||
-                resolved.startsWith(QStringLiteral("../")) || !m_files.contains(resolved)) {
-                *error = QStringLiteral("Unsupported or escaping module import in %1").arg(module);
-                return false;
-            }
-            pending.append(resolved);
-        }
-    }
-    for (auto it = m_files.cbegin(); it != m_files.cend(); ++it) {
         const QString path = QDir(destination).filePath(it.key());
-        if (!QDir().mkpath(QFileInfo(path).path())) return false;
+        if (!QDir().mkpath(QFileInfo(path).path()))
+            return false;
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly) || file.write(it.value()) != it.value().size()) {
-            *error = QStringLiteral("Could not create verified package snapshot");
+            if (error)
+                *error = QStringLiteral("Could not create verified package snapshot");
             return false;
         }
     }

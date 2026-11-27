@@ -225,7 +225,7 @@ private slots:
             "        return [{ id: '1', title: 'Result 1' }];\n"
             "    });\n"
             "}\n"
-            "export { search };\n"
+            "module.exports = { search: search };\n"
         );
 
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("secure_pkg"),
@@ -276,7 +276,7 @@ private slots:
             "        return [{ id: '1', title: 'OK' }];\n"
             "    });\n"
             "}\n"
-            "export { search };\n"
+            "module.exports = { search: search };\n"
         );
 
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("clone_pkg"),
@@ -326,7 +326,7 @@ private slots:
             "        return [];\n"
             "    });\n"
             "}\n"
-            "export { search };\n"
+            "module.exports = { search: search };\n"
         );
 
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("session_pkg"),
@@ -382,7 +382,7 @@ private slots:
             "        return [];\n"
             "    });\n"
             "}\n"
-            "export { search };\n"
+            "module.exports = { search: search };\n"
         );
 
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("subst_pkg"),
@@ -425,7 +425,7 @@ private slots:
                                         {QStringLiteral("https://api.secure.example.com"),
                                          QStringLiteral("https://api.secure.example.com:8443")},
                                         {QStringLiteral("api_token")},
-                                        QStringLiteral("export function search() {}"));
+                                        QStringLiteral("module.exports = { search: function() {} };"));
 
         auto *store = new MockCredentialStore(this);
         store->values[QStringLiteral("provider_pkg:redact_pkg:api_token")] = QStringLiteral("SECRET_TO_REDACT");
@@ -478,7 +478,7 @@ private slots:
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("async_cancel_pkg"),
                                         {QStringLiteral("https://api.secure.example.com")},
                                         {QStringLiteral("api_token")},
-                                        QStringLiteral("export function search() {}"));
+                                        QStringLiteral("module.exports = { search: function() {} };"));
 
         auto *store = new DeferredCredentialStore(this);
         auto *mockNam = new ScriptCredentialNam(this);
@@ -516,7 +516,7 @@ private slots:
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("perm_pkg"),
                                         {QStringLiteral("https://api.secure.example.com")},
                                         {QStringLiteral("api_token")},
-                                        QStringLiteral("export function search() {}"));
+                                        QStringLiteral("module.exports = { search: function() {} };"));
 
         auto *mockNam = new ScriptCredentialNam(this);
         ProviderHost::ProviderHostService host(pkg, this, mockNam);
@@ -541,7 +541,7 @@ private slots:
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("decl_pkg"),
                                         {QStringLiteral("https://api.secure.example.com")},
                                         {QStringLiteral("declared_token")},
-                                        QStringLiteral("export function search() {}"));
+                                        QStringLiteral("module.exports = { search: function() {} };"));
 
         auto *mockNam = new ScriptCredentialNam(this);
         ProviderHost::ProviderHostService host(pkg, this, mockNam);
@@ -571,7 +571,7 @@ private slots:
             "    var exposed = host.getSecret('api_token');\n"
             "    return Promise.resolve([{ id: '1', title: exposed }]);\n"
             "}\n"
-            "export { search };\n"
+            "module.exports = { search: search };\n"
         );
 
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("diag_pkg"),
@@ -618,7 +618,7 @@ private slots:
         auto pkg = createPackageFixture(tempDir.path(), QStringLiteral("multi_secret_pkg"),
                                         {QStringLiteral("https://api.secure.example.com")},
                                         {QStringLiteral("primary_key"), QStringLiteral("secondary_key")},
-                                        QStringLiteral("export function search() { return []; }\n"));
+                                        QStringLiteral("module.exports = { search: function() { return []; } };\n"));
 
         auto *store = new MockCredentialStore(this);
         // Only manual fallback key is stored (and only primary_key may use it)

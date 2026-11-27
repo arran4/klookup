@@ -51,40 +51,6 @@ foreach(resource_target IN LISTS klookup_icon_resource_targets)
     set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endforeach()
 
-option(KLOOKUP_USE_SYSTEM_ACORN "Use system-installed Acorn parser instead of vendored third_party/acorn/acorn.js" OFF)
-set(KLOOKUP_ACORN_PATH "" CACHE FILEPATH "Optional path to system acorn.js when KLOOKUP_USE_SYSTEM_ACORN is ON")
-
-if(KLOOKUP_USE_SYSTEM_ACORN)
-    if(NOT KLOOKUP_ACORN_PATH)
-        find_file(KLOOKUP_DETECTED_ACORN_PATH
-            NAMES acorn.js
-            PATHS
-                /usr/share/nodejs/acorn/dist
-                /usr/share/javascript/acorn
-                /usr/lib/node_modules/acorn/dist
-                /usr/local/lib/node_modules/acorn/dist
-            NO_DEFAULT_PATH
-        )
-        if(KLOOKUP_DETECTED_ACORN_PATH)
-            set(KLOOKUP_ACORN_PATH "${KLOOKUP_DETECTED_ACORN_PATH}")
-        endif()
-    endif()
-    if(NOT KLOOKUP_ACORN_PATH OR NOT EXISTS "${KLOOKUP_ACORN_PATH}")
-        message(FATAL_ERROR "KLOOKUP_USE_SYSTEM_ACORN=ON requested, but acorn.js was not found. Set -DKLOOKUP_ACORN_PATH=/path/to/acorn.js.")
-    endif()
-    message(STATUS "Using system Acorn parser: ${KLOOKUP_ACORN_PATH}")
-    set(_klookup_acorn_file "${KLOOKUP_ACORN_PATH}")
-else()
-    set(_klookup_acorn_file "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/acorn/acorn.js")
-endif()
-
-set_source_files_properties("${_klookup_acorn_file}" PROPERTIES QT_RESOURCE_ALIAS acorn.js)
-qt_add_resources(klookup_core "provider_parser" PREFIX "/klookup" OUTPUT_TARGETS parser_resource_targets
-    FILES "${_klookup_acorn_file}")
-foreach(resource_target IN LISTS parser_resource_targets)
-    set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
-endforeach()
-
 set_target_properties(klookup_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_definitions(klookup_core PRIVATE KLOOKUP_PACKAGE_INSTALL_DIR="${KDE_INSTALL_FULL_DATADIR}/klookup/providers.d")
 

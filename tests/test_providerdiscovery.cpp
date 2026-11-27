@@ -180,21 +180,25 @@ private Q_SLOTS:
         manifest.write("{\"id\":\"parser_fixture\",\"name\":\"Parser fixture\"}"); manifest.close();
         QFile script(root.filePath(QStringLiteral("main.mjs")));
         QVERIFY(script.open(QIODevice::WriteOnly));
-        script.write("function declaration() { return {value: 1}; } export function search() { return declaration(); }"); script.close();
+        script.write("function declaration() { return {value: 1}; } module.exports = { search: function() { return declaration(); } };"); script.close();
         auto package = ProviderPackage::fromDirectory(root.path()); QVERIFY(package.isValid());
-        QString error;
+        package.setTrusted(true);
         {
             ParserWarningCapture capture;
-            QVERIFY2(package.writeVerifiedSnapshot(snapshot.path(), &error), qPrintable(error));
+            JsProvider provider(package);
+            QVERIFY2(provider.isLoaded(), qPrintable(provider.loadError()));
         }
         QVERIFY2(parserDeclarationWarnings.isEmpty(), qPrintable(parserDeclarationWarnings.join(QLatin1Char('\n'))));
-        // Declaration cleanup must not weaken the import validator.
+        // Dynamic import() must remain structurally rejected without executing code.
         QVERIFY(script.open(QIODevice::WriteOnly | QIODevice::Truncate));
-        script.write("export function search() { return import('https://example.invalid/code.mjs'); }"); script.close();
+        script.write("module.exports = { search: function() { return import('https://example.invalid/code.mjs'); } };"); script.close();
         package = ProviderPackage::fromDirectory(root.path()); QVERIFY(package.isValid());
+        package.setTrusted(true);
         {
             ParserWarningCapture capture;
-            QVERIFY(!package.writeVerifiedSnapshot(snapshot.path(), &error));
+            JsProvider provider(package);
+            QVERIFY(!provider.isLoaded());
+            QVERIFY(provider.loadError().contains(QStringLiteral("import")));
         }
         QVERIFY2(parserDeclarationWarnings.isEmpty(), qPrintable(parserDeclarationWarnings.join(QLatin1Char('\n'))));
     }
@@ -209,8 +213,8 @@ private Q_SLOTS:
             return f.open(QIODevice::WriteOnly) && f.write(data) == data.size();
         };
         QVERIFY(write(QStringLiteral("provider.json"), "{\"id\":\"alpha\",\"name\":\"Alpha\",\"permissions\":{\"origins\":[\"https://example.com\"]}}"));
-        QVERIFY(write(QStringLiteral("main.mjs"), "import {x} from './helper'; export function search() { return []; }"));
-        QVERIFY(write(QStringLiteral("helper"), "export const x = 1;"));
+        QVERIFY(write(QStringLiteral("main.mjs"), "const { x } = host.require('./helper'); module.exports = { search: function() { return []; } };"));
+        QVERIFY(write(QStringLiteral("helper"), "module.exports = { x: 1 };"));
         QVERIFY(write(QStringLiteral("image.bin"), QByteArray::fromHex("00ff012227")));
         auto pkg = ProviderPackage::fromDirectory(root);
         QVERIFY2(pkg.isValid(), qPrintable(pkg.validationError()));
@@ -232,7 +236,7 @@ private Q_SLOTS:
         QString error;
         QVERIFY2(pkg.writeVerifiedSnapshot(snapshot.path(), &error), qPrintable(error));
         QVERIFY(QFile::exists(snapshot.path() + QStringLiteral("/helper")));
-        QVERIFY(write(QStringLiteral("helper"), "export const x = 2;"));
+        QVERIFY(write(QStringLiteral("helper"), "module.exports = { x: 2 };"));
         QVERIFY(!ProviderPackage::fromDirectory(root).approved(group));
         QVERIFY(!pkg.writeVerifiedSnapshot(snapshot.path(), &error));
         QVERIFY(error.contains(QStringLiteral("changed")));
@@ -241,7 +245,7 @@ private Q_SLOTS:
         QVERIFY(reloaded.approved(group));
         reloaded.saveApproval(group, false);
         QVERIFY(!reloaded.approved(group));
-        QVERIFY(write(QStringLiteral("main.mjs"), "export function search() { return []; }"));
+        QVERIFY(write(QStringLiteral("main.mjs"), "module.exports = { search: function() { return []; } };"));
         QVERIFY(!ProviderPackage::fromDirectory(root).approved(group)); // Revocation survives upgrades.
         group.sync();
         KConfig restarted(temp.path() + QStringLiteral("/approvalrc"), KConfig::SimpleConfig);
@@ -262,7 +266,7 @@ private Q_SLOTS:
             manifest.write("{\"id\":\"alpha\",\"name\":\"Alpha\",\"permissions\":{\"origins\":[\"https://example.com\"]}}");
             QFile entry(root + QStringLiteral("/main.mjs"));
             QVERIFY(entry.open(QIODevice::WriteOnly));
-            entry.write("export function search() { return []; }");
+            entry.write("module.exports = { search: function() { return []; } };");
         }
         auto pkg = ProviderPackage::fromDirectory(first);
         QVERIFY(pkg.isValid());
@@ -778,13 +782,13 @@ private Q_SLOTS:
         // Write main.mjs
         QFile mainFile(dirPath + QStringLiteral("/main.mjs"));
         QVERIFY(mainFile.open(QIODevice::WriteOnly));
-        mainFile.write("import { helper } from './helper.mjs';\nexport function search() {}\n");
+        mainFile.write("const { helper } = host.require('./helper.mjs');\nmodule.exports = { search: function() {} };\n");
         mainFile.close();
 
         // Write helper.mjs
         QFile helperFile(dirPath + QStringLiteral("/helper.mjs"));
         QVERIFY(helperFile.open(QIODevice::WriteOnly));
-        helperFile.write("export const helper = 42;\n");
+        helperFile.write("module.exports = { helper: 42 };\n");
         helperFile.close();
 
         auto pkg1 = ProviderPackage::fromDirectory(dirPath);
@@ -794,7 +798,7 @@ private Q_SLOTS:
 
         // Modify helper.mjs (external module asset)
         QVERIFY(helperFile.open(QIODevice::WriteOnly));
-        helperFile.write("export const helper = 999; // tampered\n");
+        helperFile.write("module.exports = { helper: 999 }; // tampered\n");
         helperFile.close();
 
         auto pkg2 = ProviderPackage::fromDirectory(dirPath);

@@ -43,7 +43,7 @@ class ClassificationTest : public QObject {
         json.write(QJsonDocument(manifest).toJson()); json.close();
         QFile script(path + QStringLiteral("/main.mjs"));
         if (!script.open(QIODevice::WriteOnly)) return {};
-        script.write("throw Error('Metadata discovery must never execute this entry'); export function search() { return host.fetch('https://example.invalid'); }"); script.close();
+        script.write("throw Error('Metadata discovery must never execute this entry'); module.exports = { search: function() { return host.fetch('https://example.invalid'); } };"); script.close();
         return ProviderPackage::fromDirectory(path);
     }
 private slots:

@@ -25,20 +25,55 @@ bool ClipboardPolicy::Policy::permitsAutomaticLookup(bool hasVisibleWindow, bool
     return permitsCapture(true, focused);
 }
 
+QString ClipboardPolicy::providerIdentityToken(const QString &providerId, const QString &scriptApprovalFingerprint)
+{
+    if (providerId.isEmpty())
+        return {};
+    if (!scriptApprovalFingerprint.isEmpty())
+        return QStringLiteral("script:%1:%2").arg(providerId, scriptApprovalFingerprint);
+    return QStringLiteral("native:%1").arg(providerId);
+}
+
 bool ClipboardPolicy::Policy::permitsAutoOnlineProvider(const QString &providerId, const QStringList &facets) const
+{
+    return permitsAutoOnlineProvider(providerId, QString(), facets);
+}
+
+bool ClipboardPolicy::Policy::permitsAutoOnlineProvider(const QString &providerId, const QString &identityToken, const QStringList &facets) const
 {
     if (!autoOnlineEnabled || providerId.isEmpty())
         return false;
     // Only providers acknowledged at explicit opt-in may ever run automatically online.
     if (!autoAcknowledgedOnlineProviderIds.contains(providerId))
         return false;
-    if (autoOnlineAllowedProviderIds.contains(providerId))
-        return true;
-    for (const QString &facet : facets) {
-        if (autoOnlineAllowedFacets.contains(facet))
-            return true;
+
+    const bool explicitIdAllowed = autoOnlineAllowedProviderIds.contains(providerId);
+    bool facetAllowed = false;
+    if (!explicitIdAllowed) {
+        for (const QString &facet : facets) {
+            if (autoOnlineAllowedFacets.contains(facet)) {
+                facetAllowed = true;
+                break;
+            }
+        }
     }
-    return false;
+    if (!explicitIdAllowed && !facetAllowed)
+        return false;
+
+    if (!identityToken.isEmpty()) {
+        const bool isScript = identityToken.startsWith(QStringLiteral("script:"));
+        // Replacing a native provider with a script override or changing a script's
+        // approved fingerprint MUST fail closed until re-acknowledged in Settings.
+        if (isScript || !autoAcknowledgedOnlineProviderTokens.isEmpty()) {
+            if (!autoAcknowledgedOnlineProviderTokens.contains(identityToken))
+                return false;
+        }
+        if (explicitIdAllowed && (isScript || !autoOnlineAllowedProviderTokens.isEmpty())) {
+            if (!autoOnlineAllowedProviderTokens.contains(identityToken))
+                return false;
+        }
+    }
+    return true;
 }
 
 bool ClipboardPolicy::Policy::searchesOn(Event event) const
@@ -90,6 +125,8 @@ ClipboardPolicy::Policy ClipboardPolicy::read(const KConfigGroup &group)
     policy.autoOnlineAllowedFacets = group.readEntry("ClipboardAutoOnlineAllowedFacets", QStringList());
     policy.autoOnlineAllowedProviderIds = group.readEntry("ClipboardAutoOnlineAllowedProviderIds", QStringList());
     policy.autoAcknowledgedOnlineProviderIds = group.readEntry("ClipboardAutoAcknowledgedOnlineProviderIds", QStringList());
+    policy.autoOnlineAllowedProviderTokens = group.readEntry("ClipboardAutoOnlineAllowedTokens", QStringList());
+    policy.autoAcknowledgedOnlineProviderTokens = group.readEntry("ClipboardAutoAcknowledgedOnlineTokens", QStringList());
     return policy;
 }
 
@@ -110,6 +147,8 @@ void ClipboardPolicy::write(KConfigGroup &group, const Policy &policy)
     group.writeEntry("ClipboardAutoOnlineAllowedFacets", policy.autoOnlineAllowedFacets);
     group.writeEntry("ClipboardAutoOnlineAllowedProviderIds", policy.autoOnlineAllowedProviderIds);
     group.writeEntry("ClipboardAutoAcknowledgedOnlineProviderIds", policy.autoAcknowledgedOnlineProviderIds);
+    group.writeEntry("ClipboardAutoOnlineAllowedTokens", policy.autoOnlineAllowedProviderTokens);
+    group.writeEntry("ClipboardAutoAcknowledgedOnlineTokens", policy.autoAcknowledgedOnlineProviderTokens);
 }
 
 void ClipboardPolicy::migrate(KConfigGroup &group)

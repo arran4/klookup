@@ -489,7 +489,9 @@ void MainWindow::dispatchPendingAutoLookup()
         return;
     KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
     const auto policy = ClipboardPolicy::read(group);
-    if (!policy.permitsAutomaticLookup(hasVisibleKLookupWindow(), isActiveWindow()))
+    const bool hasVisibleWindow = hasVisibleKLookupWindow();
+    const bool focused = isActiveWindow();
+    if (!policy.permitsCapture(hasVisibleWindow, focused) || !policy.permitsAutomaticLookup(hasVisibleWindow, focused))
         return;
     processClipboardText(text, true);
 }
@@ -586,23 +588,52 @@ void MainWindow::processClipboardText(const QString &rawText, bool autoSearch)
     if (!input.permitsAutomaticCapture()) return;
     const QString text = input.text;
     if (autoSearch) {
-        if (text == m_lastAutoSearchClipboardText) {
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        const auto policy = ClipboardPolicy::read(group);
+        const auto decision = ClipboardInput::evaluateAutomaticCaptureText(rawText, {policy.autoMaxChars, policy.autoMaxWords});
+        if (!decision.eligibleForAutomaticLookup)
+            return;
+        if (decision.text == m_lastAutoSearchClipboardText) {
             return;
         }
-        m_lastAutoSearchClipboardText = text;
+        m_lastAutoSearchClipboardText = decision.text;
 
         if (clipboardSearchNotificationsEnabled()) {
-            emitClipboardNotification(text);
+            emitClipboardNotification(decision.text);
         }
 
-        m_recent->recordCapture(text);
-        performSearchInternal(text, true, true);
+        m_recent->recordCapture(decision.text);
+        performSearchInternal(decision.text, true, true);
     } else {
         m_recent->recordCapture(text);
         // Just prepopulate without clobbering manual edits or switching tabs/focus.
         m_lastAutoSearchClipboardText.clear();
         m_dashboard->prepareCapturedQuery(text, false, false);
     }
+}
+
+void MainWindow::restoreVerifiedLocalStatus(SearchProvider *provider)
+{
+    if (!provider)
+        return;
+    const QString id = provider->id();
+    if (m_verifiedBuiltinNativeLocalIds.contains(id) &&
+        !provider->classification().facets.contains(QStringLiteral("requirement:network"))) {
+        m_verifiedLocalProviderIds.insert(id);
+        ProviderClassification cls = provider->classification();
+        cls.addHostVirtualFacet(QString::fromLatin1(ProviderClassification::LocalVirtualFacet));
+        provider->setClassification(cls);
+    }
+}
+
+QString MainWindow::providerIdentityTokenForProvider(const SearchProvider *provider)
+{
+    if (!provider)
+        return {};
+    const QString token = provider->property(ClipboardPolicy::ProviderIdentityTokenProperty).toString();
+    if (!token.isEmpty())
+        return token;
+    return ClipboardPolicy::providerIdentityToken(provider->id());
 }
 
 void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStringList &customPluginPaths,
@@ -620,6 +651,9 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         for (int i = 0; i < m_providers.size(); ++i) {
             if (m_providers[i]->id() == it.key()) {
                 m_providers[i] = it.value();
+                it.value()->setProperty(ClipboardPolicy::ProviderIdentityTokenProperty,
+                                        ClipboardPolicy::providerIdentityToken(it.value()->id()));
+                restoreVerifiedLocalStatus(it.value());
                 break;
             }
         }
@@ -700,15 +734,15 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
                             loadedProviderIds.insert(provider->id());
                             qCDebug(KLOOKUP_PLUGINS) << "Successfully loaded provider:" << provider->id() << "Display name:" << provider->name();
 
+                            provider->setProperty(ClipboardPolicy::ProviderIdentityTokenProperty,
+                                                  ClipboardPolicy::providerIdentityToken(provider->id()));
                             // Only built-in offline local plugins (non-custom, no network requirement)
                             // may ever receive the host-controlled `scope:local` virtual facet.
                             if (!entry.isCustom &&
                                 provider->id() == QLatin1String("localdocs") &&
                                 !provider->classification().facets.contains(QStringLiteral("requirement:network"))) {
-                                m_verifiedLocalProviderIds.insert(provider->id());
-                                ProviderClassification cls = provider->classification();
-                                cls.addHostVirtualFacet(QString::fromLatin1(ProviderClassification::LocalVirtualFacet));
-                                provider->setClassification(cls);
+                                m_verifiedBuiltinNativeLocalIds.insert(provider->id());
+                                restoreVerifiedLocalStatus(provider);
                             }
 
                             loadWalletCredentials(provider);
@@ -761,6 +795,8 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         QString loadError;
         auto *adapter = createScriptedAdapter(pkg, this, &loadError);
         if (!adapter) { m_packages.last().status = QStringLiteral("Load failed: %1").arg(loadError); continue; }
+        adapter->setProperty(ClipboardPolicy::ProviderIdentityTokenProperty,
+                             ClipboardPolicy::providerIdentityToken(pkg.id(), QString::fromLatin1(pkg.approvalFingerprint())));
         m_scriptedAdapters.append(adapter);
 
         // Precedence: trusted scripted provider overrides native provider with same ID
@@ -851,6 +887,9 @@ bool MainWindow::switchToFallback(const QString &id)
                 delete current;
             }
             m_fallbackProviders.remove(id);
+            fallback->setProperty(ClipboardPolicy::ProviderIdentityTokenProperty,
+                                  ClipboardPolicy::providerIdentityToken(fallback->id()));
+            restoreVerifiedLocalStatus(fallback);
             qCDebug(KLOOKUP_PLUGINS) << "Switched provider" << id << "back to native fallback.";
             return true;
         }
@@ -914,7 +953,8 @@ QueryScope MainWindow::automaticLookupScopeForPolicy(const ClipboardPolicy::Poli
             allowed.insert(id);
             continue;
         }
-        if (policy.permitsAutoOnlineProvider(id, providerTemplate->classification().facets))
+        const QString identityToken = providerIdentityTokenForProvider(providerTemplate);
+        if (policy.permitsAutoOnlineProvider(id, identityToken, providerTemplate->classification().facets))
             allowed.insert(id);
     }
     return QueryScope::only(allowed);
@@ -924,7 +964,13 @@ void MainWindow::performAutomaticLookup(const QString &query, const QueryScope &
 {
     KConfigGroup genGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
     const auto policy = ClipboardPolicy::read(genGroup);
-    const QueryScope effectiveScope = scope.restricted ? scope : automaticLookupScopeForPolicy(policy);
+    const QueryScope policyScope = automaticLookupScopeForPolicy(policy);
+    QueryScope effectiveScope = policyScope;
+    if (scope.restricted) {
+        QSet<QString> intersected = policyScope.sourceIds;
+        intersected.intersect(scope.sourceIds);
+        effectiveScope = QueryScope::only(intersected);
+    }
     if (policy.autoHistoryMode == ClipboardPolicy::AutoHistoryMode::Always && m_recent) {
         m_recent->recordSearch(query, true);
     }

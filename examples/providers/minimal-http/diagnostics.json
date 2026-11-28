@@ -1,0 +1,12 @@
+{
+  "search": {
+    "items": [
+      {
+        "id": "ex-1",
+        "title": "Minimal Example Entry",
+        "summary": "Reference result returned from offline diagnostics fixture.",
+        "url": "https://example.invalid/items/ex-1"
+      }
+    ]
+  }
+}

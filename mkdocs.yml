@@ -21,6 +21,7 @@ nav:
       - Result interactions: result-interactions.md
       - Structured metadata: structured-metadata.md
   - Provider architecture:
+      - User-provided providers: user-providers.md
       - Installing and approving packages: provider-package-approval.md
       - Provider classification: provider-classification.md
       - Settings panes: settings-panes.md

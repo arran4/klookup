@@ -63,10 +63,12 @@ public slots:
     bool switchToFallback(const QString &id);
     void loadPlugins(const QStringList &customPackagePaths = {}, const QStringList &customPluginPaths = {},
                      const QStringList &packageIdsToInvalidate = {});
+    void rescanProviders();
     void setNetworkAccessManagerFactory(std::function<QNetworkAccessManager *(QObject *)> factory);
     void setPackageTrusted(const QString &id, bool trusted);
     bool isPackageTrusted(const QString &id) const;
     const QList<ProviderPackageStatus> &packages() const { return m_packages; }
+    const QList<ProviderPackage> &shadowedPackages() const { return m_shadowedPackages; }
     ProviderAuthManager *authManager() const { return m_authManager; }
     SearchTab *reusableAutoTab() const { return m_reusableAutoTab.data(); }
     bool isVerifiedLocalProvider(const QString &id) const { return m_verifiedLocalProviderIds.contains(id); }
@@ -117,6 +119,7 @@ private:
     QList<SearchProvider *> m_scriptedAdapters;
     QList<ProviderPackageStatus> m_packages;
     QSet<QString> m_verifiedLocalProviderIds;
+    QList<ProviderPackage> m_shadowedPackages;
     QStringList m_customPackagePaths;
     QStringList m_customPluginPaths;
     std::function<QNetworkAccessManager *(QObject *)> m_namFactory;

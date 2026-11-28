@@ -38,9 +38,16 @@ struct PackageManifest {
     AuthenticationDescriptorV2 authentication;
 };
 
+struct ConfiguredProviderDirectory {
+    QString path;
+    QString label;
+    bool enabled = true;
+};
+
 class ProviderPackage {
 public:
     enum class LocationType { Custom, User, System };
+    enum class SymlinkPolicy { PackageDirOnly, AllowSafeFileSymlinks };
 
     ProviderPackage() = default;
 
@@ -52,6 +59,14 @@ public:
     QString name() const { return m_manifest.name; }
     QString runtime() const { return m_manifest.runtime; }
     QString packageDir() const { return m_packageDir; }
+    QString displayPath() const { return m_displayPath.isEmpty() ? m_packageDir : m_displayPath; }
+    QString canonicalPath() const { return m_packageDir; }
+    bool isSymlinkBacked() const { return m_symlinkBacked; }
+    SymlinkPolicy symlinkPolicy() const { return m_symlinkPolicy; }
+    QString provenanceLabel() const { return m_provenanceLabel.isEmpty() ? provenance() : m_provenanceLabel; }
+    void setProvenanceLabel(const QString &label) { m_provenanceLabel = label; }
+    QString shadowedBy() const { return m_shadowedBy; }
+    void setShadowedBy(const QString &ownerPath) { m_shadowedBy = ownerPath; }
     QString entryFilePath() const { return m_entryFilePath; }
     LocationType locationType() const { return m_locationType; }
     QByteArray contentHash() const { return m_contentHash; }
@@ -74,15 +89,23 @@ public:
     bool isOriginAllowed(const QUrl &url) const;
     bool isSecretAllowed(const QString &secretKey) const;
 
-    static ProviderPackage fromDirectory(const QString &dirPath, LocationType locType = LocationType::User);
+    static ProviderPackage fromDirectory(const QString &dirPath,
+                                       LocationType locType = LocationType::User,
+                                       SymlinkPolicy symlinkPolicy = SymlinkPolicy::PackageDirOnly);
 
 private:
     PackageManifest m_manifest;
     QString m_packageDir;
+    QString m_displayPath;
+    QString m_provenanceLabel;
+    QString m_shadowedBy;
     QString m_entryFilePath;
     LocationType m_locationType = LocationType::User;
+    SymlinkPolicy m_symlinkPolicy = SymlinkPolicy::PackageDirOnly;
     QByteArray m_contentHash;
     QMap<QString, QByteArray> m_files;
+    QMap<QString, QString> m_resolvedTargets;
+    bool m_symlinkBacked = false;
     bool m_valid = false;
     QString m_validationError;
     bool m_trusted = false;
@@ -92,7 +115,12 @@ private:
 class ProviderPackageDiscovery {
 public:
     static QStringList defaultSearchPaths();
+    static QList<ConfiguredProviderDirectory> readConfiguredDirectories(const KConfigGroup &group);
+    static void writeConfiguredDirectories(KConfigGroup &group, const QList<ConfiguredProviderDirectory> &dirs);
     static QList<ProviderPackage> discoverPackages(const QStringList &customPaths = {});
+    static QList<ProviderPackage> discoverPackages(const QList<ConfiguredProviderDirectory> &configuredDirs,
+                                                   const QStringList &customPaths = {},
+                                                   QList<ProviderPackage> *shadowed = nullptr);
     static bool isValidPackageId(const QString &id);
 };
 

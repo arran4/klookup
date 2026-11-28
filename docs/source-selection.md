@@ -35,7 +35,9 @@ approval and explicit-off preferences are rechecked when applying a stale tab's
 selection. USD pricing never implies a geographic restriction; no location
 inference occurs.
 
-The Settings policy page is independent of the resizable existing detail panes
-in #137. Merge the defaults and metadata foundations first, then reconcile this
-change with the Settings panes and true pop-out changes, preserving tab controls
-when a session moves between windows.
+Display filter chips above the result tree filter already-loaded result groups
+(for example Anime, TV, Games, General, USD pricing) locally without issuing new
+searches, modifying provider enablement, or discarding cached details. Selected
+values within a single facet match any value, while selections across different
+facets must all match. Story-level tags (such as MangaBaka tags) are metadata
+rather than provider facets.

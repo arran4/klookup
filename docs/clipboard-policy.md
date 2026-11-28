@@ -30,12 +30,12 @@ KLookup employs a defense-in-depth, two-tier architecture for clipboard handling
 Clipboard behaviour is governed by two independent settings in `klookuprc` (`[General]` group):
 
 ### Capture Policy (`ClipboardCaptureMode`)
-Determines when KLookup is permitted to inspect clipboard changes:
+Determines when KLookup is permitted to inspect clipboard or primary-selection changes:
 
 | Mode | Value | Description |
 |---|---|---|
 | `Never` | `0` (default) | Passive clipboard monitoring is disabled. No automatic reads occur. |
-| `Visible` | `1` | Clipboard is inspected only when the KLookup main window is visible and not minimized. Focus is not required. |
+| `Visible` | `1` | Clipboard is inspected only when a KLookup window is visible and not minimized. Focus is not required. |
 | `Focused` | `2` | Clipboard is inspected only when KLookup is visible, not minimized, and actively holds keyboard focus. |
 | `Running` | `3` | Permitted whenever the KLookup process is active, including background and tray-hidden operation. |
 
@@ -44,14 +44,14 @@ Determines which desktop event may trigger an automatic search after content pas
 
 | Trigger | Value | Description |
 |---|---|---|
-| `Never` | `0` (default) | Capture quietly prepares the query field; no automatic search is executed. |
+| `Never` | `0` (default) | Capture quietly prepares the query field; no automatic search is executed (unless `ClipboardAutoLookupEnabled` triggers on change). |
 | `OpenedFromTray` | `1` | Triggers a search when restored from the system tray. |
-| `ClipboardChanged` | `2` | Triggers a search immediately when eligible clipboard text changes. |
+| `ClipboardChanged` | `2` | Triggers a search when eligible clipboard text changes (subject to debounce). |
 | `WindowGainedFocus` | `3` | Triggers a search when the window transitions from inactive to active. |
 | `GlobalShortcut` | `4` | Triggers a search when the global show/focus shortcut is pressed. |
 
-### Invariants
-- The configured capture mode is always evaluated first; a trigger never implicitly grants capture permission.
-- Automatic searches run silently and never steal focus or activate windows.
-- Clipboard search tabs are session-only and are not persisted across application restarts unless explicit history recording is enabled.
-- An explicit "Search clipboard now" action (`--search-clipboard` or global shortcut) bypasses automatic filtering and searches current plain text directly on explicit user request.
+### Automatic Lookup Controls & Provider Disclosure
+- **`ClipboardAutoLookupEnabled` (default: `false`)**: Enables automatic lookup in a reusable session-only results tab when a KLookup window is visible, subject to character (`ClipboardAutoMaxChars`), word (`ClipboardAutoMaxWords`), and debounce (`ClipboardAutoDebounceMs`) bounds.
+- **Local-only default disclosure**: Automatic lookups query verified built-in local sources (such as `localdocs`) only, unless `ClipboardAutoOnlineEnabled` is explicitly turned on and individual online providers are acknowledged/approved in Settings.
+- **Session-only tabs & history**: Automatic search tabs are not restored across application restarts, and automatic search history retention (`ClipboardAutoHistoryMode`) defaults to `OnInteraction` (`1`).
+- **Explicit command**: Triggering "Search clipboard now" (`--search-clipboard` or global shortcut) is a deliberate user search and bypasses passive capture restrictions.

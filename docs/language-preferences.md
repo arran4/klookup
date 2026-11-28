@@ -27,7 +27,6 @@ preferred language tags of at most 64 characters are retained.
 
 MangaBaka title selection now uses this preference list and preserves known
 original titles. Result context menus expose All titles when multiple titles
-are supplied, in a safe plain-text, selectable/copyable dialog. No API request is
-needed to open that dialog. Unknown or missing metadata does not fabricate title
-variants. Source metadata remains complete; shared semantic layout and MangaBaka
-rich presentation remain separate #134/#135 work.
+are supplied, in a safe plain-text, selectable/copyable dialog. No API request is needed to inspect all supplied titles. Unknown or missing
+metadata never fabricates title variants, and complete source metadata remains
+accessible in the detail pane.

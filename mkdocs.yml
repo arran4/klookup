@@ -21,10 +21,9 @@ nav:
       - Result interactions: result-interactions.md
       - Structured metadata: structured-metadata.md
   - Provider architecture:
+      - Shipped scripts & API v2: script-providers.md
       - Installing and approving packages: provider-package-approval.md
       - Provider classification: provider-classification.md
-      - Settings panes: settings-panes.md
-      - Filter loaded results: result-display-filters.md
       - Preferred title languages: language-preferences.md
       - Search source selection: source-selection.md
       - Authentication: provider-authentication.md
@@ -36,7 +35,3 @@ nav:
       - Wikipedia: wikipedia-content.md
       - MangaBaka formats: mangabaka-formats.md
       - Spotify: spotify-provider.md
-      - AniList: provider-anilist.md
-      - Lyrics.ovh: provider-lyrics-ovh.md
-      - Open Library: provider-openlibrary.md
-      - CheapShark: provider-cheapshark.md

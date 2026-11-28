@@ -7,22 +7,21 @@ For installation, source builds and contribution instructions, see the [reposito
 ## Desktop behaviour
 
 - [Autostart on login](autostart.md), [global shortcuts](global-shortcuts.md) and [clipboard privacy](clipboard-policy.md).
-- [Recent activity](recent-activity.md) and [result interactions](result-interactions.md).
-- [Typed result metadata](structured-metadata.md) for provider data.
+- [Recent activity](recent-activity.md), [preferred title languages](language-preferences.md) and [result interactions](result-interactions.md).
+- [Typed result metadata](structured-metadata.md) and [source selection & result filtering](source-selection.md).
 
 ## Provider development
 
-- [Package installation and approval](provider-package-approval.md), [authentication](provider-authentication.md) and [diagnostics](provider-diagnostics.md).
+- [Shipped ECMAScript providers and Provider API v2](script-providers.md)
+- [Package installation and approval](provider-package-approval.md), [classification](provider-classification.md), [authentication](provider-authentication.md) and [diagnostics](provider-diagnostics.md).
 - [Script lifecycle](script-provider-lifecycle.md), [HTTP transport](provider-http-transport.md) and [continuation contract](provider-continuation.md).
-- Provider-specific guides: [Wikipedia](wikipedia-content.md), [MangaBaka](mangabaka-formats.md), [Spotify](spotify-provider.md), [AniList](provider-anilist.md), [Lyrics.ovh](provider-lyrics-ovh.md), [Open Library](provider-openlibrary.md) and [CheapShark](provider-cheapshark.md).
+- Native provider guides: [Wikipedia](wikipedia-content.md), [MangaBaka formats](mangabaka-formats.md) and [Spotify](spotify-provider.md).
 
 ## Preview locally
-
-Install the same documentation generator used in CI through the Python package manager:
 
 ```sh
 python -m pip install 'mkdocs==1.6.1'
 mkdocs serve
 ```
 
-CI validates the site on pull requests and deploys from a fully validated `main` build only after the repository's GitHub Pages source is configured for **GitHub Actions**. The site is documentation, not a software release.
+CI validates the site on pull requests and deploys from a validated `main` build.

@@ -1,6 +1,74 @@
+// SPDX-FileCopyrightText: 2026 KLookup contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "../src/clipboardinput.h"
-#include <QMimeData>
+#include "../src/clipboardpolicy.h"
+#include <KConfig>
+#include <KConfigGroup>
+#include <QCoreApplication>
+#include <QTemporaryDir>
 #include <QtTest>
+
+class ClipboardPolicyTest : public QObject
+{
+    Q_OBJECT
+private slots:
+    void captureAndTriggerAreIndependent()
+    {
+        using namespace ClipboardPolicy;
+        for (int capture = 0; capture <= int(Capture::Running); ++capture) {
+            for (bool visible : {false, true})
+                for (bool focused : {false, true}) {
+                    Policy policy{Capture(capture), Trigger::ClipboardChanged};
+                    const bool expected = capture == int(Capture::Running) || (visible && capture == int(Capture::Visible)) ||
+                                          (visible && focused && capture == int(Capture::Focused));
+                    QCOMPARE(policy.permitsCapture(visible, focused), expected);
+                }
+        }
+        for (int trigger = 0; trigger <= int(Trigger::GlobalShortcut); ++trigger) {
+            Policy policy{Capture::Running, Trigger(trigger)};
+            for (int event = 0; event <= int(Event::GlobalShortcut); ++event)
+                QCOMPARE(policy.searchesOn(Event(event)), trigger == event + 1);
+        }
+    }
+
+    void migrationAndPersistence()
+    {
+        using namespace ClipboardPolicy;
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        KConfig config(root.filePath(QStringLiteral("policyrc")), KConfig::SimpleConfig);
+        for (bool monitor : {false, true})
+            for (bool focused : {false, true})
+                for (bool automatic : {false, true}) {
+                    KConfigGroup group(&config, QStringLiteral("Policy"));
+                    group.deleteGroup();
+                    group.writeEntry("MonitorClipboard", monitor);
+                    group.writeEntry("ClipboardOnlyWhenFocused", focused);
+                    group.writeEntry("AutoSearchClipboard", automatic);
+                    const auto before = read(group);
+                    QCOMPARE(before.capture, monitor ? (focused ? Capture::Focused : Capture::Running) : Capture::Never);
+                    QCOMPARE(before.trigger, monitor && automatic ? Trigger::ClipboardChanged : Trigger::Never);
+                    QVERIFY(!group.hasKey("ClipboardCaptureMode"));
+                    migrate(group);
+                    QCOMPARE(read(group).capture, before.capture);
+                    QCOMPARE(read(group).trigger, before.trigger);
+                    group.writeEntry("MonitorClipboard", !monitor);
+                    QCOMPARE(read(group).capture, before.capture);
+                }
+        KConfigGroup group(&config, QStringLiteral("Saved"));
+        write(group, {Capture::Visible, Trigger::TrayOpened});
+        config.sync();
+        KConfig restored(root.filePath(QStringLiteral("policyrc")), KConfig::SimpleConfig);
+        KConfigGroup saved(&restored, QStringLiteral("Saved"));
+        QCOMPARE(read(saved).capture, Capture::Visible);
+        QCOMPARE(read(saved).trigger, Trigger::TrayOpened);
+        saved.writeEntry("ClipboardCaptureMode", 999);
+        saved.writeEntry("ClipboardSearchTrigger", -1);
+        QCOMPARE(read(saved).capture, Capture::Never);
+        QCOMPARE(read(saved).trigger, Trigger::Never);
+    }
+};
 
 class ClipboardInputTest : public QObject
 {
@@ -62,6 +130,7 @@ private slots:
         for (int i = 0; i < cases.size(); ++i)
             QTest::newRow(qPrintable(QString::number(i))) << cases[i].first << int(cases[i].second);
     }
+
     void classification()
     {
         QFETCH(QString, text);
@@ -72,8 +141,9 @@ private slots:
         if (result.permitsAutomaticCapture())
             QCOMPARE(result.text, text.trimmed());
         else
-            QVERIFY(result.text.isEmpty()); // rejected input cannot reach capture/history
+            QVERIFY(result.text.isEmpty());
     }
+
     void deliberateClipboardSearchIsSeparate()
     {
         QMimeData mime;
@@ -111,5 +181,13 @@ private slots:
         QVERIFY(!ClipboardInput::classifyMimeData(nullptr).permitsAutomaticCapture());
     }
 };
-QTEST_GUILESS_MAIN(ClipboardInputTest)
-#include "test_clipboardinput.moc"
+
+int main(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+    ClipboardPolicyTest policyTest;
+    ClipboardInputTest inputTest;
+    return QTest::qExec(&policyTest, argc, argv) | QTest::qExec(&inputTest, argc, argv);
+}
+
+#include "test_clipboard_unit.moc"

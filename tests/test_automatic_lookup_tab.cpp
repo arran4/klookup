@@ -3,20 +3,33 @@
 
 #include "../src/clipboardpolicy.h"
 #include "../src/mainwindow.h"
+#include "../src/providerclassification.h"
+#include "../src/providerpackage.h"
 #include "../src/recentactivity.h"
 #include "../src/searchcontinuation.h"
+#include "../src/searchprovider.h"
 #include "../src/searchtab.h"
 #include <KConfigGroup>
 #include <KSharedConfig>
+#include <QAction>
+#include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMenu>
 #include <QPushButton>
-#include <QScrollBar>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QWheelEvent>
 #include <QtTest>
+
+namespace
+{
 
 class DeferredContinuationProvider : public SearchProvider, public SearchProviderContinuation
 {
@@ -24,7 +37,10 @@ class DeferredContinuationProvider : public SearchProvider, public SearchProvide
     Q_INTERFACES(SearchProvider SearchProviderContinuation)
 public:
     explicit DeferredContinuationProvider(const QString &id, QObject *parent = nullptr)
-        : SearchProvider(parent), m_id(id) {}
+        : SearchProvider(parent)
+        , m_id(id)
+    {
+    }
     QString name() const override { return m_id; }
     QString id() const override { return m_id; }
     void search(const QString &) override {}
@@ -40,10 +56,7 @@ public:
         copy->setEnabled(isEnabled());
         return copy;
     }
-    void deliver(quint64 requestId, const QList<SearchResult> &results)
-    {
-        emit pageCompleted(requestId, {results, {}, {}});
-    }
+    void deliver(quint64 requestId, const QList<SearchResult> &results) { emit pageCompleted(requestId, {results, {}, {}}); }
 
     QString lastQuery;
     quint64 lastRequestId = 0;
@@ -53,20 +66,46 @@ private:
     QString m_id;
 };
 
+class MockExpandableProvider : public SearchProvider
+{
+    Q_OBJECT
+public:
+    MockExpandableProvider(const QString &id, const QString &name, const ProviderClassification &cls, QObject *parent = nullptr)
+        : SearchProvider(parent)
+        , m_id(id)
+        , m_name(name)
+    {
+        setClassification(cls);
+    }
+    QString name() const override { return m_name; }
+    QString id() const override { return m_id; }
+    void search(const QString &query) override
+    {
+        ++searchCalls;
+        emit searchCompleted(m_id, {{m_id + QStringLiteral("-1"), m_name + QStringLiteral(": ") + query, {}, {}, {}}});
+    }
+    SearchProvider *clone(QObject *parent = nullptr) const override
+    {
+        auto *copy = new MockExpandableProvider(m_id, m_name, classification(), parent);
+        copy->setEnabled(isEnabled());
+        return copy;
+    }
+
+    int searchCalls = 0;
+
+private:
+    QString m_id;
+    QString m_name;
+};
+
+} // namespace
+
 class AutomaticResultsTabTest : public QObject
 {
     Q_OBJECT
 
-private:
-    QTemporaryDir m_configHome;
-
 private slots:
-    void initTestCase()
-    {
-        QVERIFY(m_configHome.isValid());
-        qputenv("XDG_CONFIG_HOME", m_configHome.path().toUtf8());
-        QStandardPaths::setTestModeEnabled(true);
-    }
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
 
     void cleanup()
     {
@@ -88,7 +127,6 @@ private slots:
         const quint64 firstReq = providerA->lastRequestId;
         QCOMPARE(providerA->lastQuery, QStringLiteral("first auto query"));
 
-        // Switching to/from tabs, showing, or focusing NEVER promotes an auto tab.
         const int autoIdx = tabs.addTab(tab, tab->query());
         tabs.show();
         tabs.setCurrentIndex(autoIdx);
@@ -98,11 +136,9 @@ private slots:
         QVERIFY(!tab->isPromotedFromAutomatic());
         QCOMPARE(promotedSpy.count(), 0);
 
-        // Rendering initial results does not promote either.
         providerA->deliver(firstReq, {{QStringLiteral("r1"), QStringLiteral("Old Result"), QStringLiteral("old"), {}}});
         QCOMPARE(promotedSpy.count(), 0);
 
-        // Resetting for next automatic query cancels old providers and drops stale responses.
         QPointer<DeferredContinuationProvider> oldProvider(providerA);
         tab->resetForAutomaticQuery(QStringLiteral("second auto query"));
         QVERIFY(oldProvider->canceled);
@@ -112,17 +148,15 @@ private slots:
 
         auto *tree = tab->findChild<QTreeWidget *>(QStringLiteral("resultsTree"));
         QVERIFY(tree);
-        QCOMPARE(tree->topLevelItemCount(), 0); // stale response was ignored
+        QCOMPARE(tree->topLevelItemCount(), 0);
 
         auto *providerB = new DeferredContinuationProvider(QStringLiteral("mock-b"));
         tab->startProvider(providerB);
-        providerB->deliver(providerB->lastRequestId,
-                           {{QStringLiteral("r2"), QStringLiteral("Fresh Result"), QStringLiteral("fresh"), {}}});
+        providerB->deliver(providerB->lastRequestId, {{QStringLiteral("r2"), QStringLiteral("Fresh Result"), QStringLiteral("fresh"), {}}});
         QCOMPARE(tree->topLevelItemCount(), 1);
         QCOMPARE(tab->queryGeneration(), genBefore);
         QCOMPARE(promotedSpy.count(), 0);
 
-        // Switching back to view the auto tab still does not promote; clicking Pin promotes once.
         tabs.setCurrentIndex(autoIdx);
         QCoreApplication::processEvents();
         QVERIFY(!tab->isPromotedFromAutomatic());
@@ -149,11 +183,9 @@ private slots:
         QVERIFY(tree && tree->topLevelItemCount() == 1 && tree->topLevelItem(0)->childCount() >= 1);
         QVERIFY(!clickTab.isPromotedFromAutomatic());
 
-        // Clicking an item promotes the tab.
         emit tree->itemClicked(tree->topLevelItem(0)->child(0), 0);
         QVERIFY(clickTab.isPromotedFromAutomatic());
 
-        // Wheel scroll promotes as well.
         SearchTab scrollTab(QStringLiteral("scroll test"));
         scrollTab.setAutomaticResultsMode(true);
         auto *scrollTree = scrollTab.findChild<QTreeWidget *>(QStringLiteral("resultsTree"));
@@ -183,14 +215,12 @@ private slots:
         const int userTabIdx = tabs->currentIndex();
         QCOMPARE(tabs->count(), 2);
 
-        // Background automatic updates reuse a single tab without stealing active tab focus.
         window.processClipboardText(QStringLiteral("auto first"), true);
         QCOMPARE(tabs->count(), 3);
         QCOMPARE(tabs->currentIndex(), userTabIdx);
         QVERIFY(window.reusableAutoTab());
         QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("auto first"));
-        // Default OnInteraction does NOT record history until promoted.
-        QCOMPARE(recent->items().size(), 1); // only "user work tab"
+        QCOMPARE(recent->items().size(), 1);
 
         window.processClipboardText(QStringLiteral("auto second"), true);
         QCOMPARE(tabs->count(), 3);
@@ -198,7 +228,6 @@ private slots:
         QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("auto second"));
         QCOMPARE(recent->items().size(), 1);
 
-        // Pinning promotes and records history cleanly; next auto query allocates a new auto tab.
         SearchTab *promoted = window.reusableAutoTab();
         auto *pin = promoted->findChild<QPushButton *>(QStringLiteral("pinAutoTabButton"));
         QVERIFY(pin);
@@ -213,7 +242,6 @@ private slots:
         QVERIFY(window.reusableAutoTab());
         QCOMPARE(window.reusableAutoTab()->query(), QStringLiteral("auto third"));
 
-        // Closing the reusable automatic tab clears the pointer cleanly.
         const int autoIdx = tabs->indexOf(window.reusableAutoTab());
         QVERIFY(autoIdx > 0);
         tabs->tabCloseRequested(autoIdx);
@@ -223,5 +251,134 @@ private slots:
     }
 };
 
-QTEST_MAIN(AutomaticResultsTabTest)
-#include "test_automatic_results_tab.moc"
+class LocalVirtualTagAndExpansionTest : public QObject
+{
+    Q_OBJECT
+
+private slots:
+    void initTestCase() { QStandardPaths::setTestModeEnabled(true); }
+
+    void cleanup()
+    {
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("General"));
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("Providers"));
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->sync();
+    }
+
+    void manifestCannotSpoofScopeLocalAndCustomLocalDocsIsDenied()
+    {
+        const QJsonObject spoofed = QJsonDocument::fromJson(
+            "{\"version\":\"1.0.0\",\"facets\":[\"scope:local\",\"topic:books\"]}").object();
+        ProviderClassification cls;
+        QString err;
+        QVERIFY(!ProviderClassification::fromJson(spoofed, &cls, &err));
+        QVERIFY(!err.isEmpty());
+
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        const QString fakePkgDir = root.filePath(QStringLiteral("localdocs"));
+        QVERIFY(QDir().mkpath(fakePkgDir));
+        QFile manifest(fakePkgDir + QStringLiteral("/provider.json"));
+        QVERIFY(manifest.open(QIODevice::WriteOnly));
+        manifest.write("{\"id\":\"localdocs\",\"name\":\"Fake Local\",\"version\":\"1.0.0\",\"runtime\":\"javascript\",\"entry\":\"main.mjs\"}");
+        manifest.close();
+        QFile entry(fakePkgDir + QStringLiteral("/main.mjs"));
+        QVERIFY(entry.open(QIODevice::WriteOnly));
+        entry.write("function search() { return []; } module.exports = { search: search };");
+        entry.close();
+
+        MainWindow window;
+        KConfigGroup pg(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+        const auto pkg = ProviderPackage::fromDirectory(fakePkgDir, ProviderPackage::LocationType::Custom);
+        QVERIFY(pkg.isValid());
+        pkg.saveApproval(pg, true);
+
+        window.loadPlugins({root.path()}, {});
+        QVERIFY(!window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+        if (auto *prov = window.provider(QStringLiteral("localdocs"))) {
+            QVERIFY(!prov->classification().facets.contains(QString::fromLatin1(ProviderClassification::LocalVirtualFacet)));
+        }
+    }
+
+    void defaultAutoLookupOnlyRunsVerifiedLocalAndNewOnlineRequiresAck()
+    {
+        using namespace ClipboardPolicy;
+        MainWindow window;
+        Policy policy;
+        QCOMPARE(window.automaticLookupScopeForPolicy(policy).restricted, true);
+
+        const QueryScope defaultScope = window.automaticLookupScopeForPolicy(policy);
+        for (SearchProvider *p : window.providers()) {
+            if (!window.isVerifiedLocalProvider(p->id())) {
+                QVERIFY2(!defaultScope.includes(p->id()), qPrintable(p->id()));
+            }
+        }
+
+        Policy onlinePolicy;
+        onlinePolicy.autoOnlineEnabled = true;
+        onlinePolicy.autoOnlineAllowedFacets = {QStringLiteral("topic:manga")};
+        onlinePolicy.autoAcknowledgedOnlineProviderIds = {QStringLiteral("known_manga")};
+
+        QVERIFY(onlinePolicy.permitsAutoOnlineProvider(QStringLiteral("known_manga"), {QStringLiteral("topic:manga")}));
+        QVERIFY(!onlinePolicy.permitsAutoOnlineProvider(QStringLiteral("brand_new_manga"), {QStringLiteral("topic:manga")}));
+    }
+
+    void additiveExpandToMenuRetainsLoadedResultsAndDispatchesOnlyAdded()
+    {
+        SearchTab tab(QStringLiteral("expansion query"));
+        tab.setAutomaticResultsMode(true);
+
+        ProviderClassification localCls;
+        localCls.addHostVirtualFacet(QString::fromLatin1(ProviderClassification::LocalVirtualFacet));
+        auto *localProv = new MockExpandableProvider(QStringLiteral("local_mock"), QStringLiteral("Local Mock"), localCls);
+
+        ProviderClassification webCls;
+        webCls.facets = {QStringLiteral("topic:books")};
+        tab.setSourceChoices({
+            {QStringLiteral("local_mock"), QStringLiteral("Local Mock"), QStringLiteral("Ready"), true, true, localCls},
+            {QStringLiteral("books_mock"), QStringLiteral("Books Mock"), QStringLiteral("Ready"), true, true, webCls},
+        });
+        tab.applySourceEligibility({QStringLiteral("local_mock")});
+        tab.startProvider(localProv);
+        QCOMPARE(localProv->searchCalls, 1);
+
+        auto *tree = tab.findChild<QTreeWidget *>(QStringLiteral("resultsTree"));
+        QVERIFY(tree && tree->topLevelItemCount() == 1);
+
+        QSignalSpy expandSpy(&tab, &SearchTab::searchSelectedSourcesRequested);
+        auto *expandMenuBtn = tab.findChild<QToolButton *>(QStringLiteral("expandScopeMenuButton"));
+        QVERIFY(expandMenuBtn && !expandMenuBtn->isHidden() && expandMenuBtn->menu());
+
+        auto *expandBooksAction = expandMenuBtn->menu()->findChild<QAction *>(QStringLiteral("expandScopeFacet-topic:books"));
+        QVERIFY(expandBooksAction);
+        expandBooksAction->trigger();
+
+        QCOMPARE(expandSpy.count(), 1);
+        const QSet<QString> requested = expandSpy.first().first().value<QSet<QString>>();
+        QVERIFY(requested.contains(QStringLiteral("local_mock")));
+        QVERIFY(requested.contains(QStringLiteral("books_mock")));
+        QVERIFY(tab.isPromotedFromAutomatic());
+
+        tab.applySourceEligibility(requested);
+        auto *booksProv = new MockExpandableProvider(QStringLiteral("books_mock"), QStringLiteral("Books Mock"), webCls);
+        tab.startProvider(booksProv);
+        QCOMPARE(localProv->searchCalls, 1);
+        QCOMPARE(booksProv->searchCalls, 1);
+        QCOMPARE(tree->topLevelItemCount(), 2);
+    }
+};
+
+int main(int argc, char **argv)
+{
+    QTemporaryDir configHome;
+    if (!configHome.isValid())
+        return 1;
+    qputenv("XDG_CONFIG_HOME", configHome.path().toUtf8());
+    QApplication app(argc, argv);
+
+    AutomaticResultsTabTest autoTabTest;
+    LocalVirtualTagAndExpansionTest localScopeTest;
+    return QTest::qExec(&autoTabTest, argc, argv) | QTest::qExec(&localScopeTest, argc, argv);
+}
+
+#include "test_automatic_lookup_tab.moc"

@@ -291,6 +291,7 @@ private slots:
         dialog.button(QDialogButtonBox::Apply)->click();
 
         const Policy reloaded = read(group);
+        QCOMPARE(reloaded.capture, Capture::Visible);
         QCOMPARE(reloaded.inputSource, InputSource::PrimarySelection);
         QVERIFY(reloaded.autoLookupEnabled);
         QVERIFY(reloaded.explicitCaptureImmediateSearch);
@@ -299,6 +300,158 @@ private slots:
         QCOMPARE(reloaded.autoMaxWords, 15);
         QCOMPARE(reloaded.autoDebounceMs, 450);
         QCOMPARE(reloaded.autoHistoryMode, AutoHistoryMode::Never);
+    }
+
+    void restrictedScopeIntersectsPolicyAndIdentityBindingFailsClosed()
+    {
+        using namespace ClipboardPolicy;
+        Policy policy;
+        policy.autoOnlineEnabled = true;
+        policy.autoOnlineAllowedProviderIds = {QStringLiteral("testonline")};
+        policy.autoAcknowledgedOnlineProviderIds = {QStringLiteral("testonline")};
+        policy.autoOnlineAllowedProviderTokens = {providerIdentityToken(QStringLiteral("testonline"))};
+        policy.autoAcknowledgedOnlineProviderTokens = {providerIdentityToken(QStringLiteral("testonline"))};
+
+        QVERIFY(policy.permitsAutoOnlineProvider(QStringLiteral("testonline"),
+                                                 providerIdentityToken(QStringLiteral("testonline")),
+                                                 {QStringLiteral("topic:general")}));
+        // Scripted replacement or fingerprint change with the same ID must fail closed.
+        QVERIFY(!policy.permitsAutoOnlineProvider(QStringLiteral("testonline"),
+                                                  providerIdentityToken(QStringLiteral("testonline"), QStringLiteral("abc123")),
+                                                  {QStringLiteral("topic:general")}));
+        // Legacy ID-only approval must never silently approve a scripted override.
+        Policy legacyPolicy;
+        legacyPolicy.autoOnlineEnabled = true;
+        legacyPolicy.autoOnlineAllowedProviderIds = {QStringLiteral("testonline")};
+        legacyPolicy.autoAcknowledgedOnlineProviderIds = {QStringLiteral("testonline")};
+        QVERIFY(legacyPolicy.permitsAutoOnlineProvider(QStringLiteral("testonline"),
+                                                       providerIdentityToken(QStringLiteral("testonline")),
+                                                       {}));
+        QVERIFY(!legacyPolicy.permitsAutoOnlineProvider(QStringLiteral("testonline"),
+                                                        providerIdentityToken(QStringLiteral("testonline"), QStringLiteral("deadbeef")),
+                                                        {}));
+    }
+
+    void restrictedAutomaticLookupCannotBypassPolicyAndProcessClipboardRespectsLimits()
+    {
+        using namespace ClipboardPolicy;
+        MainWindow window;
+        KConfigGroup group(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("General"));
+        Policy policy;
+        policy.capture = Capture::Visible;
+        policy.autoLookupEnabled = true;
+        policy.autoOnlineEnabled = false;
+        policy.autoMaxChars = 25;
+        policy.autoMaxWords = 3;
+        write(group, policy);
+        group.sync();
+
+        auto *tabs = window.findChild<QTabWidget *>();
+        QVERIFY(tabs);
+        const int before = tabs->count();
+
+        // Direct processClipboardText(..., true) must still enforce automatic max chars/words limits.
+        window.processClipboardText(QStringLiteral("one two three four"), true);
+        QCOMPARE(tabs->count(), before);
+
+        window.processClipboardText(QString(30, QLatin1Char('a')), true);
+        QCOMPARE(tabs->count(), before);
+
+        // Passing an arbitrary restricted scope must intersect with policy (unapproved online sources excluded).
+        auto *onlineMock = new QObject();
+        ProviderClassification onlineCls;
+        onlineCls.facets = {QStringLiteral("topic:general")};
+        delete onlineMock;
+        struct LocalOnlineMock : public SearchProvider {
+            int searches = 0;
+            using SearchProvider::SearchProvider;
+            QString name() const override { return QStringLiteral("Unapproved Online"); }
+            QString id() const override { return QStringLiteral("unapproved_online"); }
+            void search(const QString &) override { ++searches; emit searchCompleted(id(), {}); }
+            SearchProvider *clone(QObject *parent = nullptr) const override {
+                auto *c = new LocalOnlineMock(parent);
+                connect(c, &SearchProvider::searchCompleted, this, [this]() { const_cast<LocalOnlineMock *>(this)->searches++; });
+                return c;
+            }
+        };
+        auto *prov = new LocalOnlineMock(&window);
+        prov->setClassification(onlineCls);
+        prov->setEnabled(true);
+        window.m_providers.append(prov);
+        const int beforeAuto = tabs->count();
+        window.performAutomaticLookup(QStringLiteral("scoped bypass attempt"), QueryScope::only({QStringLiteral("unapproved_online")}));
+        QCoreApplication::processEvents();
+        QCOMPARE(tabs->count(), beforeAuto + 1);
+        QCOMPARE(prov->searches, 0);
+
+        const QueryScope policyScope = window.automaticLookupScopeForPolicy(policy);
+        QVERIFY(!policyScope.includes(QStringLiteral("unapproved_online")));
+    }
+
+    void localdocsOverrideRemovalAndFallbackRestoreVerifiedLocalStatus()
+    {
+        QTemporaryDir tempPkgDir;
+        QVERIFY(tempPkgDir.isValid());
+        const QString overrideDir = tempPkgDir.path() + QStringLiteral("/localdocs");
+        QVERIFY(QDir().mkpath(overrideDir));
+
+        {
+            QFile mf(overrideDir + QStringLiteral("/provider.json"));
+            QVERIFY(mf.open(QIODevice::WriteOnly));
+            mf.write("{\"apiVersion\":2,\"id\":\"localdocs\",\"name\":\"Fake Override\",\"version\":\"1.0.0\",\"runtime\":\"javascript\",\"entry\":\"main.mjs\",\"classification\":{\"version\":\"1.0.0\",\"facets\":[\"topic:general\"]}}\n");
+        }
+        {
+            QFile js(overrideDir + QStringLiteral("/main.mjs"));
+            QVERIFY(js.open(QIODevice::WriteOnly));
+            js.write("module.exports = { search: function() { return []; } };\n");
+        }
+
+        const QString builtLocaldocs = QDir(QCoreApplication::applicationDirPath())
+                                           .absoluteFilePath(QStringLiteral("../src/providers/provider_localdocs.so"));
+        if (!QFileInfo::exists(builtLocaldocs))
+            QSKIP("Built-in localdocs plugin not present in build test layout");
+
+        QTemporaryDir fakeLibRoot;
+        QVERIFY(fakeLibRoot.isValid());
+        const QString builtinSubdir = fakeLibRoot.filePath(QStringLiteral("klookup/providers"));
+        QVERIFY(QDir().mkpath(builtinSubdir));
+        QVERIFY(QFile::copy(builtLocaldocs, builtinSubdir + QStringLiteral("/provider_localdocs.so")));
+        QCoreApplication::addLibraryPath(fakeLibRoot.path());
+
+        KConfigGroup provGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
+        provGroup.writeEntry(QStringLiteral("localdocs_Enabled"), true);
+        provGroup.sync();
+
+        MainWindow window;
+        window.loadPlugins({}, {});
+        QVERIFY(window.provider(QStringLiteral("localdocs")) != nullptr);
+        QVERIFY(window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+
+        // Approve the override and reload -> scope:local must be revoked.
+        window.loadPlugins({tempPkgDir.path()}, {});
+        window.setPackageTrusted(QStringLiteral("localdocs"), true);
+        window.loadPlugins({tempPkgDir.path()}, {});
+        QVERIFY(!window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+        QVERIFY(window.fallbackProvider(QStringLiteral("localdocs")) != nullptr);
+
+        // Switching back to native fallback MUST restore verified local status and scope:local!
+        QVERIFY(window.switchToFallback(QStringLiteral("localdocs")));
+        QVERIFY(window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+        QVERIFY(window.provider(QStringLiteral("localdocs"))->classification().facets.contains(
+            QString::fromLatin1(ProviderClassification::LocalVirtualFacet)));
+
+        // Re-apply scripted override, then remove package completely and reload -> must also restore!
+        window.loadPlugins({tempPkgDir.path()}, {});
+        QVERIFY(!window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+        QVERIFY(QDir(overrideDir).removeRecursively());
+        window.loadPlugins({tempPkgDir.path()}, {});
+        QVERIFY(window.isVerifiedLocalProvider(QStringLiteral("localdocs")));
+        QVERIFY(window.provider(QStringLiteral("localdocs"))->classification().facets.contains(
+            QString::fromLatin1(ProviderClassification::LocalVirtualFacet)));
+
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->deleteGroup(QStringLiteral("Providers"));
+        KSharedConfig::openConfig(QStringLiteral("klookuprc"))->sync();
+        QCoreApplication::removeLibraryPath(fakeLibRoot.path());
     }
 };
 

@@ -28,12 +28,17 @@ struct Policy {
     QStringList autoOnlineAllowedFacets;
     QStringList autoOnlineAllowedProviderIds;
     QStringList autoAcknowledgedOnlineProviderIds;
+    QStringList autoOnlineAllowedProviderTokens;
+    QStringList autoAcknowledgedOnlineProviderTokens;
 
     bool permitsCapture(bool visible, bool focused) const;
     bool permitsAutomaticLookup(bool hasVisibleWindow, bool focused) const;
     bool permitsAutoOnlineProvider(const QString &providerId, const QStringList &facets) const;
+    bool permitsAutoOnlineProvider(const QString &providerId, const QString &identityToken, const QStringList &facets) const;
     bool searchesOn(Event event) const;
 };
+constexpr const char *ProviderIdentityTokenProperty = "klookupProviderIdentityToken";
+QString providerIdentityToken(const QString &providerId, const QString &scriptApprovalFingerprint = {});
 Policy read(const KConfigGroup &group);
 void write(KConfigGroup &group, const Policy &policy);
 void migrate(KConfigGroup &group);

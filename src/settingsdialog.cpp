@@ -339,10 +339,14 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     for (SearchProvider *provider : m_providers) {
         if (!provider || provider->classification().facets.contains(QString::fromLatin1(ProviderClassification::LocalVirtualFacet)))
             continue;
+        QString token = provider->property(ClipboardPolicy::ProviderIdentityTokenProperty).toString();
+        if (token.isEmpty())
+            token = ClipboardPolicy::providerIdentityToken(provider->id());
         auto *item = new QListWidgetItem(provider->name() + QStringLiteral(" (") + provider->id() + QStringLiteral(")"), m_autoOnlineProviders);
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(Qt::Unchecked);
         item->setData(Qt::UserRole, provider->id());
+        item->setData(Qt::UserRole + 1, token);
     }
     generalLayout->addWidget(m_autoOnlineEnabled);
     generalLayout->addWidget(m_autoOnlineProviders);
@@ -391,13 +395,27 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     m_autoHistoryMode->setCurrentIndex(int(policy.autoHistoryMode));
     m_autoOnlineEnabled->setChecked(policy.autoOnlineEnabled);
     m_autoOnlineProviders->setEnabled(policy.autoOnlineEnabled);
+    ClipboardPolicy::Policy previewPolicy = policy;
+    previewPolicy.autoOnlineEnabled = true;
     for (int i = 0; i < m_autoOnlineProviders->count(); ++i) {
         auto *item = m_autoOnlineProviders->item(i);
         const QString id = item->data(Qt::UserRole).toString();
-        const bool approved = policy.autoOnlineAllowedProviderIds.contains(id) &&
-                              policy.autoAcknowledgedOnlineProviderIds.contains(id);
+        const QString token = item->data(Qt::UserRole + 1).toString();
+        const bool approved = previewPolicy.permitsAutoOnlineProvider(id, token, {});
         item->setCheckState(approved ? Qt::Checked : Qt::Unchecked);
     }
+    connect(m_autoLookupEnabled, &QCheckBox::toggled, this, [this](bool checked) {
+        if (checked && m_captureMode->currentIndex() == int(ClipboardPolicy::Capture::Never)) {
+            const QSignalBlocker blocker(m_captureMode);
+            m_captureMode->setCurrentIndex(int(ClipboardPolicy::Capture::Visible));
+        }
+    });
+    connect(m_captureMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        if (index == int(ClipboardPolicy::Capture::Never) && m_autoLookupEnabled->isChecked()) {
+            const QSignalBlocker blocker(m_autoLookupEnabled);
+            m_autoLookupEnabled->setChecked(false);
+        }
+    });
     m_showRecent->setChecked(genGroup.readEntry(QStringLiteral("ShowRecentActivity"), true));
     m_recordClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("RecordClipboardActivity"), false));
     m_persistClipboardRecent->setChecked(genGroup.readEntry(QStringLiteral("PersistClipboardActivity"), false));
@@ -578,16 +596,27 @@ void SettingsDialog::saveSettings()
     policy.autoOnlineEnabled = m_autoOnlineEnabled->isChecked();
     QStringList selectedOnline;
     QStringList acknowledgedOnline;
+    QStringList selectedTokens;
+    QStringList acknowledgedTokens;
     for (int i = 0; i < m_autoOnlineProviders->count(); ++i) {
         auto *item = m_autoOnlineProviders->item(i);
         const QString id = item->data(Qt::UserRole).toString();
+        const QString token = item->data(Qt::UserRole + 1).toString();
         acknowledgedOnline.append(id);
-        if (item->checkState() == Qt::Checked)
+        if (!token.isEmpty())
+            acknowledgedTokens.append(token);
+        if (item->checkState() == Qt::Checked) {
             selectedOnline.append(id);
+            if (!token.isEmpty())
+                selectedTokens.append(token);
+        }
     }
     policy.autoOnlineAllowedProviderIds = selectedOnline;
-    if (policy.autoOnlineEnabled)
+    policy.autoOnlineAllowedProviderTokens = selectedTokens;
+    if (policy.autoOnlineEnabled) {
         policy.autoAcknowledgedOnlineProviderIds = acknowledgedOnline;
+        policy.autoAcknowledgedOnlineProviderTokens = acknowledgedTokens;
+    }
     ClipboardPolicy::write(genGroup, policy);
     config->sync();
     if (m_autostartManager) {

@@ -105,6 +105,8 @@ private:
     bool hasVisibleKLookupWindow() const;
     void handleClipboardEvent(ClipboardPolicy::Event event);
     void dispatchPendingAutoLookup();
+    void restoreVerifiedLocalStatus(SearchProvider *provider);
+    static QString providerIdentityTokenForProvider(const SearchProvider *provider);
 
     QTabWidget *m_tabWidget;
     SearchDashboard *m_dashboard;
@@ -116,6 +118,7 @@ private:
     QHash<QString, SearchProvider *> m_fallbackProviders;
     QList<SearchProvider *> m_scriptedAdapters;
     QList<ProviderPackageStatus> m_packages;
+    QSet<QString> m_verifiedBuiltinNativeLocalIds;
     QSet<QString> m_verifiedLocalProviderIds;
     QStringList m_customPackagePaths;
     QStringList m_customPluginPaths;
@@ -146,6 +149,7 @@ protected:
     virtual void readWalletPasswordAndSet(SearchProvider *provider);
 
     friend class MainWindowTest;
+    friend class ClipboardCaptureAndShortcutsTest;
 };
 
 #endif // MAINWINDOW_H

@@ -15,6 +15,8 @@ class QTextBrowser;
 class QTreeWidget;
 class SourceLink;
 class QSplitter;
+class QStackedWidget;
+class MangaBakaExperimentalWidget;
 
 class ResultDetailWindow : public QMainWindow
 {
@@ -59,7 +61,9 @@ private:
     ResultMetadata m_metadata;
     ResultContent m_content;
     QSplitter *m_splitter = nullptr;
+    QStackedWidget *m_summaryStack = nullptr;
     QTextBrowser *m_detailsView = nullptr;
+    MangaBakaExperimentalWidget *m_experimentalView = nullptr;
     QTreeWidget *m_metadataView = nullptr;
     SourceLink *m_sourceLink = nullptr;
 };

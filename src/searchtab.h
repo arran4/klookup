@@ -21,6 +21,7 @@ class QMenu;
 class ResultDetailWindow;
 class QSplitter;
 class QStackedWidget;
+class MangaBakaExperimentalWidget;
 
 class FlowLayout;
 
@@ -136,7 +137,9 @@ private:
     QWidget *m_detailContainer = nullptr;
 
     QTreeWidget *m_resultsTree;
+    QStackedWidget *m_summaryStack = nullptr;
     QTextBrowser *m_detailsView;
+    MangaBakaExperimentalWidget *m_mangaBakaExperimentalView = nullptr;
     QTreeWidget *m_metadataView;
     SourceLink *m_sourceLink;
     QPushButton *m_detailsButton;

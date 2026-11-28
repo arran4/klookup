@@ -19,6 +19,9 @@ include(KDECMakeSettings)
 include(KDECompilerSettings NO_POLICY_SCOPE)
 include(FeatureSummary)
 
+set(KLOOKUP_ENABLE_QML_MANGABAKA "AUTO" CACHE STRING "Enable host-controlled QML presentation for MangaBaka Experimental (AUTO, ON, OFF)")
+set_property(CACHE KLOOKUP_ENABLE_QML_MANGABAKA PROPERTY STRINGS AUTO ON OFF)
+
 find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     Core
     Gui
@@ -27,6 +30,21 @@ find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS
     DBus
     Qml
 )
+
+string(TOUPPER "${KLOOKUP_ENABLE_QML_MANGABAKA}" _KLOOKUP_QML_MANGABAKA_MODE)
+set(KLOOKUP_HAS_QML_MANGABAKA OFF)
+if(_KLOOKUP_QML_MANGABAKA_MODE STREQUAL "ON")
+    find_package(Qt6 ${QT_MIN_VERSION} REQUIRED COMPONENTS Quick QuickWidgets)
+    set(KLOOKUP_HAS_QML_MANGABAKA ON)
+elseif(_KLOOKUP_QML_MANGABAKA_MODE STREQUAL "AUTO")
+    find_package(Qt6 ${QT_MIN_VERSION} QUIET COMPONENTS Quick QuickWidgets)
+    if(Qt6Quick_FOUND AND Qt6QuickWidgets_FOUND)
+        set(KLOOKUP_HAS_QML_MANGABAKA ON)
+    endif()
+elseif(NOT _KLOOKUP_QML_MANGABAKA_MODE STREQUAL "OFF")
+    message(FATAL_ERROR "Invalid KLOOKUP_ENABLE_QML_MANGABAKA='${KLOOKUP_ENABLE_QML_MANGABAKA}' (expected AUTO, ON, or OFF)")
+endif()
+add_feature_info(QMLMangaBaka KLOOKUP_HAS_QML_MANGABAKA "Host-controlled QML presentation for MangaBaka Experimental (-DKLOOKUP_ENABLE_QML_MANGABAKA=AUTO|ON|OFF)")
 
 find_package(KF6 REQUIRED COMPONENTS
     CoreAddons
@@ -73,6 +91,7 @@ set(KLOOKUP_PROVIDERS
     provider_myanimelist
     provider_mangadex
     provider_mangabaka
+    provider_mangabaka_experimental
     provider_spotify
     provider_localdocs
 )

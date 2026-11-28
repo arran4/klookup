@@ -22,6 +22,7 @@ ProviderClassification ProviderClassification::builtin(const QString &id)
         {QStringLiteral("mangaupdates"), {QStringLiteral("topic:manga")}},
         {QStringLiteral("mangadex"), {QStringLiteral("topic:manga")}},
         {QStringLiteral("mangabaka"), {QStringLiteral("topic:manga")}},
+        {QStringLiteral("mangabaka_experimental"), {QStringLiteral("topic:manga")}},
         {QStringLiteral("openlibrary"), {QStringLiteral("topic:books")}},
         {QStringLiteral("spotify"), {QStringLiteral("topic:music"), QStringLiteral("topic:podcasts"), QStringLiteral("topic:audiobooks")}},
         {QStringLiteral("lyrics_ovh"), {QStringLiteral("topic:music"), QStringLiteral("topic:lyrics")}},

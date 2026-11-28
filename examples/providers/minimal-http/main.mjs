@@ -72,9 +72,7 @@ function getContent(resultId, contentToken) {
     });
 }
 
-export { search, getPage, getDetails, getContent };
-
-export function selfTest(fixture) {
+function selfTest(fixture) {
     if (!fixture || !fixture.search) {
         throw new Error("Missing diagnostic search fixture");
     }
@@ -83,3 +81,11 @@ export function selfTest(fixture) {
         passed: mapped.length === 1 && mapped[0].id === "ex-1" && mapped[0].title === "Minimal Example Entry"
     };
 }
+
+module.exports = {
+    search: search,
+    getPage: getPage,
+    getDetails: getDetails,
+    getContent: getContent,
+    selfTest: selfTest
+};

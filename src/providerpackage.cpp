@@ -468,7 +468,7 @@ QList<ProviderPackage> ProviderPackageDiscovery::discoverPackages(
         if (!dir.exists())
             return;
 
-        // Include symlinked package directories when scanning dotfiles-managed roots.
+        // Include symlinked package directories when scanning user-configured roots.
         const auto entries = dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Readable, QDir::Name);
         for (const auto &info : entries) {
             const QString pkgDir = info.absoluteFilePath();
@@ -496,7 +496,7 @@ QList<ProviderPackage> ProviderPackageDiscovery::discoverPackages(
         if (!normal) scanDir(p, ProviderPackage::LocationType::Custom, QString(), ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks);
     }
 
-    // Configured user/dotfiles provider directories in explicit precedence order.
+    // Configured user provider directories in explicit precedence order.
     for (const auto &cfg : configuredDirs) {
         if (!cfg.enabled || cfg.path.trimmed().isEmpty())
             continue;

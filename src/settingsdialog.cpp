@@ -206,7 +206,7 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
     for (auto *b : {approve, revoke, retry}) packageButtons->addWidget(b, packageButtonIndex / 2, packageButtonIndex % 2), ++packageButtonIndex;
     packageDetailsLayout->addLayout(packageButtons);
 
-    auto *dirGroupLabel = new QLabel(QStringLiteral("Configured dotfiles / user provider directories (manual rescan only):"), packagePage);
+    auto *dirGroupLabel = new QLabel(QStringLiteral("Configured user provider directories (manual rescan only):"), packagePage);
     packageDetailsLayout->addWidget(dirGroupLabel);
     m_providerDirectoriesList = new QListWidget(packagePage);
     m_providerDirectoriesList->setObjectName(QStringLiteral("providerDirectoriesList"));
@@ -249,8 +249,8 @@ SettingsDialog::SettingsDialog(const QList<SearchProvider*> &providers, QWidget 
             return;
         bool ok = false;
         const QString label = QInputDialog::getText(this, QStringLiteral("Provenance label"),
-                                                    QStringLiteral("Optional provenance label (e.g. Dotfiles / Nix):"),
-                                                    QLineEdit::Normal, QStringLiteral("Dotfiles"), &ok);
+                                                    QStringLiteral("Optional provenance label (e.g. User / Dotfiles / Nix):"),
+                                                    QLineEdit::Normal, QStringLiteral("User"), &ok);
         ConfiguredProviderDirectory entry{dirPath, ok ? label.trimmed() : QString(), true};
         m_providerDirectories.append(entry);
         const QString displayLabel = entry.label.isEmpty() ? QStringLiteral("User directory") : entry.label;
@@ -655,7 +655,6 @@ void SettingsDialog::saveSettings()
     genGroup.writeEntry(QStringLiteral("RecordClipboardActivity"), m_recordClipboardRecent->isChecked());
     genGroup.writeEntry(QStringLiteral("PersistClipboardActivity"),
                         m_recordClipboardRecent->isChecked() && m_persistClipboardRecent->isChecked());
-<<<<<<< HEAD
     ClipboardPolicy::Policy policy = ClipboardPolicy::read(genGroup);
     policy.capture = ClipboardPolicy::Capture(m_captureMode->currentIndex());
     policy.trigger = ClipboardPolicy::Trigger(m_searchTrigger->currentIndex());

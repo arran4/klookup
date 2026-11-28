@@ -5,6 +5,7 @@
 #include "../src/mainwindow.h"
 #include "../src/providerhostservice.h"
 #include "../src/providerpackage.h"
+#include "../src/searchtab.h"
 #include "../src/settingsdialog.h"
 #include <KConfig>
 #include <KConfigGroup>
@@ -16,11 +17,13 @@
 #include <QFileInfo>
 #include <QListWidget>
 #include <QPushButton>
+#include <QSignalSpy>
 #include <QStandardPaths>
+#include <QTabWidget>
 #include <QTemporaryDir>
 #include <QtTest>
 
-class DotfilesProvidersTest : public QObject
+class UserProvidersTest : public QObject
 {
     Q_OBJECT
 
@@ -51,16 +54,17 @@ private slots:
         KSharedConfig::openConfig(QStringLiteral("klookuprc"))->sync();
     }
 
-    void directoryAndGnuStowFileSymlinksAndTargetInvalidation()
+    void directoryAndStowFileSymlinksAndTargetInvalidation()
     {
         QTemporaryDir root;
         QVERIFY(root.isValid());
 
-        // Real dotfiles repository (must remain unmodified).
-        const QString dotfilesRepo = root.filePath(QStringLiteral("dotfiles/providers"));
-        const QString stowDir = dotfilesRepo + QStringLiteral("/stow_prov");
+        // External user provider source tree (must remain unmodified).
+        const QString sourceRepo = root.filePath(QStringLiteral("user_source/providers"));
+        const QString stowDir = sourceRepo + QStringLiteral("/stow_prov");
         writeTextFile(stowDir + QStringLiteral("/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"stow_prov\",\n"
                       "  \"name\": \"Stow Provider\",\n"
                       "  \"version\": \"1.0.0\",\n"
@@ -69,21 +73,22 @@ private slots:
                       "  \"permissions\": { \"origins\": [\"api.example.invalid\"] }\n"
                       "}\n");
         writeTextFile(stowDir + QStringLiteral("/main.mjs"),
-                      "export function search() { return []; }\n");
-        writeTextFile(dotfilesRepo + QStringLiteral("/main_alt.mjs"),
-                      "export function search() { return [{id:'2', title:'Updated'}]; }\n");
+                      "module.exports = { search: function() { return []; } };\n");
+        writeTextFile(sourceRepo + QStringLiteral("/main_alt.mjs"),
+                      "module.exports = { search: function() { return [{id:'2', title:'Updated'}]; } };\n");
 
-        // Stow-style regular-file symlinks in a configured provider root.
+        // Stow-style regular-file symlinks in a configured user provider root.
         const QString configuredRoot = root.filePath(QStringLiteral("configured/providers"));
         const QString stowedPkgDir = configuredRoot + QStringLiteral("/stow_prov");
         QVERIFY(QDir().mkpath(stowedPkgDir));
         QVERIFY(QFile::link(stowDir + QStringLiteral("/provider.json"), stowedPkgDir + QStringLiteral("/provider.json")));
         QVERIFY(QFile::link(stowDir + QStringLiteral("/main.mjs"), stowedPkgDir + QStringLiteral("/main.mjs")));
 
-        // Directory-level symlink into dotfiles repository.
-        const QString dirTarget = dotfilesRepo + QStringLiteral("/dir_prov");
+        // Directory-level symlink into external user provider repository.
+        const QString dirTarget = sourceRepo + QStringLiteral("/dir_prov");
         writeTextFile(dirTarget + QStringLiteral("/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"dir_prov\",\n"
                       "  \"name\": \"Dir Symlink Provider\",\n"
                       "  \"version\": \"1.0.0\",\n"
@@ -91,7 +96,7 @@ private slots:
                       "  \"entry\": \"main.mjs\"\n"
                       "}\n");
         writeTextFile(dirTarget + QStringLiteral("/main.mjs"),
-                      "export function search() { return []; }\n");
+                      "module.exports = { search: function() { return []; } };\n");
         QVERIFY(QFile::link(dirTarget, configuredRoot + QStringLiteral("/dir_prov")));
 
         const QList<ConfiguredProviderDirectory> dirs{{configuredRoot, QStringLiteral("Dotfiles"), true}};
@@ -104,7 +109,7 @@ private slots:
         QCOMPARE(stowPkg.provenanceLabel(), QStringLiteral("Dotfiles"));
         QCOMPARE(stowPkg.displayPath(), stowedPkgDir);
 
-        // Dotfiles providers must NEVER receive provenance-based auto-trust exemption.
+        // User-provided packages must NEVER receive provenance-based auto-trust exemption.
         KConfigGroup providersGroup(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Providers"));
         QVERIFY(!stowPkg.approved(providersGroup));
         stowPkg.saveApproval(providersGroup, true);
@@ -112,14 +117,14 @@ private slots:
 
         // Retargeting a symlink inside the package invalidates prior approval.
         QVERIFY(QFile::remove(stowedPkgDir + QStringLiteral("/main.mjs")));
-        QVERIFY(QFile::link(dotfilesRepo + QStringLiteral("/main_alt.mjs"), stowedPkgDir + QStringLiteral("/main.mjs")));
+        QVERIFY(QFile::link(sourceRepo + QStringLiteral("/main_alt.mjs"), stowedPkgDir + QStringLiteral("/main.mjs")));
         const auto reloaded = ProviderPackageDiscovery::discoverPackages(dirs);
         const ProviderPackage &reloadedStow = reloaded[0].id() == QLatin1String("stow_prov") ? reloaded[0] : reloaded[1];
         QVERIFY(reloadedStow.isValid());
         QVERIFY(reloadedStow.approvalFingerprint() != stowPkg.approvalFingerprint());
         QVERIFY(!reloadedStow.approved(providersGroup));
 
-        // External dotfiles repository files were never modified or deleted.
+        // External source files were never modified or deleted.
         QVERIFY(QFileInfo::exists(stowDir + QStringLiteral("/main.mjs")));
         QVERIFY(QFileInfo::exists(dirTarget + QStringLiteral("/main.mjs")));
     }
@@ -133,6 +138,7 @@ private slots:
         QVERIFY(QDir().mkpath(badDir));
         writeTextFile(badDir + QStringLiteral("/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"bad_broken\",\n"
                       "  \"name\": \"Broken Link Provider\",\n"
                       "  \"version\": \"1.0.0\",\n"
@@ -147,13 +153,14 @@ private slots:
         QVERIFY(QDir().mkpath(loopDir));
         writeTextFile(loopDir + QStringLiteral("/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"bad_loop\",\n"
                       "  \"name\": \"Internal Dir Loop\",\n"
                       "  \"version\": \"1.0.0\",\n"
                       "  \"runtime\": \"javascript\",\n"
                       "  \"entry\": \"main.mjs\"\n"
                       "}\n");
-        writeTextFile(loopDir + QStringLiteral("/main.mjs"), "export function search() { return []; }\n");
+        writeTextFile(loopDir + QStringLiteral("/main.mjs"), "module.exports = { search: function() { return []; } };\n");
         QVERIFY(QFile::link(loopDir, loopDir + QStringLiteral("/nested_loop")));
         const auto loopPkg = ProviderPackage::fromDirectory(loopDir, ProviderPackage::LocationType::Custom,
                                                             ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks);
@@ -164,13 +171,14 @@ private slots:
         QVERIFY(QDir().mkpath(etcDir));
         writeTextFile(etcDir + QStringLiteral("/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"bad_etc\",\n"
                       "  \"name\": \"Etc Link\",\n"
                       "  \"version\": \"1.0.0\",\n"
                       "  \"runtime\": \"javascript\",\n"
                       "  \"entry\": \"main.mjs\"\n"
                       "}\n");
-        writeTextFile(etcDir + QStringLiteral("/main.mjs"), "export function search() { return []; }\n");
+        writeTextFile(etcDir + QStringLiteral("/main.mjs"), "module.exports = { search: function() { return []; } };\n");
         QVERIFY(QFile::link(QStringLiteral("/etc/passwd"), etcDir + QStringLiteral("/secret.txt")));
         QVERIFY(!ProviderPackage::fromDirectory(etcDir, ProviderPackage::LocationType::Custom,
                                                 ProviderPackage::SymlinkPolicy::AllowSafeFileSymlinks).isValid());
@@ -181,13 +189,14 @@ private slots:
         for (const QString &base : {highDir, lowDir}) {
             writeTextFile(base + QStringLiteral("/dup/provider.json"),
                           "{\n"
+                          "  \"apiVersion\": 2,\n"
                           "  \"id\": \"dup\",\n"
                           "  \"name\": \"Duplicate Provider\",\n"
                           "  \"version\": \"1.0.0\",\n"
                           "  \"runtime\": \"javascript\",\n"
                           "  \"entry\": \"main.mjs\"\n"
                           "}\n");
-            writeTextFile(base + QStringLiteral("/dup/main.mjs"), "export function search() { return []; }\n");
+            writeTextFile(base + QStringLiteral("/dup/main.mjs"), "module.exports = { search: function() { return []; } };\n");
         }
 
         QList<ProviderPackage> shadowed;
@@ -202,28 +211,28 @@ private slots:
         QCOMPARE(shadowed.first().shadowedBy(), highDir + QStringLiteral("/dup"));
     }
 
-    void explicitRescanSettingsPersistenceAndMinimalExample()
+    void explicitRescanReplacementRemovalLifecycleAndMinimalExample()
     {
         QTemporaryDir root;
         QVERIFY(root.isValid());
-        const QString dotfilesDir = root.filePath(QStringLiteral("my_dotfiles"));
-        QVERIFY(QDir().mkpath(dotfilesDir));
+        const QString userDir = root.filePath(QStringLiteral("my_user_providers"));
+        QVERIFY(QDir().mkpath(userDir));
 
         KSharedConfig::Ptr cfg = KSharedConfig::openConfig(QStringLiteral("klookuprc"));
         KConfigGroup dirGroup(cfg, QStringLiteral("ProviderDirectories"));
         ProviderPackageDiscovery::writeConfiguredDirectories(
-            dirGroup, {{dotfilesDir, QStringLiteral("Personal Dotfiles"), true}});
+            dirGroup, {{userDir, QStringLiteral("Personal Providers"), true}});
 
         const auto loadedDirs = ProviderPackageDiscovery::readConfiguredDirectories(dirGroup);
         QCOMPARE(loadedDirs.size(), 1);
-        QCOMPARE(loadedDirs.first().label, QStringLiteral("Personal Dotfiles"));
+        QCOMPARE(loadedDirs.first().label, QStringLiteral("Personal Providers"));
 
         // Verify SettingsDialog displays configured directory + persists toggle without auto-watchers.
         SettingsDialog dialog({});
         auto *dirList = dialog.findChild<QListWidget *>(QStringLiteral("providerDirectoriesList"));
         QVERIFY(dirList);
         QCOMPARE(dirList->count(), 1);
-        QVERIFY(dirList->item(0)->text().contains(QStringLiteral("Personal Dotfiles")));
+        QVERIFY(dirList->item(0)->text().contains(QStringLiteral("Personal Providers")));
         dirList->item(0)->setCheckState(Qt::Unchecked);
         dialog.button(QDialogButtonBox::Apply)->click();
         QVERIFY(!ProviderPackageDiscovery::readConfiguredDirectories(dirGroup).first().enabled);
@@ -233,17 +242,17 @@ private slots:
         dialog.button(QDialogButtonBox::Apply)->click();
 
         MainWindow window;
-        writeTextFile(dotfilesDir + QStringLiteral("/added_later/provider.json"),
+        writeTextFile(userDir + QStringLiteral("/added_later/provider.json"),
                       "{\n"
+                      "  \"apiVersion\": 2,\n"
                       "  \"id\": \"added_later\",\n"
                       "  \"name\": \"Added Later\",\n"
                       "  \"version\": \"1.0.0\",\n"
                       "  \"runtime\": \"javascript\",\n"
                       "  \"entry\": \"main.mjs\"\n"
                       "}\n");
-        writeTextFile(dotfilesDir + QStringLiteral("/added_later/main.mjs"),
-                      "export function search() { return []; }\n");
-        // No filesystem watcher auto-loads it before explicit rescan.
+        writeTextFile(userDir + QStringLiteral("/added_later/main.mjs"),
+                      "module.exports = { search: function() { return [{id: '1', title: 'v1'}]; } };\n");
         bool foundBefore = false;
         for (const auto &status : window.packages()) {
             if (status.package.id() == QLatin1String("added_later"))
@@ -259,11 +268,28 @@ private slots:
         }
         QVERIFY(foundAfter);
 
-        // Minimal HTTP example provider loads and passes JsProvider selfTest.
+        // Approve, trigger a search, then replace & remove with explicit rescan -> in-flight reloads cleanly and removal is tracked.
+        window.setPackageTrusted(QStringLiteral("added_later"), true);
+        window.rescanProviders();
+        QVERIFY(window.provider(QStringLiteral("added_later")) != nullptr);
+
+        QSignalSpy reloadSpy(&window, &MainWindow::packageReloaded);
+        window.performSearch(QStringLiteral("user query"));
+        writeTextFile(userDir + QStringLiteral("/added_later/main.mjs"),
+                      "module.exports = { search: function() { return [{id: '2', title: 'v2'}]; } };\n");
+        window.rescanProviders();
+        QVERIFY(reloadSpy.count() >= 1);
+
+        QVERIFY(QDir(userDir + QStringLiteral("/added_later")).removeRecursively());
+        window.rescanProviders();
+        QVERIFY(window.provider(QStringLiteral("added_later")) == nullptr);
+
+        // Minimal HTTP example provider loads and passes Provider API v2 JsProvider evaluation.
         const QString exampleDir = QStringLiteral(PROJECT_SOURCE_DIR "/examples/providers/minimal-http");
         if (QFileInfo::exists(exampleDir + QStringLiteral("/provider.json"))) {
             const auto exPkg = ProviderPackage::fromDirectory(exampleDir, ProviderPackage::LocationType::Custom);
             QVERIFY2(exPkg.isValid(), qPrintable(exPkg.validationError()));
+            QCOMPARE(exPkg.manifest().apiVersion, 2);
             ProviderHost::ProviderHostService host(exPkg);
             ProviderPackage approvedPkg = exPkg;
             approvedPkg.setTrusted(true);
@@ -273,5 +299,5 @@ private slots:
     }
 };
 
-QTEST_MAIN(DotfilesProvidersTest)
-#include "test_dotfiles_providers.moc"
+QTEST_MAIN(UserProvidersTest)
+#include "test_user_providers.moc"

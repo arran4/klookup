@@ -3,17 +3,14 @@
 
 # Minimal HTTP Example Provider
 
-This directory provides a complete, self-contained template for a dotfiles-managed
-scripted KLookup provider.
+This directory provides a complete, self-contained **Provider API v2** template for a user-provided KLookup scripted provider.
 
 ## Files
 
-- `provider.json` — Provider manifest declaring metadata, classification facets, and explicit HTTPS origin allowlist (`api.example.invalid`).
-- `main.mjs` — Script implementation exporting `search`, `getPage`, `getDetails`, `getContent`, and `selfTest`.
-- `diagnostics.json` — Offline self-test fixture used by **Settings → Provider health → Offline fixtures**.
+- `provider.json` — Provider API v2 manifest (`"apiVersion": 2`) declaring metadata, classification facets, and explicit HTTPS origin allowlist (`api.example.invalid`).
+- `main.mjs` — Script implementation exporting `search`, `getPage`, `getDetails`, `getContent`, and `selfTest` via `module.exports`.
+- `diagnostics.json` — Offline self-test fixture used by `klookup-provider-check --provider example-minimal-http --offline` and **Settings → Provider health**.
 
-> **Note:** On `main` prior to PR #209 (`#204`), `main.mjs` uses static ESM exports (`export { ... }`). Once Provider API v2 (`#204`) lands, update exports to `module.exports = { ... }` for CommonJS evaluation.
+## Installing as a User Provider (Copy or Symlink / GNU Stow)
 
-## Symlink / GNU Stow Usage
-
-Copy or stow this folder into a configured directory in **Settings → Script packages → Configured dotfiles / user provider directories** (for example `~/.dotfiles/klookup/example-minimal-http` symlinked into `~/.config/klookup-providers`), then click **Apply and retry discovery** and review/approve the package.
+Copy or symlink/stow this directory into `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d/` or any directory configured in **Settings → Script packages → Configured user provider directories** (optional dotfiles tools such as GNU Stow, `chezmoi`, or Git checkouts work cleanly), then click **Apply and retry discovery** and review/approve the package.

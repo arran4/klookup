@@ -732,7 +732,7 @@ void MainWindow::loadPlugins(const QStringList &customPackagePaths, const QStrin
         }
     }
 
-    // 3. Discover and instantiate scripted provider packages (configured dotfiles, XDG, and custom paths)
+    // 3. Discover and instantiate scripted provider packages (configured user directories, XDG, and custom paths)
     m_customPackagePaths = customPackagePaths;
     m_customPluginPaths = customPluginPaths;
     KSharedConfig::Ptr config = KSharedConfig::openConfig(QStringLiteral("klookuprc"));

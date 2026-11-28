@@ -10,7 +10,7 @@ Find encyclopaedia articles, books, software projects, films, shows, music, anim
 
 KLookup is designed around **focused lookups**: rather than trying to become another browser or a full web search engine, it asks dedicated information sources for relevant results and presents them together.
 
-> **Project status:** KLookup can be built from source, but [v0.0.2](https://github.com/arran4/klookup/releases/tag/v0.0.2) is published, including a Linux amd64 release archive. Some features described under [Planned improvements](#planned-improvements) are **not yet implemented**.
+> **Project status:** [v0.1.1](https://github.com/arran4/klookup/releases/tag/v0.1.1) is published, including a Linux amd64 archive alongside source builds. See [Planned improvements](#planned-improvements) for future roadmap proposals.
 
 ## At a glance
 
@@ -34,7 +34,7 @@ KLookup is designed around **focused lookups**: rather than trying to become ano
 
 ## Screenshots — current interface (November 2026)
 
-These images were captured from **KLookup running on KDE Plasma 6** (November 2026). They document what the application looks like and does **today**, rather than illustrating proposed features. The user interface will continue to evolve as work on [resizable panes](https://github.com/arran4/klookup/issues/136), [results presentation](https://github.com/arran4/klookup/issues/134) and [settings layout](https://github.com/arran4/klookup/issues/137) progresses.
+These images depict **KLookup running on KDE Plasma 6** (November 2026) and show the core interface layout (tabs, provider-grouped results, resizable panes, script package approval, diagnostics, shortcuts, and recent activity).
 
 ### Search results and source details
 
@@ -112,7 +112,7 @@ KLookup can restore query tabs between application sessions. Result history, aut
 
 ### Look up a term while writing or reading
 
-Search a subject in **Wikipedia** and examine related entries. If you only need a short answer, **DuckDuckGo's Instant Answer API** may have a relevant match. KLookup is not currently an offline dictionary and **does not yet pop up definitions merely because you highlight a word**; that is a planned StarDict-inspired workflow.
+Search a subject in **Wikipedia** or your configured **Local Documentation** directories, or use **DuckDuckGo's Instant Answer API** for short definitions. You can also opt in to automatic clipboard/selection lookups when KLookup is visible (scoped to verified local sources unless you explicitly approve specific online providers in **Settings → General**).
 
 ### Compare books and media catalogues
 
@@ -132,10 +132,11 @@ Find catalogue information through **Spotify** (after connecting it) or find son
 
 ## Search providers
 
-After the selective JavaScript provider batch, KLookup ships **15 lookup providers**: **10 native C++ modules** and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Merge this README after the batch and its shared approval, lifecycle, transport and diagnostics PRs. Providers can be enabled or disabled independently. CheapShark is **off by default**: enable it in Settings → Script packages to include USD-priced PC-game deals. Explicit saved choices survive upgrades.
+KLookup ships **16 lookup providers**: **11 native C++ modules** (including **Local Documentation** for offline Markdown/HTML/plain-text scan roots) and **5 ECMAScript packages** (TVMaze, Lyrics.ovh, Open Library, AniList and CheapShark). Providers can be enabled or disabled independently via **Settings → Source selection**, **Settings → Providers**, or **Settings → Script packages**. CheapShark is **off by default** (USD-priced PC-game deals). Explicit saved choices survive upgrades.
 
 | Area | Provider | What it looks up | Access |
 | --- | --- | --- | --- |
+| Local files | Local Documentation (`localdocs`) | Plain text, Markdown, and rendered HTML files in configured directories | Offline (local) |
 | Knowledge | Wikipedia | Encyclopaedia entries and available article details | No account |
 | General | DuckDuckGo | Instant answers and supported related information | No account |
 | Development | GitHub | Repositories | Public search; token optional |
@@ -152,9 +153,9 @@ After the selective JavaScript provider batch, KLookup ships **15 lookup provide
 | Manga | MangaDex | Manga and related metadata | No account |
 | Manga/novels | MangaBaka | Supported series, types and detail records | No account |
 
-**Choosing sources:** Open **Settings → Providers** for native plugins and authentication, or **Settings → Script packages** to review package identity, source and permissions and approve/revoke/enable scripted sources. Disabled and failed packages remain visible; changing approved code or permissions requires review again. Providers are allowed to return different kinds of results. Some support pagination and deeper detail lookup, and some need credentials or may be subject to upstream service limits.
+**Choosing sources:** Open **Settings → Providers** for native plugins, local documentation scan directories, and authentication; **Settings → Script packages** to review package identity, permissions, and approve/revoke/enable scripted sources; or **Settings → Source selection** for facet-based policies. Disabled and failed packages remain visible; changing approved code or permissions requires review again.
 
-**Local sources are not included yet.** Proposed local providers only read already-rendered **Markdown, HTML or plain-text** documents. Native StarDict files, WordNet/dictd databases, roff man pages, Info node files and other specialised formats are outside the agreed scope. See [Planned improvements](#planned-improvements).
+For **Local Documentation (`localdocs`)**, only plain text (`.txt`), Markdown (`.md`/`.markdown`), and already-rendered HTML (`.html`/`.htm`) files inside explicitly configured scan roots are searched; binary/native formats such as StarDict, dictd, WordNet, roff man pages, `.info`, or `.qch`/`.dsidx` remain out of scope (see [Planned improvements](#planned-improvements)).
 
 ### What the results look like
 
@@ -238,30 +239,20 @@ KLookup can offer completion based on previous deliberate searches and show rece
 
 In **Settings → General**, you can choose whether recent activity is shown, and whether clipboard-derived entries may be recorded or kept between sessions.
 
-### Passive clipboard capture is optional
+### Passive clipboard capture and automatic lookup (opt-in)
 
-By default, **KLookup does not passively capture or automatically search the clipboard**. Its two settings serve different purposes:
+By default, **KLookup does not passively monitor the clipboard/selection or run automatic searches**. You can configure both independently in **Settings → General**:
 
 | Setting | Options | What it controls |
 | --- | --- | --- |
-| **Capture clipboard while** | Never, window visible, window focused, or while running | When KLookup is permitted to inspect clipboard text |
-| **Automatically search clipboard** | Never, opened from tray, clipboard changed, window gains focus, or global shortcut used | Which event may submit eligible captured text as a search |
+| **Automatic capture source** | Clipboard, Primary selection | Which desktop selection buffer is monitored when permitted |
+| **Capture clipboard while** | Never (default), window visible, window focused, or while running | When KLookup is permitted to inspect clipboard text |
+| **Automatically search clipboard** | Never (default), opened from tray, clipboard changed, window gains focus, or global shortcut used | Which event may run an automatic search |
+| **Enable automatic lookup when a KLookup window is visible** | Checkbox (off by default) | Runs debounced automatic searches into a reusable session-only tab while KLookup is open, honoring char/word limits |
 
-Simply permitting capture does **not** automatically enable searching. When automatic capture is enabled, content filtering rejects plain URL-only content, recognised email/path-like input and unsupported formats; deliberate searches (including the explicit clipboard command) are a separate action. A classifier cannot guarantee that arbitrary selected or copied text is safe to share.
+Automatic capture rejects URLs, email-like text, local file paths, password-manager secret hints, and multiline/binary input; eligible text runs only against verified local sources (such as `localdocs`) unless **Allow automatic online lookups** and specific online providers are explicitly enabled in Settings. See [Clipboard policy and privacy](docs/clipboard-policy.md) and [Recent activity](docs/recent-activity.md).
 
-Clipboard-derived recent activity recording and persistence are separately controlled and **off by default**. For implementation details and retention rules, see [Clipboard policy and privacy](docs/clipboard-policy.md) and [Recent activity](docs/recent-activity.md).
-
-### A future selected-text mode
-
-The StarDict-inspired workflow is to **highlight a word and get a small definition popup**, preferably from an installed local dictionary. This is **not implemented yet**. The proposed feature is **completely off by default**, even if ordinary search providers or clipboard settings are enabled. The planned model is:
-
-- A dedicated **user-configured hotkey**, unassigned and disabled until the user opts in to selected-text lookup.
-- Optional automatic popup behaviour with a **separate, explicit opt-in**; enabling the hotkey must not enable passive monitoring.
-- **Local sources by default**, including future dictionary, man-page and Info plugins; no selection-triggered search occurs until the feature is enabled. Selected text is not silently sent to an online provider.
-- Remote provider access only with **express, provider-scoped authorisation**.
-- A safe fallback if your desktop does not expose the selection in a supported way, especially under Wayland.
-
-The proposal is tracked in [issue #88](https://github.com/arran4/klookup/issues/88). It is separate from today's ordinary clipboard-search features.
+A standalone lightweight selection popup without an open KLookup window remains tracked as future desktop work under [#88](https://github.com/arran4/klookup/issues/88).
 
 ## Credentials, privacy and network access
 
@@ -281,35 +272,10 @@ See [provider authentication](docs/provider-authentication.md) for a deeper tech
 
 ## Planned improvements
 
-These are **roadmap items, not available features**:
+Specialized local document format proposals (already-rendered exports only; no native StarDict, dictd, WordNet, roff man-page, Info node, or SQLite docset parsers):
 
-| Proposal | Intended benefit | Tracking |
-| --- | --- | --- |
-| StarDict-style selection popup and new hotkey | Highlight a word, explicitly invoke (or opt into) a lightweight definition popup without switching contexts | [#88](https://github.com/arran4/klookup/issues/88) |
-| Local text-only dictionary sources | Search existing Markdown, HTML or text definitions without parsing StarDict, dictd or WordNet binary/native formats | [#86](https://github.com/arran4/klookup/issues/86) |
-| Local manual reference | Search **already-rendered** HTML/text/Markdown manual pages; no roff parser, automatic `man` invocation or compressed manuals | [#87](https://github.com/arran4/klookup/issues/87) |
-| Local GNU Info-derived documentation | Search **already-rendered** HTML/text exports, not native Info nodes, compressed `.info` files or Texinfo syntax | [#90](https://github.com/arran4/klookup/issues/90) |
-
-Why these matter: a desktop lookup tool is most useful when it can answer a small question immediately and, where possible, **locally**. The selection popup and local sources are part of that longer-term direction, rather than claims about KLookup's current capabilities.
-
-### Local documentation providers under consideration
-
-The proposed local providers share a deliberately narrow input contract: **only already-existing plain text (`.txt`), Markdown (`.md`/`.markdown`) and HTML (`.html`/`.htm`)**. There will be **no bespoke parsers or new parser dependencies** for alternate document formats, and no arbitrary external command execution. Users will be able to configure **multiple scan directories per source**, alongside safe discovery of conventional system documentation directories. A provider with no compatible files stays unavailable. Any separately approved fixed executable adapter would require an explicit opt-in and remain disabled by default.
-
-| Proposed local source | Supported subset | Issue |
-| --- | --- | --- |
-| KDE application manuals | Already-rendered text/HTML handbooks; no DocBook processing | [#92](https://github.com/arran4/klookup/issues/92) |
-| Zeal/Dash docsets | HTML/text document pages only; ignore the SQLite `docSet.dsidx` index | [#93](https://github.com/arran4/klookup/issues/93) |
-| Qt documentation | Existing HTML/text pages only; no `.qch`/`.qhc` support | [#94](https://github.com/arran4/klookup/issues/94) |
-| GTK-Doc/Devhelp | Already-rendered HTML/text; no `.devhelp2` XML index parsing | [#95](https://github.com/arran4/klookup/issues/95) |
-| Local tldr examples | Installed Markdown command pages; no downloads or CLI execution | [#96](https://github.com/arran4/klookup/issues/96) |
-| Installed package documentation | Text/HTML/Markdown documents, not package database queries, ebuild evaluation or USE flags | [#97](https://github.com/arran4/klookup/issues/97) |
-| User-configured documentation directories | Bounded, safe search across individually enabled scan roots | [#98](https://github.com/arran4/klookup/issues/98) |
-| Word-list suggestions | Ordinary plain-text word lists, not native Hunspell/Aspell dictionaries or full spell checking | [#99](https://github.com/arran4/klookup/issues/99) |
-
-The [shared local-provider contract (#91)](https://github.com/arran4/klookup/issues/91) defines format restrictions, path discovery, disabled/unavailable states and security limits for these proposals.
-
-**Important limitation:** Native StarDict dictionaries, GNU Info files, standard roff man pages, Qt Help collections and Devhelp indexes cannot be searched *directly* under this policy. KLookup would only find their already-rendered text or HTML equivalents, if available. This keeps implementation and dependency scope small, at the cost of some coverage and symbol/index precision.
+- User-configured plain-text / Markdown / HTML directories are **implemented in `localdocs`** ([#91](https://github.com/arran4/klookup/issues/91), [#98](https://github.com/arran4/klookup/issues/98)).
+- Additional specialized local source presets remain open for future work: offline text dictionaries ([#86](https://github.com/arran4/klookup/issues/86)), pre-rendered man pages ([#87](https://github.com/arran4/klookup/issues/87)), Info HTML/text exports ([#90](https://github.com/arran4/klookup/issues/90)), KDE handbooks ([#92](https://github.com/arran4/klookup/issues/92)), Zeal/Dash HTML ([#93](https://github.com/arran4/klookup/issues/93)), Qt HTML docs ([#94](https://github.com/arran4/klookup/issues/94)), GTK-Doc/Devhelp HTML ([#95](https://github.com/arran4/klookup/issues/95)), tldr Markdown ([#96](https://github.com/arran4/klookup/issues/96)), package descriptions ([#97](https://github.com/arran4/klookup/issues/97)), and text word-list spelling suggestions ([#99](https://github.com/arran4/klookup/issues/99)).
 
 ## Troubleshooting
 
@@ -319,11 +285,11 @@ The [shared local-provider contract (#91)](https://github.com/arran4/klookup/iss
 
 **A shortcut does not work.** Shortcuts have no assigned keys by default. Check Plasma's shortcut configuration, conflicts and whether the running desktop supports global activation.
 
-**Clipboard searches do nothing.** Passive capture and automatic triggering are distinct settings and are both disabled by default. The explicit clipboard command uses a different path from automatic capture.
+**Clipboard searches do nothing.** Passive capture, automatic triggering, and **Enable automatic lookup when a KLookup window is visible** are off by default, and automatic lookups target verified local sources (`localdocs`) unless specific online providers are explicitly allowed.
 
 **Authentication stops working after restart.** Saved credentials are not automatically restored through a surprise wallet prompt. Open provider settings and explicitly restore/reconnect. The upstream provider may also require fresh authorisation.
 
-**I want dictionary definitions without internet access.** No dedicated offline dictionary, local man-page or GNU Info provider is currently included. Follow [#86](https://github.com/arran4/klookup/issues/86), [#87](https://github.com/arran4/klookup/issues/87) and [#90](https://github.com/arran4/klookup/issues/90).
+**Local Documentation returns nothing.** Add one or more readable local directories containing `.txt`, `.md`/`.markdown`, or `.html`/`.htm` files under **Settings → Providers → Local Documentation**.
 
 **Reporting a bug:** Include the KDE/Qt version, which provider was enabled, steps to reproduce and relevant redacted diagnostics. **Never attach tokens, API keys or private copied text.** Use [Issues](https://github.com/arran4/klookup/issues) for bugs and [Discussions](https://github.com/arran4/klookup/discussions) for questions and proposals.
 
@@ -390,33 +356,21 @@ KRunner activation and shortcut delivery must also be checked in a real desktop 
 
 ### Provider/plugin model
 
-KLookup supports **both native C++ Qt plugins and scripted providers** using its versioned Provider API v1. Native providers are loaded from KDE plugin directories. Scripted providers use ECMAScript modules (`.mjs`) and a `provider.json` manifest in `klookup/providers.d/`, discovered via XDG user/system data paths: `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d` and each directory in `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}/klookup/providers.d`.
+KLookup supports **both native C++ Qt plugins and scripted ECMAScript packages** using **Provider API v2**. Native providers are loaded from KDE plugin directories. Scripted packages consist of a `provider.json` manifest (`"apiVersion": 2`) and CommonJS-style JavaScript entry/helper files (`module.exports` + `host.require()`), discovered via XDG user/system data paths: `${XDG_DATA_HOME:-~/.local/share}/klookup/providers.d` and `${XDG_DATA_DIRS:-/usr/local/share:/usr/share}/klookup/providers.d`. ES module `import` / `export` syntax is unsupported.
 
-TVMaze, Lyrics.ovh, Open Library and AniList are shipped **only as JavaScript providers**; obsolete native modules for those IDs are ignored after migration. CheapShark is also an ECMAScript package. Other providers continue to use C++ where appropriate. Packagers must install the scripted package files **as well as** the native plugins and application/runner; an executable by itself does not contain all sources.
+Scripts run in memory inside a resource-bounded `QJSEngine` (`module.exports = { search, getPage, getDetails, getContent, selfTest }` with `host.apiVersion === 2`, `host.fetch()`, `host.getSecret()`, `host.require()`, `host.log()`). Host services enforce declared origin permissions, response bounds, deadlines, and CPU execution budgets. Package approval binds a SHA-256 fingerprint over every package file, canonical path, provenance, and permissions; changing code or permissions requires fresh review.
 
-Scripts can provide lightweight search results, supported pagination, lazy details and common structured content. Host services enforce declared origins and response limits; operations have deadlines and an execution-interruption strategy. Package approval binds to validated contents/assets, canonical source path, provenance and permissions. A first protected root-owned distribution installation may activate automatically; user/custom packages require deliberate approval. Explicit revocation and disablement persist, and changed packages require review. See [package approval](docs/provider-package-approval.md), [operation lifecycle](docs/script-provider-lifecycle.md) and [HTTP transport](docs/provider-http-transport.md).
+Build-tree runs do not silently load packages from the source checkout or current directory. Install the package assets under a normal XDG/install prefix, or test against them using `klookup-provider-check`.
 
-Build-tree runs do not silently load packages from the current directory or source checkout. Install the package assets under a normal XDG/install data prefix, then review user-owned packages in Script packages settings. Package managers should remove obsolete files belonging to their own earlier package versions; KLookup does not delete arbitrary files in users' prefixes.
+Scripted KWallet credential provisioning remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); shipped script packages require no credentials. `QJSEngine` is **not an OS security sandbox**—only approve packages whose source you trust.
 
-Scripted KWallet provisioning/restoration remains incomplete ([#85](https://github.com/arran4/klookup/issues/85)); the five shipped scripts require no credentials. Native providers' authentication continues separately. `QJSEngine` is **not an OS security sandbox**. Only install trusted extensions and review their permissions. The old custom HTTP configuration wizard was superseded ([#57](https://github.com/arran4/klookup/issues/57)); the abandoned [PR #82](https://github.com/arran4/klookup/pull/82) editor is not shipped.
+Relevant developer documentation (also published via MkDocs in [`docs/`](docs/index.md)):
 
-Relevant implementation guides:
-
-- [Provider diagnostics and offline checks](docs/provider-diagnostics.md)
-- [Lyrics.ovh suggestions](docs/provider-lyrics-ovh.md)
-- [Open Library books](docs/provider-openlibrary.md)
-- [AniList anime search](docs/provider-anilist.md)
-- [CheapShark PC-game deals](docs/provider-cheapshark.md)
-- [Provider continuation and pagination](docs/provider-continuation.md)
-- [Structured result metadata](docs/structured-metadata.md)
-- [Provider authentication](docs/provider-authentication.md)
-- [Spotify provider setup](docs/spotify-provider.md)
-- [Global shortcuts](docs/global-shortcuts.md)
-- [Recent activity and retention](docs/recent-activity.md)
-- [Result actions and source interactions](docs/result-interactions.md)
-- [Clipboard policy and privacy](docs/clipboard-policy.md)
-- [Autostart configuration](docs/autostart.md)
-- [Wikipedia result content](docs/wikipedia-content.md)
+- [Shipped scripts & Provider API v2 example](docs/script-providers.md)
+- [Package installation & approval](docs/provider-package-approval.md), [classification](docs/provider-classification.md), and [continuation contract](docs/provider-continuation.md)
+- [Operation lifecycle](docs/script-provider-lifecycle.md), [HTTP transport](docs/provider-http-transport.md), [authentication](docs/provider-authentication.md), and [diagnostics](docs/provider-diagnostics.md)
+- [Structured metadata](docs/structured-metadata.md), [source selection](docs/source-selection.md), [clipboard privacy](docs/clipboard-policy.md), and [global shortcuts](docs/global-shortcuts.md)
+- [Canonical release workflow](docs/releasing.md) and [Spotify setup](docs/spotify-provider.md)
 
 ### Diagnostics and verification
 

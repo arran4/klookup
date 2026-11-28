@@ -40,13 +40,7 @@ Malformed/oversized records and future/expired timestamps are ignored. Clear and
 privacy opt-out remove disallowed persisted items immediately. A minute timer
 expires entries during long sessions without focus changes or notifications.
 
-This PR is a third-level sibling on clipboard-policy PR #62. It uses only the
-existing plain SearchResult fields and stable provider IDs, requiring no metadata
-PR parent. The result-view signal must be preserved when combining #58/#59's
-SearchTab: emit after explicit row selection/rendering, not when a late detail
-response refreshes the view. New windows in #52 should share one application-level
-RecentActivity store instead of independent writers.
-
-Legacy saved tabs have no input-origin marker; their original source is unavailable.
-Provider snippets in recent-item tooltips are explicitly escaped, preventing Qt
-rich-text autodetection from loading markup resources.
+Multiple windows share a single application-level `RecentActivity` store. Legacy
+saved tabs without an input-origin marker do not expose original source attribution,
+and provider snippets in recent-item tooltips are escaped so Qt rich-text
+autodetection cannot load markup resources.

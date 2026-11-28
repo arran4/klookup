@@ -25,12 +25,7 @@ revoked. Approval does not transfer to a copied path or a user override.
 Packages are limited to 512 entries, 5 MiB per file and 16 MiB total; manifests
 are limited to 1 MiB. Unreadable files, symlinks and special files are rejected.
 At activation the package is read again and compared with its approved snapshot.
-Execution uses a private temporary snapshot, including imported modules and all
-assets. The bundled Acorn parser inspects the import graph as data, including
-extensionless modules, without evaluating provider code. Static imports must
-resolve to files inside that snapshot. Bare, absolute, escaping and dynamic
-imports are unsupported. QJSEngine is trusted in-process execution, not an OS
-sandbox; approval must only be granted to code the user trusts.
+Execution evaluates verified scripts in memory via `QJSEngine`, including `host.require()` relative module imports within the verified package snapshot (extensionless and subpath modules included). ES module `import` and `export` statements are unsupported; modules must use `module.exports` and `host.require()`. Bare, absolute, escaping, and dynamic imports are rejected. `QJSEngine` is trusted in-process execution, not an OS sandbox; approval must only be granted to code the user trusts.
 
 Search locations are explicit custom directories, XDG user data, XDG system
 data, the configured installation data directory and the executable's adjacent
@@ -49,6 +44,5 @@ revocation and saved enablement persist across upgrades. Other platforms require
 explicit approval.
 
 Packagers must install both `provider.json` and `main.mjs` from `providers.d/`.
-On upgrades the package manager must remove obsolete native TVMaze libraries.
-KLookup ignores stale native TVMaze providers, preserving generic C++ support.
-It does not delete arbitrary libraries in users' installation prefixes.
+Obsolete installed native libraries matching migrated scripted provider IDs are
+ignored automatically by the host.

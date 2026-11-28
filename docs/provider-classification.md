@@ -54,10 +54,6 @@ files only, including for unapproved packages; it never runs entry points or
 requests network data to obtain metadata.
 
 Settings displays the descriptor for native and script sources, and live result
-groups carry it as typed data with a readable tooltip. Interactive display
-filtering and source eligibility controls are separate follow-up changes.
-
-A binary fixture compiles a real module against the pre-change SearchProvider
-header, then loads it into the new host and verifies search/clone dispatch and
-metadata copying. Provider API v1 metadata also uses nonvirtual QObject data;
-no JavaScript executes to read a descriptor.
+groups carry it as typed data with a readable tooltip for display filtering and
+source selection. Provider API v2 and scripted manifests carry the same
+descriptor without executing JavaScript to inspect metadata.

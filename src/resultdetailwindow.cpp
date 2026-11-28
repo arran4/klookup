@@ -3,6 +3,8 @@
 
 #include "resultdetailwindow.h"
 #include "languagepreferences.h"
+#include "mangabakaexperimentalmodel.h"
+#include "mangabakaexperimentalwidget.h"
 #include "splitterkeyboard.h"
 #include "appicon.h"
 #include "sourcelink.h"
@@ -20,6 +22,7 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QSplitterHandle>
+#include <QStackedWidget>
 #include <QTextBrowser>
 #include <QTreeWidget>
 #include <QVBoxLayout>
@@ -95,8 +98,12 @@ void ResultDetailWindow::setupUi(const QString &providerName, const ResultMetada
     m_splitter = new QSplitter(Qt::Vertical, central);
     m_splitter->setObjectName(QStringLiteral("detailWindowSplitter"));
 
+    m_summaryStack = new QStackedWidget(m_splitter);
+    m_summaryStack->setObjectName(QStringLiteral("detailWindowSummaryStack"));
+    m_summaryStack->setMinimumHeight(60);
+
     // Description / content view
-    m_detailsView = new QTextBrowser(m_splitter);
+    m_detailsView = new QTextBrowser(m_summaryStack);
     m_detailsView->setObjectName(QStringLiteral("detailsView"));
     m_detailsView->setMinimumHeight(60);
     m_detailsView->setOpenExternalLinks(false);
@@ -115,8 +122,18 @@ void ResultDetailWindow::setupUi(const QString &providerName, const ResultMetada
         }
     });
 
-    m_detailsView->setHtml(Content::renderResultHtml(m_result, content, providerName));
-    m_splitter->addWidget(m_detailsView);
+    m_summaryStack->addWidget(m_detailsView);
+    m_experimentalView = new MangaBakaExperimentalWidget(m_summaryStack);
+    m_summaryStack->addWidget(m_experimentalView);
+
+    if (MangaBakaExperimentalModel::isExperimentalResult({}, m_result)) {
+        m_experimentalView->setResult(m_result, metadata, content, providerName);
+        m_summaryStack->setCurrentWidget(m_experimentalView);
+    } else {
+        m_detailsView->setHtml(Content::renderResultHtml(m_result, content, providerName));
+        m_summaryStack->setCurrentWidget(m_detailsView);
+    }
+    m_splitter->addWidget(m_summaryStack);
 
     // Structured metadata tree
     m_metadataView = new QTreeWidget(m_splitter);

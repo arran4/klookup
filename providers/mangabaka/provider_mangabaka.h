@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 KLookup contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef PROVIDER_MANGABAKA_H
 #define PROVIDER_MANGABAKA_H
 
@@ -10,7 +12,9 @@
 class ProviderMangaBaka : public SearchProvider, public SearchProviderContinuation, public SearchProviderOptions
 {
     Q_OBJECT
+#ifndef KLOOKUP_MANGABAKA_AS_BASE
     Q_PLUGIN_METADATA(IID "org.kde.klookup.SearchProvider")
+#endif
     Q_INTERFACES(SearchProvider SearchProviderContinuation SearchProviderOptions)
 public:
     explicit ProviderMangaBaka(QObject *parent = nullptr);
@@ -36,15 +40,27 @@ public:
     static QStringList supportedFormats();
     static QString formatLabel(const QString &type);
 
-private:
-    QStringList m_formats;
-    SearchResult parseResult(const QJsonObject &obj) const;
-    ResultMetadata parseMetadata(const QJsonObject &obj) const;
+    static void clearSharedCache();
+    static int sharedCacheNetworkRequestCount();
 
 protected:
+    SearchResult parseResult(const QJsonObject &obj) const;
+    ResultMetadata parseMetadata(const QJsonObject &obj) const;
+    virtual SearchResult decorateSearchResult(SearchResult result, const QJsonObject &rawObj) const;
+    virtual SearchDetails decorateSearchDetails(SearchDetails details, const QJsonObject &rawObj) const;
+    void cloneStateInto(ProviderMangaBaka *target) const;
+
     QNetworkAccessManager *m_nam;
+    QNetworkAccessManager *m_defaultNam = nullptr;
+    bool m_forceSharedCacheForTesting = false;
     QPointer<QNetworkReply> m_reply;
     QPointer<QNetworkReply> m_detailReply;
+
+private:
+    void handleSearchRoot(const QJsonObject &root, const QString &token, quint64 requestId);
+    void handleDetailRoot(const QJsonObject &root, const QString &resultId, quint64 requestId);
+
+    QStringList m_formats;
 };
 
 #endif // PROVIDER_MANGABAKA_H

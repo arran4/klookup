@@ -34,7 +34,21 @@ add_library(klookup_core STATIC
     providerauthentication.cpp
     globalshortcuts.cpp
     autostartmanager.cpp
+    mangabakaexperimentalmodel.cpp
+    mangabakaexperimentalwidget.cpp
 )
+
+if(KLOOKUP_HAS_QML_MANGABAKA)
+    qt_add_resources(klookup_core "klookup_mangabaka_qml" PREFIX "/klookup/qml"
+        BASE qml
+        OUTPUT_TARGETS klookup_mangabaka_qml_resource_targets
+        FILES qml/MangaBakaExperimentalView.qml
+    )
+    foreach(resource_target IN LISTS klookup_mangabaka_qml_resource_targets)
+        set_target_properties(${resource_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endforeach()
+    target_compile_definitions(klookup_core PUBLIC KLOOKUP_HAS_QML_MANGABAKA=1)
+endif()
 
 set_source_files_properties(../icons/scalable/apps/org.kde.klookup.svg PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.svg)
 set_source_files_properties(../icons/256x256/apps/org.kde.klookup.png PROPERTIES QT_RESOURCE_ALIAS org.kde.klookup.png)
@@ -65,6 +79,8 @@ target_link_libraries(klookup_core PUBLIC
     Qt6::Network
     Qt6::DBus
     Qt6::Qml
+    $<$<BOOL:${KLOOKUP_HAS_QML_MANGABAKA}>:Qt6::Quick>
+    $<$<BOOL:${KLOOKUP_HAS_QML_MANGABAKA}>:Qt6::QuickWidgets>
     KF6::GlobalAccel
     KF6::CoreAddons
     KF6::ConfigCore

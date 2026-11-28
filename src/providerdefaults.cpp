@@ -6,7 +6,8 @@
 
 bool ProviderDefaults::enabled(const QString &id)
 {
-    return id != QLatin1String("cheapshark") && id != QLatin1String("duckduckgo") && id != QLatin1String("localdocs");
+    return id != QLatin1String("cheapshark") && id != QLatin1String("duckduckgo") &&
+           id != QLatin1String("localdocs") && id != QLatin1String("mangabaka_experimental");
 }
 
 bool ProviderDefaults::enabled(const KConfigGroup &settings, const QString &id)
@@ -22,5 +23,7 @@ QString ProviderDefaults::reason(const QString &id)
         return i18n("DuckDuckGo Instant Answer API (encyclopedic abstracts, definitions, and related topics; not full web search). Enable to include this source in searches.");
     if (id == QLatin1String("localdocs"))
         return i18n("Offline local documentation directories (.md, .html, .txt); configure scan roots and enable.");
+    if (id == QLatin1String("mangabaka_experimental"))
+        return i18n("Experimental host-controlled QML presentation for MangaBaka (disabled by default); enable to compare alongside MangaBaka.");
     return {};
 }

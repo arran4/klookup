@@ -1,4 +1,6 @@
 #include "searchtab.h"
+#include "mangabakaexperimentalmodel.h"
+#include "mangabakaexperimentalwidget.h"
 #include "flowlayout.h"
 #include "splitterkeyboard.h"
 #include "languagepreferences.h"
@@ -215,9 +217,18 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_detailSplitter = new QSplitter(Qt::Vertical, m_detailContainer);
     m_detailSplitter->setObjectName(QStringLiteral("detailSplitter"));
 
-    m_detailsView = new QTextBrowser(m_detailSplitter);
+    m_summaryStack = new QStackedWidget(m_detailSplitter);
+    m_summaryStack->setObjectName(QStringLiteral("detailSummaryStack"));
+    m_summaryStack->setMinimumHeight(60);
+
+    m_detailsView = new QTextBrowser(m_summaryStack);
     m_detailsView->setObjectName(QStringLiteral("detailsView"));
     m_detailsView->setMinimumHeight(60);
+    m_summaryStack->addWidget(m_detailsView);
+
+    m_mangaBakaExperimentalView = new MangaBakaExperimentalWidget(m_summaryStack);
+    m_summaryStack->addWidget(m_mangaBakaExperimentalView);
+    m_summaryStack->setCurrentWidget(m_detailsView);
 
     m_metadataView = new QTreeWidget(m_detailSplitter);
     m_metadataView->setObjectName(QStringLiteral("structuredMetadata"));
@@ -228,7 +239,7 @@ SearchTab::SearchTab(const QString &query, QWidget *parent)
     m_metadataView->hide();
 
     m_detailSplitter->insertWidget(0, m_metadataView);
-    m_detailSplitter->insertWidget(0, m_detailsView);
+    m_detailSplitter->insertWidget(0, m_summaryStack);
 
     m_detailSplitter->setChildrenCollapsible(true);
     m_detailSplitter->setCollapsible(0, false);
@@ -1059,6 +1070,10 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
 {
     if (!item || !item->data(0, Qt::UserRole).isValid()) {
         m_detailsView->clear();
+        if (m_mangaBakaExperimentalView)
+            m_mangaBakaExperimentalView->clear();
+        if (m_summaryStack)
+            m_summaryStack->setCurrentWidget(m_detailsView);
         m_metadataView->clear();
         m_metadataView->hide();
         m_sourceLink->setResult({});
@@ -1084,8 +1099,16 @@ void SearchTab::renderResult(QTreeWidgetItem *item)
                                      ? m_states[providerId].provider->name()
                                      : (item->parent() ? item->parent()->text(0) : providerId);
 
-    m_detailsView->setHtml(Content::renderResultHtml(res, content, providerName));
-    renderMetadata(item->data(0, MetadataRole).value<ResultMetadata>());
+    const auto metadata = item->data(0, MetadataRole).value<ResultMetadata>();
+    if (m_mangaBakaExperimentalView && m_summaryStack && MangaBakaExperimentalModel::isExperimentalResult(providerId, res)) {
+        m_mangaBakaExperimentalView->setResult(res, metadata, content, providerName);
+        m_summaryStack->setCurrentWidget(m_mangaBakaExperimentalView);
+    } else {
+        if (m_summaryStack)
+            m_summaryStack->setCurrentWidget(m_detailsView);
+        m_detailsView->setHtml(Content::renderResultHtml(res, content, providerName));
+    }
+    renderMetadata(metadata);
 }
 
 void SearchTab::renderMetadata(const ResultMetadata &metadata)

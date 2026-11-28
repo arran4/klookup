@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 KLookup contributors
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "provider_mangabaka.h"
 #include "languagepreferences.h"
 #include "../manga_metadata.h"
@@ -5,18 +7,123 @@
 #include <KConfigGroup>
 #include <KSharedConfig>
 #include <QCheckBox>
+#include <QCoreApplication>
+#include <QDateTime>
 #include <QGroupBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QNetworkRequest>
 #include <QRegularExpression>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QVBoxLayout>
 
-ProviderMangaBaka::ProviderMangaBaka(QObject *parent) : SearchProvider(parent), m_nam(new QNetworkAccessManager(this)), m_reply(nullptr)
+namespace
+{
+
+constexpr int kCacheTtlSeconds = 60;
+constexpr int kMaxSearchEntries = 32;
+constexpr int kMaxDetailEntries = 64;
+
+// Process-wide in-memory cache attached to QCoreApplication so separate plugins
+// (`mangabaka` and `mangabaka_experimental`) share identical query/detail fetches
+// without duplicating network traffic.
+QObject *sharedCacheObject()
+{
+    static QMutex cacheMutex;
+    QMutexLocker locker(&cacheMutex);
+    QCoreApplication *app = QCoreApplication::instance();
+    if (!app)
+        return nullptr;
+    QObject *cacheObj = app->findChild<QObject *>(QStringLiteral("klookup_mangabaka_shared_cache"), Qt::FindDirectChildrenOnly);
+    if (!cacheObj) {
+        cacheObj = new QObject(app);
+        cacheObj->setObjectName(QStringLiteral("klookup_mangabaka_shared_cache"));
+        cacheObj->setProperty("_mb_net_count", 0);
+    }
+    return cacheObj;
+}
+
+QMutex &cacheAccessMutex()
+{
+    static QMutex mutex;
+    return mutex;
+}
+
+bool tryReadCachedJson(const QString &kindPrefix, const QString &key, QJsonObject *out)
+{
+    QMutexLocker locker(&cacheAccessMutex());
+    QObject *cacheObj = sharedCacheObject();
+    if (!cacheObj)
+        return false;
+    const QByteArray propName = (kindPrefix + QLatin1Char('_') + key).toUtf8();
+    const QByteArray tsPropName = (kindPrefix + QStringLiteral("_ts_") + key).toUtf8();
+    const qint64 storedAt = cacheObj->property(tsPropName.constData()).toLongLong();
+    if (storedAt <= 0 || QDateTime::currentSecsSinceEpoch() - storedAt > kCacheTtlSeconds)
+        return false;
+    const QByteArray bytes = cacheObj->property(propName.constData()).toByteArray();
+    if (bytes.isEmpty())
+        return false;
+    const QJsonDocument doc = QJsonDocument::fromJson(bytes);
+    if (!doc.isObject())
+        return false;
+    *out = doc.object();
+    return true;
+}
+
+void writeCachedJson(const QString &kindPrefix, const QString &key, const QJsonObject &obj, int maxEntries)
+{
+    QMutexLocker locker(&cacheAccessMutex());
+    QObject *cacheObj = sharedCacheObject();
+    if (!cacheObj)
+        return;
+
+    const QString orderProp = kindPrefix + QStringLiteral("_order");
+    QStringList order = cacheObj->property(orderProp.toUtf8().constData()).toStringList();
+    order.removeAll(key);
+    order.append(key);
+    while (order.size() > maxEntries) {
+        const QString evicted = order.takeFirst();
+        cacheObj->setProperty((kindPrefix + QLatin1Char('_') + evicted).toUtf8().constData(), QVariant());
+        cacheObj->setProperty((kindPrefix + QStringLiteral("_ts_") + evicted).toUtf8().constData(), QVariant());
+    }
+    cacheObj->setProperty(orderProp.toUtf8().constData(), order);
+    cacheObj->setProperty((kindPrefix + QLatin1Char('_') + key).toUtf8().constData(),
+                          QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    cacheObj->setProperty((kindPrefix + QStringLiteral("_ts_") + key).toUtf8().constData(),
+                          QDateTime::currentSecsSinceEpoch());
+}
+
+} // namespace
+
+void ProviderMangaBaka::clearSharedCache()
+{
+    QMutexLocker locker(&cacheAccessMutex());
+    if (QObject *cacheObj = sharedCacheObject()) {
+        for (const QByteArray &name : cacheObj->dynamicPropertyNames()) {
+            cacheObj->setProperty(name.constData(), QVariant());
+        }
+        cacheObj->setProperty("_mb_net_count", 0);
+    }
+}
+
+int ProviderMangaBaka::sharedCacheNetworkRequestCount()
+{
+    QMutexLocker locker(&cacheAccessMutex());
+    QObject *cacheObj = sharedCacheObject();
+    return cacheObj ? cacheObj->property("_mb_net_count").toInt() : 0;
+}
+
+ProviderMangaBaka::ProviderMangaBaka(QObject *parent)
+    : SearchProvider(parent)
+    , m_nam(new QNetworkAccessManager(this))
+    , m_defaultNam(m_nam)
+    , m_reply(nullptr)
 {
     const KConfigGroup config(KSharedConfig::openConfig(QStringLiteral("klookuprc")), QStringLiteral("Provider-mangabaka"));
     const auto saved = config.readEntry(QStringLiteral("Formats"), QStringList());
@@ -49,6 +156,24 @@ void ProviderMangaBaka::cancelRequests()
 {
     ProviderRequest::cancel(m_reply, this);
     ProviderRequest::cancel(m_detailReply, this);
+}
+
+SearchResult ProviderMangaBaka::decorateSearchResult(SearchResult result, const QJsonObject &) const
+{
+    return result;
+}
+
+SearchDetails ProviderMangaBaka::decorateSearchDetails(SearchDetails details, const QJsonObject &) const
+{
+    return details;
+}
+
+void ProviderMangaBaka::cloneStateInto(ProviderMangaBaka *target) const
+{
+    if (!target)
+        return;
+    target->setEnabled(isEnabled());
+    target->m_formats = m_formats;
 }
 
 SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
@@ -97,7 +222,50 @@ SearchResult ProviderMangaBaka::parseResult(const QJsonObject &obj) const
         res.additionalData = additional;
     }
 
-    return res;
+    return decorateSearchResult(std::move(res), obj);
+}
+
+void ProviderMangaBaka::handleSearchRoot(const QJsonObject &root, const QString &token, quint64 requestId)
+{
+    if (!root.value(QStringLiteral("data")).isArray()) {
+        ProviderRequest::fail(this, requestId, QStringLiteral("Malformed response: missing 'data' array"));
+        return;
+    }
+    SearchPage page;
+    const auto values = root.value(QStringLiteral("data")).toArray();
+    for (const auto &value : values) {
+        const auto result = parseResult(value.toObject());
+        if (!result.id.isEmpty())
+            page.results.append(result);
+    }
+    const auto pagination = root.value(QStringLiteral("pagination")).toObject();
+    const QUrl next(pagination.value(QStringLiteral("next")).toString(), QUrl::StrictMode);
+    const auto nextQuery = QUrlQuery(next);
+    bool ok = false;
+    const int pageNumber = nextQuery.queryItemValue(QStringLiteral("page")).toInt(&ok);
+    const int current = token.isEmpty() ? 1 : token.toInt();
+    if (next.isValid() && next.scheme() == QStringLiteral("https") && next.host() == QStringLiteral("api.mangabaka.org") &&
+        next.path() == QStringLiteral("/v2/series/search") && next.userInfo().isEmpty() && ok && pageNumber > current &&
+        pageNumber <= 1200) {
+        page.nextToken = QString::number(pageNumber);
+    }
+
+    if (requestId)
+        emit pageCompleted(requestId, page);
+    else
+        emit searchCompleted(id(), page.results);
+}
+
+void ProviderMangaBaka::handleDetailRoot(const QJsonObject &root, const QString &resultId, quint64 requestId)
+{
+    const QJsonObject dataObj = root.value(QStringLiteral("data")).toObject();
+    const auto result = parseResult(dataObj);
+    if (result.id != resultId) {
+        ProviderRequest::fail(this, requestId, QStringLiteral("Malformed detail response: result identity mismatch"));
+        return;
+    }
+    SearchDetails details{result, QString(), parseMetadata(dataObj)};
+    emit detailsCompleted(requestId, decorateSearchDetails(std::move(details), dataObj));
 }
 
 void ProviderMangaBaka::requestPage(const QString &query, const QString &token, quint64 requestId)
@@ -117,34 +285,26 @@ void ProviderMangaBaka::requestPage(const QString &query, const QString &token, 
     if (!token.isEmpty())
         q.addQueryItem(QStringLiteral("page"), token);
     url.setQuery(q);
-    ProviderRequest::getJson(this, m_nam, m_reply, url, requestId, [this, requestId, token](const QJsonObject &root) {
-        if (!root.value(QStringLiteral("data")).isArray()) {
-            ProviderRequest::fail(this, requestId, QStringLiteral("Malformed response: missing 'data' array"));
+
+    const bool useSharedCache = (m_nam == m_defaultNam) || m_forceSharedCacheForTesting;
+    const QString cacheKey = url.toString(QUrl::FullyEncoded);
+    if (useSharedCache) {
+        QJsonObject cached;
+        if (tryReadCachedJson(QStringLiteral("search"), cacheKey, &cached)) {
+            QTimer::singleShot(0, this, [this, cached, token, requestId]() {
+                handleSearchRoot(cached, token, requestId);
+            });
             return;
         }
-        SearchPage page;
-        const auto values = root.value(QStringLiteral("data")).toArray();
-        for (const auto &value : values) {
-            const auto result = parseResult(value.toObject());
-            if (!result.id.isEmpty())
-                page.results.append(result);
-        }
-        const auto pagination = root.value(QStringLiteral("pagination")).toObject();
-        const QUrl next(pagination.value(QStringLiteral("next")).toString(), QUrl::StrictMode);
-        const auto nextQuery = QUrlQuery(next);
-        bool ok = false;
-        const int pageNumber = nextQuery.queryItemValue(QStringLiteral("page")).toInt(&ok);
-        const int current = token.isEmpty() ? 1 : token.toInt();
-        if (next.isValid() && next.scheme() == QStringLiteral("https") && next.host() == QStringLiteral("api.mangabaka.org") &&
-            next.path() == QStringLiteral("/v2/series/search") && next.userInfo().isEmpty() && ok && pageNumber > current &&
-            pageNumber <= 1200) {
-            page.nextToken = QString::number(pageNumber);
-        }
+        QMutexLocker locker(&cacheAccessMutex());
+        if (QObject *cacheObj = sharedCacheObject())
+            cacheObj->setProperty("_mb_net_count", cacheObj->property("_mb_net_count").toInt() + 1);
+    }
 
-        if (requestId)
-            emit pageCompleted(requestId, page);
-        else
-            emit searchCompleted(id(), page.results);
+    ProviderRequest::getJson(this, m_nam, m_reply, url, requestId, [this, requestId, token, useSharedCache, cacheKey](const QJsonObject &root) {
+        if (useSharedCache && root.value(QStringLiteral("data")).isArray())
+            writeCachedJson(QStringLiteral("search"), cacheKey, root, kMaxSearchEntries);
+        handleSearchRoot(root, token, requestId);
     });
 }
 
@@ -161,21 +321,32 @@ void ProviderMangaBaka::requestDetails(const QString &resultId, const QString &t
     QUrlQuery q;
     q.addQueryItem(QStringLiteral("schema"), QStringLiteral("full"));
     url.setQuery(q);
-    ProviderRequest::getJson(this, m_nam, m_detailReply, url, requestId, [this, resultId, requestId](const QJsonObject &root) {
-        const auto result = parseResult(root.value(QStringLiteral("data")).toObject());
-        if (result.id != resultId) {
-            ProviderRequest::fail(this, requestId, QStringLiteral("Malformed detail response: result identity mismatch"));
+
+    const bool useSharedCache = (m_nam == m_defaultNam) || m_forceSharedCacheForTesting;
+    if (useSharedCache) {
+        QJsonObject cached;
+        if (tryReadCachedJson(QStringLiteral("detail"), resultId, &cached)) {
+            QTimer::singleShot(0, this, [this, cached, resultId, requestId]() {
+                handleDetailRoot(cached, resultId, requestId);
+            });
             return;
         }
-        emit detailsCompleted(requestId, SearchDetails{result, QString(), parseMetadata(root.value(QStringLiteral("data")).toObject())});
+        QMutexLocker locker(&cacheAccessMutex());
+        if (QObject *cacheObj = sharedCacheObject())
+            cacheObj->setProperty("_mb_net_count", cacheObj->property("_mb_net_count").toInt() + 1);
+    }
+
+    ProviderRequest::getJson(this, m_nam, m_detailReply, url, requestId, [this, resultId, requestId, useSharedCache](const QJsonObject &root) {
+        if (useSharedCache && root.value(QStringLiteral("data")).isObject())
+            writeCachedJson(QStringLiteral("detail"), resultId, root, kMaxDetailEntries);
+        handleDetailRoot(root, resultId, requestId);
     });
 }
 
 SearchProvider *ProviderMangaBaka::clone(QObject *parent) const
 {
     auto *provider = new ProviderMangaBaka(parent);
-    provider->setEnabled(isEnabled());
-    provider->m_formats = m_formats;
+    cloneStateInto(provider);
     return provider;
 }
 

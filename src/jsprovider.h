@@ -35,6 +35,7 @@ public:
     ProviderApiV1::Capabilities capabilities() const override;
     bool isLoaded() const { return m_loaded; }
     QString loadError() const { return m_loadError; }
+    static bool verifyEngineRejectsDynamicImport(QString *error = nullptr);
     quint64 check(bool live = false, quint64 requestId = 0);
     bool hasCheck(bool live = false) const;
 

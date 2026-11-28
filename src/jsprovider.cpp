@@ -593,10 +593,45 @@ void JsProvider::executionInterrupted()
     for (auto token : tokens) fail(token, ProviderApiV1::ErrorCode::Timeout, m_loadError);
 }
 
+bool JsProvider::verifyEngineRejectsDynamicImport(QString *error)
+{
+    QJSEngine probeEngine;
+    const QJSValue dynamicImportProbe = probeEngine.evaluate(
+        QStringLiteral("(function() { return import('file:///klookup-runtime-probe'); })"),
+        QStringLiteral("klookup://runtime-compatibility-probe/dynamic-import"), 0);
+    if (!dynamicImportProbe.isError()) {
+        if (error)
+            *error = QStringLiteral("Qt QJSEngine compatibility check failed: dynamic import() is unexpectedly permitted in script mode");
+        return false;
+    }
+
+    const QJSValue importMetaProbe = probeEngine.evaluate(
+        QStringLiteral("(function() { return import.meta; })"),
+        QStringLiteral("klookup://runtime-compatibility-probe/import-meta"), 0);
+    if (!importMetaProbe.isError()) {
+        if (error)
+            *error = QStringLiteral("Qt QJSEngine compatibility check failed: import.meta is unexpectedly permitted in script mode");
+        return false;
+    }
+    return true;
+}
+
 bool JsProvider::initEngine()
 {
     if (!m_package.isValid()) { m_loadError = m_package.validationError(); return false; }
     if (!m_package.isTrusted()) { m_loadError = QStringLiteral("Untrusted provider package cannot execute code."); return false; }
+
+    static std::once_flag probeOnce;
+    static bool probeOk = false;
+    static QString probeError;
+    std::call_once(probeOnce, [] {
+        probeOk = verifyEngineRejectsDynamicImport(&probeError);
+    });
+    if (!probeOk) {
+        m_loadError = probeError;
+        return false;
+    }
+
     QString entryRelPath;
     if (!m_package.verifiedFiles(&m_verifiedFiles, &entryRelPath, &m_loadError)) return false;
     m_engine = new QJSEngine(this);
